@@ -35,7 +35,22 @@ CREATE TABLE dossiers (
     mode_paiement VARCHAR(50),
     montant_cfa DECIMAL(10,2),
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    -- Colonnes supplémentaires (analyse complète du code)
+    valide_preparateur BOOLEAN DEFAULT false,
+    machine VARCHAR(50),
+    description TEXT,
+    numero_commande VARCHAR(100),
+    created_by INTEGER REFERENCES users(id),
+    assigned_to VARCHAR(50),
+    folder_id UUID DEFAULT gen_random_uuid() UNIQUE,
+    quantite INTEGER DEFAULT 1,
+    date_validation_preparateur TIMESTAMP,
+    client_email VARCHAR(255),
+    client_telephone VARCHAR(50),
+    date_livraison_prevue DATE,
+    commentaire_revision TEXT,
+    revision_comment TEXT
 );
 
 -- Table des fichiers
@@ -72,14 +87,39 @@ CREATE TABLE historique_statuts (
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
+-- Table d'historique des changements de statut (complète)
+CREATE TABLE IF NOT EXISTS dossier_status_history (
+    id SERIAL PRIMARY KEY,
+    dossier_id INTEGER NOT NULL REFERENCES dossiers(id) ON DELETE CASCADE,
+    old_status VARCHAR(50),
+    new_status VARCHAR(50) NOT NULL,
+    changed_by INTEGER REFERENCES users(id),
+    changed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    notes TEXT,
+    folder_id UUID
+);
+
+-- Table des logs d'activité
+CREATE TABLE IF NOT EXISTS activity_logs (
+    id SERIAL PRIMARY KEY,
+    folder_id UUID,
+    user_id INTEGER REFERENCES users(id),
+    action VARCHAR(100) NOT NULL,
+    details JSONB,
+    created_at TIMESTAMP DEFAULT NOW()
+);
+
 -- Index pour optimiser les requêtes
 CREATE INDEX idx_dossiers_statut ON dossiers(statut);
 CREATE INDEX idx_dossiers_type ON dossiers(type_formulaire);
 CREATE INDEX idx_dossiers_preparateur ON dossiers(preparateur_id);
 CREATE INDEX idx_dossiers_imprimeur ON dossiers(imprimeur_id);
 CREATE INDEX idx_dossiers_livreur ON dossiers(livreur_id);
+CREATE INDEX idx_dossiers_folder_id ON dossiers(folder_id);
 CREATE INDEX idx_fichiers_dossier ON fichiers(dossier_id);
 CREATE INDEX idx_historique_dossier ON historique_statuts(dossier_id);
+CREATE INDEX idx_dossier_formulaires_dossier_id ON dossier_formulaires(dossier_id);
+CREATE INDEX idx_status_history_dossier_id ON dossier_status_history(dossier_id);
 
 -- Fonction pour mettre à jour updated_at automatiquement
 CREATE OR REPLACE FUNCTION update_updated_at_column()
