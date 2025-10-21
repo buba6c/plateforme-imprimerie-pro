@@ -352,8 +352,15 @@ app.use('*', (req, res) => {
 // DÉMARRAGE DU SERVEUR
 // ================================
 
+console.log('═════════════════════════════════════════════');
+console.log('🚀 [STARTUP] Début séquence de démarrage');
+console.log('═════════════════════════════════════════════');
+
 // Auto-fix du schéma AVANT démarrage (CRITIQUE)
 (async () => {
+  console.log('🔧 [STARTUP] Entrée dans IIFE async');
+  console.log('🔧 [STARTUP] DATABASE_URL:', process.env.DATABASE_URL ? 'PRÉSENT' : 'ABSENT');
+  
   if (process.env.DATABASE_URL) {
     try {
       console.log('🔧 [STARTUP] Lancement auto-fix du schéma...');
@@ -374,16 +381,22 @@ app.use('*', (req, res) => {
       console.error('❌ [STARTUP] Erreur auto-fix CRITIQUE:', error.message);
       console.error('Stack:', error.stack);
     }
+  } else {
+    console.warn('⚠️ [STARTUP] DATABASE_URL non défini - AUTO-FIX IGNORÉ');
   }
   
   // Démarrage du serveur APRÈS auto-fix
+  console.log('🚀 [STARTUP] Appel server.listen()...');
   server.listen(PORT, () => {
     console.log(`🚀 Serveur démarré sur le port ${PORT}`);
     console.log(`📖 Documentation API: http://localhost:${PORT}/api-docs`);
     console.log(`❤️ Health check: http://localhost:${PORT}/api/health`);
     console.log(`🌍 Environnement: ${process.env.NODE_ENV || 'development'}`);
   });
-})();
+})().catch(err => {
+  console.error('❌ [STARTUP] Erreur IIFE fatale:', err);
+  process.exit(1);
+});
 
 // Gestion gracieuse de l'arrêt
 process.on('SIGTERM', () => {
