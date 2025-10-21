@@ -128,16 +128,74 @@ app.get('/api/health', (req, res) => {
 // Route temporaire pour corriger le schéma (ADMIN SEULEMENT)
 app.post('/api/admin/fix-schema', async (req, res) => {
   try {
-    const autoFixSchema = require('./utils/autoFixSchema');
-    const result = await autoFixSchema();
+    console.log('🔧 [/api/admin/fix-schema] Endpoint appelé');
+    
+    // Exécuter le SQL directement
+    const { query } = require('./config/database');
+    
+    console.log('📝 [fix-schema] Création séquence...');
+    await query(`
+      DO $$
+      BEGIN
+        IF NOT EXISTS (SELECT 1 FROM pg_class WHERE relname = 'numero_commande_seq') THEN
+          CREATE SEQUENCE numero_commande_seq START 1;
+        END IF;
+      END$$;
+    `);
+    
+    console.log('📝 [fix-schema] Ajout colonne quantite...');
+    await query(`
+      DO $$
+      BEGIN
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'dossiers' AND column_name = 'quantite') THEN
+          ALTER TABLE dossiers ADD COLUMN quantite INTEGER DEFAULT 1;
+          UPDATE dossiers SET quantite = 1 WHERE quantite IS NULL;
+        END IF;
+      END$$;
+    `);
+    
+    console.log('📝 [fix-schema] Ajout colonne folder_id...');
+    await query(`
+      DO $$
+      BEGIN
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'dossiers' AND column_name = 'folder_id') THEN
+          ALTER TABLE dossiers ADD COLUMN folder_id UUID DEFAULT gen_random_uuid() UNIQUE;
+          UPDATE dossiers SET folder_id = gen_random_uuid() WHERE folder_id IS NULL;
+        END IF;
+      END$$;
+    `);
+    
+    console.log('✅ [fix-schema] Vérification...');
+    const checkResult = await query(`
+      SELECT column_name FROM information_schema.columns 
+      WHERE table_name = 'dossiers' AND column_name IN ('quantite', 'folder_id')
+      ORDER BY column_name
+    `);
+    
+    const seqCheck = await query(`
+      SELECT EXISTS (SELECT 1 FROM pg_class WHERE relname = 'numero_commande_seq') as exists
+    `);
+    
+    const colonnes = checkResult.rows.map(r => r.column_name);
+    const seqExists = seqCheck.rows[0].exists;
+    
+    console.log('✅ [fix-schema] Colonnes trouvées:', colonnes);
+    console.log('✅ [fix-schema] Séquence exists:', seqExists);
+    
     res.json({ 
-      success: result,
-      message: result ? 'Schéma corrigé avec succès' : 'Échec de la correction'
+      success: true,
+      message: 'Schéma corrigé avec succès',
+      details: {
+        colonnes_ajoutees: colonnes,
+        sequence_creee: seqExists
+      }
     });
   } catch (error) {
+    console.error('❌ [fix-schema] Erreur:', error.message);
     res.status(500).json({ 
       success: false, 
-      error: error.message 
+      error: error.message,
+      stack: error.stack
     });
   }
 });
