@@ -125,6 +125,23 @@ app.get('/api/health', (req, res) => {
   res.status(200).json(healthCheck);
 });
 
+// Route temporaire pour corriger le schéma (ADMIN SEULEMENT)
+app.post('/api/admin/fix-schema', async (req, res) => {
+  try {
+    const autoFixSchema = require('./utils/autoFixSchema');
+    const result = await autoFixSchema();
+    res.json({ 
+      success: result,
+      message: result ? 'Schéma corrigé avec succès' : 'Échec de la correction'
+    });
+  } catch (error) {
+    res.status(500).json({ 
+      success: false, 
+      error: error.message 
+    });
+  }
+});
+
 // Import et utilisation des routes
 try {
   const authRoutes = require('./routes/auth');
@@ -340,12 +357,12 @@ server.listen(PORT, async () => {
   console.log(`❤️ Health check: http://localhost:${PORT}/api/health`);
   console.log(`🌍 Environnement: ${process.env.NODE_ENV || 'development'}`);
   
-  // Auto-initialisation et correction de la base en production
+  // Auto-initialisation de la base en production
   if (process.env.NODE_ENV === 'production' && process.env.DATABASE_URL) {
     try {
-      // 1. Correction automatique du schéma manquant
-      const autoFixSchema = require('./utils/autoFixSchema');
-      await autoFixSchema();
+      // 1. Correction automatique du schéma manquant (désactivé temporairement)
+      // const autoFixSchema = require('./utils/autoFixSchema');
+      // await autoFixSchema();
       
       // 2. Auto-initialisation de la base
       const { autoInitDatabase } = require('./scripts/auto-init-db');
