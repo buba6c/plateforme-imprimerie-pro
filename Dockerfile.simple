@@ -9,8 +9,10 @@ COPY backend/ ./backend/
 
 # Aller dans le répertoire backend et installer
 WORKDIR /app/backend
-RUN npm install --production && \
-    mkdir -p uploads temp backups logs
+RUN npm install --production
+
+# Créer les dossiers nécessaires
+RUN mkdir -p uploads temp backups logs
 
 # Exposer le port
 EXPOSE 10000
