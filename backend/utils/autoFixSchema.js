@@ -79,18 +79,42 @@ async function autoFixDatabaseSchema() {
           END IF;
         END$$;
         
-        -- Fix table fichiers - ajouter uploaded_at si manquant
+        -- Fix table fichiers - ajouter uploaded_at (CRITIQUE)
         DO $$
         BEGIN
           IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'fichiers') THEN
             IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'fichiers' AND column_name = 'uploaded_at') THEN
               ALTER TABLE fichiers ADD COLUMN uploaded_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP;
-              -- Synchroniser avec created_at pour les fichiers existants
               UPDATE fichiers SET uploaded_at = created_at WHERE uploaded_at IS NULL;
               RAISE NOTICE 'Auto-fix: fichiers.uploaded_at ajoutée';
             END IF;
           END IF;
         END$$;
+        
+        -- Créer table dossier_formulaires (CRITIQUE)
+        CREATE TABLE IF NOT EXISTS dossier_formulaires (
+          id SERIAL PRIMARY KEY,
+          dossier_id INTEGER NOT NULL REFERENCES dossiers(id) ON DELETE CASCADE,
+          type_formulaire VARCHAR(50) NOT NULL,
+          details JSONB NOT NULL,
+          date_saisie TIMESTAMP WITHOUT TIME ZONE DEFAULT NOW()
+        );
+        
+        CREATE INDEX IF NOT EXISTS idx_dossier_formulaires_dossier_id ON dossier_formulaires(dossier_id);
+        
+        -- Créer table dossier_status_history si manquante
+        CREATE TABLE IF NOT EXISTS dossier_status_history (
+          id SERIAL PRIMARY KEY,
+          dossier_id INTEGER NOT NULL REFERENCES dossiers(id) ON DELETE CASCADE,
+          old_status VARCHAR(50),
+          new_status VARCHAR(50) NOT NULL,
+          changed_by INTEGER REFERENCES users(id),
+          changed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+          notes TEXT,
+          folder_id UUID
+        );
+        
+        CREATE INDEX IF NOT EXISTS idx_status_history_dossier_id ON dossier_status_history(dossier_id);
         
         -- Synchroniser les données existantes
         UPDATE dossiers SET 

@@ -48,7 +48,17 @@ CREATE TABLE fichiers (
     taille_bytes INTEGER NOT NULL,
     chemin_stockage VARCHAR(500) NOT NULL,
     uploaded_by INTEGER REFERENCES users(id),
+    uploaded_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Table dossier_formulaires (pour détails structurés)
+CREATE TABLE IF NOT EXISTS dossier_formulaires (
+    id SERIAL PRIMARY KEY,
+    dossier_id INTEGER NOT NULL REFERENCES dossiers(id) ON DELETE CASCADE,
+    type_formulaire VARCHAR(50) NOT NULL,
+    details JSONB NOT NULL,
+    date_saisie TIMESTAMP WITHOUT TIME ZONE DEFAULT NOW()
 );
 
 -- Table d'historique des changements de statut
