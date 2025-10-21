@@ -20,6 +20,7 @@ services:
     runtime: node
     plan: starter  # starter (gratuit), standard ou pro
     region: oregon
+    rootDir: ./backend
     buildCommand: npm ci
     startCommand: npm start
     healthCheckPath: /api/health
@@ -78,11 +79,11 @@ services:
         value: C.UTF-8
       - key: LC_ALL
         value: C.UTF-8
-    rootDir: ./backend
     
   # Frontend React (site statique)
   - type: static_site
     name: imprimerie-frontend
+    rootDir: ./frontend
     buildCommand: npm ci && npm run build
     staticPublishPath: ./build
     pullRequestPreviewsEnabled: false
@@ -108,14 +109,14 @@ services:
         value: false
       - key: CI
         value: false
-    rootDir: ./frontend
-    
+        
   # Worker pour les tâches background (optionnel)
   - type: worker
     name: imprimerie-worker
     runtime: node
     plan: starter
     region: oregon
+    rootDir: ./backend
     buildCommand: npm ci
     startCommand: node workers/index.js
     envVars:
@@ -153,4 +154,3 @@ services:
         fromDatabase:
           name: imprimerie-redis
           property: password
-    rootDir: ./backend

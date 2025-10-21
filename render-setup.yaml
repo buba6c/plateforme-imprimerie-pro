@@ -1,0 +1,64 @@
+# Configuration Render simplifiée - Plateforme d'Imprimerie
+# Version corrigée pour le déploiement automatique
+
+databases:
+  - name: imprimerie-postgres
+    databaseName: imprimerie_db
+    user: imprimerie_user
+    plan: starter
+    region: oregon
+    version: "15"
+
+services:
+  # Backend API Node.js
+  - type: web
+    name: imprimerie-backend
+    runtime: node
+    plan: starter
+    region: oregon
+    rootDir: backend
+    buildCommand: npm install
+    startCommand: node server.js
+    healthCheckPath: /api/health
+    port: 10000
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 10000
+      - key: DATABASE_URL
+        fromDatabase:
+          name: imprimerie-postgres
+          property: connectionString
+      - key: JWT_SECRET
+        generateValue: true
+      - key: JWT_EXPIRES_IN
+        value: 24h
+      - key: UPLOAD_MAX_SIZE
+        value: 100mb
+      - key: TZ
+        value: Europe/Paris
+
+  # Frontend React
+  - type: static_site
+    name: imprimerie-frontend
+    buildCommand: cd frontend && npm install && npm run build
+    staticPublishPath: frontend/build
+    pullRequestPreviewsEnabled: false
+    routes:
+      - type: rewrite
+        source: /*
+        destination: /index.html
+    headers:
+      - path: /static/*
+        name: Cache-Control
+        value: public, max-age=31536000, immutable
+    envVars:
+      - key: REACT_APP_API_URL
+        value: https://imprimerie-backend.onrender.com/api
+      - key: REACT_APP_ENVIRONMENT
+        value: production
+      - key: GENERATE_SOURCEMAP
+        value: false
+      - key: CI
+        value: false
