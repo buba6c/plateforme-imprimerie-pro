@@ -360,9 +360,9 @@ server.listen(PORT, async () => {
   // Auto-initialisation de la base en production
   if (process.env.NODE_ENV === 'production' && process.env.DATABASE_URL) {
     try {
-      // 1. Correction automatique du schéma manquant (désactivé temporairement)
-      // const autoFixSchema = require('./utils/autoFixSchema');
-      // await autoFixSchema();
+      // 1. Correction automatique du schéma manquant
+      const autoFixSchema = require('./utils/autoFixSchema');
+      await autoFixSchema();
       
       // 2. Auto-initialisation de la base
       const { autoInitDatabase } = require('./scripts/auto-init-db');
