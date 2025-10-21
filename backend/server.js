@@ -165,6 +165,24 @@ app.post('/api/admin/fix-schema', async (req, res) => {
       END$$;
     `);
     
+    console.log('📝 [fix-schema] Correction contrainte CHECK statut...');
+    await query(`
+      DO $$
+      BEGIN
+        -- Supprimer l'ancienne contrainte
+        ALTER TABLE dossiers DROP CONSTRAINT IF EXISTS dossiers_statut_check;
+        
+        -- Ajouter nouvelle contrainte avec libellés français ET snake_case
+        ALTER TABLE dossiers ADD CONSTRAINT dossiers_statut_check 
+        CHECK (statut IN (
+          'en_cours', 'a_revoir', 'en_impression', 'termine', 'en_livraison', 'livre',
+          'En cours', 'À revoir', 'En impression', 'Terminé', 'En livraison', 'Livré',
+          'pret_impression', 'Prêt impression', 'imprime', 'Imprimé',
+          'pret_livraison', 'Prêt livraison'
+        ));
+      END$$;
+    `);
+    
     console.log('✅ [fix-schema] Vérification...');
     const checkResult = await query(`
       SELECT column_name FROM information_schema.columns 
@@ -184,10 +202,11 @@ app.post('/api/admin/fix-schema', async (req, res) => {
     
     res.json({ 
       success: true,
-      message: 'Schéma corrigé avec succès',
+      message: 'Schéma corrigé avec succès (+ contrainte CHECK)',
       details: {
         colonnes_ajoutees: colonnes,
-        sequence_creee: seqExists
+        sequence_creee: seqExists,
+        contrainte_statut: 'mise_a_jour'
       }
     });
   } catch (error) {
