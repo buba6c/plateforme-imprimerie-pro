@@ -2,20 +2,37 @@ const { Pool } = require('pg');
 require('dotenv').config();
 
 // Configuration de la base de données PostgreSQL
-const dbConfig = {
-  user: process.env.DB_USER || 'imprimerie_user',
-  password: process.env.DB_PASSWORD || 'imprimerie_password',
-  host: process.env.DB_HOST || 'localhost',
-  port: process.env.DB_PORT || 5432,
-  database: process.env.DB_NAME || 'imprimerie_db',
-  // Configuration pour la production
-  ssl: false,
-  // Configuration du pool de connexions
-  max: 20, // nombre maximum de clients dans le pool
-  connectionTimeoutMillis: 5000, // temps d'attente pour obtenir une connexion
-  idleTimeoutMillis: 30000, // temps avant qu'une connexion inactive soit fermée
-  allowExitOnIdle: true,
-};
+let dbConfig;
+
+if (process.env.DATABASE_URL) {
+  // Configuration pour Render/Production avec DATABASE_URL
+  dbConfig = {
+    connectionString: process.env.DATABASE_URL,
+    ssl: {
+      rejectUnauthorized: false
+    },
+    // Configuration du pool de connexions
+    max: 20,
+    connectionTimeoutMillis: 5000,
+    idleTimeoutMillis: 30000,
+    allowExitOnIdle: true,
+  };
+} else {
+  // Configuration locale/développement
+  dbConfig = {
+    user: process.env.DB_USER || 'imprimerie_user',
+    password: process.env.DB_PASSWORD || 'imprimerie_password',
+    host: process.env.DB_HOST || 'localhost',
+    port: process.env.DB_PORT || 5432,
+    database: process.env.DB_NAME || 'imprimerie_db',
+    ssl: false,
+    // Configuration du pool de connexions
+    max: 20,
+    connectionTimeoutMillis: 5000,
+    idleTimeoutMillis: 30000,
+    allowExitOnIdle: true,
+  };
+}
 
 // Créer le pool de connexions
 const pool = new Pool(dbConfig);

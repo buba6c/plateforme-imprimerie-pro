@@ -334,11 +334,21 @@ app.use('*', (req, res) => {
 // ================================
 // DÉMARRAGE DU SERVEUR
 // ================================
-server.listen(PORT, () => {
+server.listen(PORT, async () => {
   console.log(`🚀 Serveur démarré sur le port ${PORT}`);
   console.log(`📖 Documentation API: http://localhost:${PORT}/api-docs`);
   console.log(`❤️ Health check: http://localhost:${PORT}/api/health`);
   console.log(`🌍 Environnement: ${process.env.NODE_ENV || 'development'}`);
+  
+  // Auto-initialisation de la base en production
+  if (process.env.NODE_ENV === 'production' && process.env.DATABASE_URL) {
+    try {
+      const { autoInitDatabase } = require('./scripts/auto-init-db');
+      await autoInitDatabase();
+    } catch (error) {
+      console.warn('⚠️ Auto-init DB ignoré:', error.message);
+    }
+  }
 });
 
 // Gestion gracieuse de l'arrêt

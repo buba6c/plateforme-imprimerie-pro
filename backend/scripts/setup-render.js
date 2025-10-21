@@ -35,14 +35,10 @@ requiredDirs.forEach(dir => {
 
 // Vérifier la configuration de base de données
 if (process.env.NODE_ENV === 'production') {
-  const requiredEnvVars = [
-    'DB_HOST',
-    'DB_PORT', 
-    'DB_NAME',
-    'DB_USER',
-    'DB_PASSWORD',
-    'JWT_SECRET'
-  ];
+  // Variables d'environnement requises
+  const requiredEnvVars = process.env.DATABASE_URL ? 
+    ['DATABASE_URL', 'JWT_SECRET'] : 
+    ['DB_HOST', 'DB_PORT', 'DB_NAME', 'DB_USER', 'DB_PASSWORD', 'JWT_SECRET'];
   
   const missingVars = requiredEnvVars.filter(varName => !process.env[varName]);
   
@@ -50,6 +46,9 @@ if (process.env.NODE_ENV === 'production') {
     console.warn('⚠️  Variables d\'environnement manquantes:', missingVars.join(', '));
   } else {
     console.log('✅ Variables d\'environnement configurées');
+    if (process.env.DATABASE_URL) {
+      console.log('✅ Configuration PostgreSQL via DATABASE_URL');
+    }
   }
 }
 
