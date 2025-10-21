@@ -29,6 +29,14 @@ async function autoFixDatabaseSchema() {
         CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
         CREATE EXTENSION IF NOT EXISTS "pgcrypto";
         
+        -- Créer la séquence pour les numéros de commande
+        DO $$
+        BEGIN
+          IF NOT EXISTS (SELECT 1 FROM pg_class WHERE relname = 'numero_commande_seq') THEN
+            CREATE SEQUENCE numero_commande_seq START 1;
+          END IF;
+        END$$;
+        
         DO $$
         BEGIN
           -- Colonnes table dossiers (analyse complète du code)
@@ -126,6 +134,38 @@ async function autoFixDatabaseSchema() {
         UPDATE dossiers SET numero_commande = numero WHERE numero_commande IS NULL AND numero IS NOT NULL;
         UPDATE dossiers SET created_by = preparateur_id WHERE created_by IS NULL AND preparateur_id IS NOT NULL;
         UPDATE dossiers SET quantite = 1 WHERE quantite IS NULL;
+        
+        -- Créer fonction log_dossier_activity
+        CREATE OR REPLACE FUNCTION log_dossier_activity(
+          p_folder_id UUID,
+          p_user_id INTEGER,
+          p_action VARCHAR(100),
+          p_details JSONB DEFAULT '{}'::JSONB
+        ) RETURNS VOID AS $func$
+        BEGIN
+          INSERT INTO activity_logs (folder_id, user_id, action, details)
+          VALUES (p_folder_id, p_user_id, p_action, p_details);
+        END;
+        $func$ LANGUAGE plpgsql;
+        
+        -- Créer fonction add_status_history
+        CREATE OR REPLACE FUNCTION add_status_history()
+        RETURNS TRIGGER AS $func$
+        BEGIN
+            IF OLD.statut IS DISTINCT FROM NEW.statut THEN
+                INSERT INTO dossier_status_history (dossier_id, old_status, new_status, changed_at, folder_id)
+                VALUES (NEW.id, OLD.statut, NEW.statut, CURRENT_TIMESTAMP, NEW.folder_id);
+            END IF;
+            RETURN NEW;
+        END;
+        $func$ LANGUAGE plpgsql;
+        
+        -- Créer le trigger pour l'historique automatique
+        DROP TRIGGER IF EXISTS trigger_dossier_status_history ON dossiers;
+        CREATE TRIGGER trigger_dossier_status_history
+            AFTER UPDATE ON dossiers
+            FOR EACH ROW
+            EXECUTE FUNCTION add_status_history();
       `;
       
       await client.query(fixSQL);
