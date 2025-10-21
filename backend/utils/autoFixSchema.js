@@ -5,17 +5,13 @@ const { Pool } = require('pg');
 
 async function autoFixDatabaseSchema() {
   try {
-    if (process.env.NODE_ENV !== 'production') {
-      console.log('⏭️  Schema fix skipped - not in production');
-      return true;
-    }
-
     if (!process.env.DATABASE_URL) {
       console.log('⏭️  Schema fix skipped - no DATABASE_URL');
       return true;
     }
 
     console.log('🔧 Auto-fix: Vérification du schéma PostgreSQL...');
+    console.log('🌍 Environnement:', process.env.NODE_ENV || 'unknown');
     
     const pool = new Pool({
       connectionString: process.env.DATABASE_URL,

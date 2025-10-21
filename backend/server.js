@@ -358,15 +358,18 @@ server.listen(PORT, async () => {
   console.log(`🌍 Environnement: ${process.env.NODE_ENV || 'development'}`);
   
   // Auto-initialisation de la base en production
-  if (process.env.NODE_ENV === 'production' && process.env.DATABASE_URL) {
+  if (process.env.DATABASE_URL) {
     try {
+      console.log('🔧 Lancement auto-fix du schéma...');
       // 1. Correction automatique du schéma manquant
       const autoFixSchema = require('./utils/autoFixSchema');
       await autoFixSchema();
       
       // 2. Auto-initialisation de la base
-      const { autoInitDatabase } = require('./scripts/auto-init-db');
-      await autoInitDatabase();
+      if (process.env.NODE_ENV === 'production') {
+        const { autoInitDatabase } = require('./scripts/auto-init-db');
+        await autoInitDatabase();
+      }
     } catch (error) {
       console.warn('⚠️ Auto-init DB ignoré:', error.message);
     }
