@@ -32,7 +32,9 @@ class FilesSyncService {
    */
   setupFileEventListeners() {
     if (typeof window !== 'undefined' && window.io) {
-      const socket = window.io();
+      // Utiliser l'URL du backend, pas du frontend
+      const wsUrl = process.env.REACT_APP_SOCKET_URL || process.env.REACT_APP_API_URL?.replace('/api', '') || window.location.origin;
+      const socket = window.io(wsUrl);
       
       socket.on('files_uploaded', (data) => {
         console.log('📁 Fichiers uploadés:', data);

@@ -74,6 +74,9 @@ async function autoFixDatabaseSchema() {
           IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'dossiers' AND column_name = 'revision_comment') THEN
             ALTER TABLE dossiers ADD COLUMN revision_comment TEXT;
           END IF;
+          IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'dossiers' AND column_name = 'date_livraison_reelle') THEN
+            ALTER TABLE dossiers ADD COLUMN date_livraison_reelle DATE;
+          END IF;
         END$$;
         
         DO $$
