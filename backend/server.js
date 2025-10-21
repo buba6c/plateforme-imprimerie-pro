@@ -351,30 +351,39 @@ app.use('*', (req, res) => {
 // ================================
 // DÉMARRAGE DU SERVEUR
 // ================================
-server.listen(PORT, async () => {
-  console.log(`🚀 Serveur démarré sur le port ${PORT}`);
-  console.log(`📖 Documentation API: http://localhost:${PORT}/api-docs`);
-  console.log(`❤️ Health check: http://localhost:${PORT}/api/health`);
-  console.log(`🌍 Environnement: ${process.env.NODE_ENV || 'development'}`);
-  
-  // Auto-initialisation de la base en production
+
+// Auto-fix du schéma AVANT démarrage (CRITIQUE)
+(async () => {
   if (process.env.DATABASE_URL) {
     try {
-      console.log('🔧 Lancement auto-fix du schéma...');
-      // 1. Correction automatique du schéma manquant
+      console.log('🔧 [STARTUP] Lancement auto-fix du schéma...');
       const autoFixSchema = require('./utils/autoFixSchema');
-      await autoFixSchema();
+      const fixResult = await autoFixSchema();
+      console.log(`✅ [STARTUP] Auto-fix terminé: ${fixResult ? 'SUCCESS' : 'SKIPPED'}`);
       
-      // 2. Auto-initialisation de la base
+      // Auto-initialisation de la base en production
       if (process.env.NODE_ENV === 'production') {
-        const { autoInitDatabase } = require('./scripts/auto-init-db');
-        await autoInitDatabase();
+        try {
+          const { autoInitDatabase } = require('./scripts/auto-init-db');
+          await autoInitDatabase();
+        } catch (dbError) {
+          console.warn('⚠️ Auto-init DB ignoré:', dbError.message);
+        }
       }
     } catch (error) {
-      console.warn('⚠️ Auto-init DB ignoré:', error.message);
+      console.error('❌ [STARTUP] Erreur auto-fix CRITIQUE:', error.message);
+      console.error('Stack:', error.stack);
     }
   }
-});
+  
+  // Démarrage du serveur APRÈS auto-fix
+  server.listen(PORT, () => {
+    console.log(`🚀 Serveur démarré sur le port ${PORT}`);
+    console.log(`📖 Documentation API: http://localhost:${PORT}/api-docs`);
+    console.log(`❤️ Health check: http://localhost:${PORT}/api/health`);
+    console.log(`🌍 Environnement: ${process.env.NODE_ENV || 'development'}`);
+  });
+})();
 
 // Gestion gracieuse de l'arrêt
 process.on('SIGTERM', () => {

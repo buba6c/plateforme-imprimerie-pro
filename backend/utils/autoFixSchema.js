@@ -4,6 +4,8 @@
 const { Pool } = require('pg');
 
 async function autoFixDatabaseSchema() {
+  console.log('🔧 [autoFixSchema] Fonction appelée');
+  
   try {
     if (!process.env.DATABASE_URL) {
       console.log('⏭️  Schema fix skipped - no DATABASE_URL');
@@ -12,6 +14,7 @@ async function autoFixDatabaseSchema() {
 
     console.log('🔧 Auto-fix COMPLET: Vérification schéma PostgreSQL...');
     console.log('🌍 Environnement:', process.env.NODE_ENV || 'unknown');
+    console.log('🔗 DATABASE_URL présent:', !!process.env.DATABASE_URL);
     
     const pool = new Pool({
       connectionString: process.env.DATABASE_URL,
@@ -21,6 +24,7 @@ async function autoFixDatabaseSchema() {
 
     let client;
     try {
+      console.log('🔗 Tentative connexion PostgreSQL...');
       client = await pool.connect();
       console.log('✅ Connexion DB établie pour auto-fix');
       
@@ -168,16 +172,30 @@ async function autoFixDatabaseSchema() {
             EXECUTE FUNCTION add_status_history();
       `;
       
+      console.log('📝 Exécution du script SQL complet...');
       await client.query(fixSQL);
       console.log('✅ Auto-fix: Schéma COMPLET mis à jour');
       
       // Vérification
+      console.log('🔍 Vérification des colonnes critiques...');
       const check = await client.query(`
         SELECT column_name FROM information_schema.columns 
         WHERE table_name = 'dossiers' AND column_name IN ('quantite', 'folder_id', 'valide_preparateur')
         ORDER BY column_name
       `);
       console.log(`✅ Colonnes critiques vérifiées: ${check.rows.map(r => r.column_name).join(', ')}`);
+      
+      // Vérifier séquence
+      const seqCheck = await client.query(`
+        SELECT EXISTS (SELECT 1 FROM pg_class WHERE relname = 'numero_commande_seq') as exists
+      `);
+      console.log(`✅ Séquence numero_commande_seq: ${seqCheck.rows[0].exists ? 'EXISTS' : 'MISSING'}`);
+      
+      // Vérifier fonction
+      const funcCheck = await client.query(`
+        SELECT EXISTS (SELECT 1 FROM pg_proc WHERE proname = 'log_dossier_activity') as exists
+      `);
+      console.log(`✅ Fonction log_dossier_activity: ${funcCheck.rows[0].exists ? 'EXISTS' : 'MISSING'}`);
       
       return true;
       
