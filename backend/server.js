@@ -74,8 +74,26 @@ app.use('/api/', apiLimiter);
 app.use('/api/auth/login', loginLimiter);
 app.use('/api/devis/estimate-realtime', estimateLimiter);
 
+// Configuration CORS pour production et développement
+const allowedOrigins = [
+  'http://localhost:3000',
+  'http://localhost:3001', 
+  'https://imprimerie-frontend.onrender.com',
+  process.env.FRONTEND_URL
+].filter(Boolean);
+
 app.use(cors({
-  origin: process.env.FRONTEND_URL || 'http://localhost:3001',
+  origin: function (origin, callback) {
+    // Autoriser les requêtes sans origin (mobile apps, postman, etc.)
+    if (!origin) return callback(null, true);
+    
+    if (allowedOrigins.includes(origin) || origin.includes('.onrender.com')) {
+      return callback(null, true);
+    }
+    
+    console.log('🚫 CORS bloqué pour:', origin);
+    callback(new Error('Non autorisé par CORS'));
+  },
   credentials: true,
 }));
 
