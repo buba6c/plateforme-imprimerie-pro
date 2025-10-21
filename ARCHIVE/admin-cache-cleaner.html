@@ -1,0 +1,233 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>🔧 Admin - Nettoyage Cache Forcé</title>
+    <style>
+        body { 
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            max-width: 700px; 
+            margin: 50px auto; 
+            padding: 30px; 
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            min-height: 100vh;
+        }
+        .container { 
+            background: rgba(255, 255, 255, 0.95); 
+            color: #333;
+            padding: 40px; 
+            border-radius: 15px; 
+            box-shadow: 0 10px 30px rgba(0,0,0,0.3);
+        }
+        .btn { 
+            background: #007bff; 
+            color: white; 
+            padding: 15px 30px; 
+            border: none; 
+            border-radius: 8px; 
+            cursor: pointer; 
+            font-size: 16px;
+            margin: 10px 10px 10px 0;
+            transition: all 0.3s;
+        }
+        .btn:hover { background: #0056b3; transform: translateY(-2px); }
+        .btn.success { background: #28a745; }
+        .btn.danger { background: #dc3545; }
+        .alert { 
+            padding: 15px; 
+            border-radius: 8px; 
+            margin: 20px 0; 
+        }
+        .alert-info { background: #d1ecf1; border-left: 4px solid #17a2b8; }
+        .alert-success { background: #d4edda; border-left: 4px solid #28a745; }
+        .alert-warning { background: #fff3cd; border-left: 4px solid #ffc107; color: #856404; }
+        .progress {
+            background: #e9ecef;
+            border-radius: 10px;
+            height: 20px;
+            overflow: hidden;
+            margin: 15px 0;
+        }
+        .progress-bar {
+            background: #28a745;
+            height: 100%;
+            width: 0%;
+            transition: width 0.5s;
+        }
+        code { 
+            background: #f8f9fa; 
+            padding: 3px 6px; 
+            border-radius: 4px; 
+            font-family: 'Monaco', monospace;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🔧 Admin - Nettoyage Cache Forcé</h1>
+        
+        <div class="alert alert-warning">
+            <strong>⚠️ Problème détecté :</strong><br>
+            L'interface admin affiche <strong>11 dossiers</strong> alors que la base de données est vide (0 dossiers confirmé).
+        </div>
+
+        <div id="status">
+            <div class="alert alert-info">
+                📊 <strong>Diagnostic :</strong><br>
+                • Backend API : ✅ Fonctionne (0 dossiers)<br>
+                • Base de données : ✅ Vide (confirmé)<br>
+                • Interface : ❌ Cache localStorage/sessionStorage
+            </div>
+        </div>
+
+        <div>
+            <button class="btn" onclick="analyzeCache()">🔍 Analyser le Cache</button>
+            <button class="btn danger" onclick="clearCacheAndReload()">🧹 Nettoyer & Recharger</button>
+            <button class="btn success" onclick="goToCleanAdmin()">🚀 Interface Admin Propre</button>
+        </div>
+        
+        <div id="result"></div>
+        
+        <div id="progress-container" style="display: none;">
+            <div class="progress">
+                <div class="progress-bar" id="progress-bar"></div>
+            </div>
+            <p id="progress-text">Nettoyage en cours...</p>
+        </div>
+
+        <h3>🛠️ Instructions manuelles (si boutons ne marchent pas) :</h3>
+        <div class="alert alert-info">
+            <strong>1. Ouvrir les outils développeur :</strong> <code>F12</code><br>
+            <strong>2. Aller dans Console</strong><br>
+            <strong>3. Copier-coller ce code :</strong><br><br>
+            <code>
+localStorage.clear(); sessionStorage.clear();<br>
+console.log("✅ Cache vidé");<br>
+window.location.href = "http://localhost:3000";<br>
+            </code>
+        </div>
+
+        <h3>📱 Alternative : Navigation privée</h3>
+        <p>Ouvrir une nouvelle fenêtre privée et aller sur <code>http://localhost:3000</code></p>
+    </div>
+
+    <script>
+        function analyzeCache() {
+            const resultDiv = document.getElementById('result');
+            
+            const localKeys = Object.keys(localStorage);
+            const sessionKeys = Object.keys(sessionStorage);
+            
+            const suspiciousKeys = [...localKeys, ...sessionKeys].filter(k => 
+                k.includes('mock') || 
+                k.includes('dossier') || 
+                k.includes('auth') ||
+                k.includes('user')
+            );
+            
+            let html = '<div class="alert alert-info"><h4>🔍 Analyse du cache :</h4>';
+            html += `<strong>LocalStorage :</strong> ${localKeys.length} clés<br>`;
+            html += `<strong>SessionStorage :</strong> ${sessionKeys.length} clés<br>`;
+            html += `<strong>Clés suspectes :</strong> ${suspiciousKeys.length}<br><br>`;
+            
+            if (suspiciousKeys.length > 0) {
+                html += '<strong>Clés à supprimer :</strong><br>';
+                suspiciousKeys.forEach(key => {
+                    const value = localStorage.getItem(key) || sessionStorage.getItem(key);
+                    const preview = value ? value.substring(0, 50) + '...' : 'null';
+                    html += `• <code>${key}</code> : ${preview}<br>`;
+                });
+            }
+            
+            html += '</div>';
+            resultDiv.innerHTML = html;
+        }
+
+        function clearCacheAndReload() {
+            const progressContainer = document.getElementById('progress-container');
+            const progressBar = document.getElementById('progress-bar');
+            const progressText = document.getElementById('progress-text');
+            const resultDiv = document.getElementById('result');
+            
+            progressContainer.style.display = 'block';
+            
+            try {
+                // Étape 1
+                progressBar.style.width = '20%';
+                progressText.textContent = 'Sauvegarde des clés actuelles...';
+                
+                const beforeClean = {
+                    local: Object.keys(localStorage),
+                    session: Object.keys(sessionStorage)
+                };
+                
+                setTimeout(() => {
+                    // Étape 2
+                    progressBar.style.width = '40%';
+                    progressText.textContent = 'Suppression localStorage...';
+                    
+                    localStorage.clear();
+                    
+                    setTimeout(() => {
+                        // Étape 3
+                        progressBar.style.width = '60%';
+                        progressText.textContent = 'Suppression sessionStorage...';
+                        
+                        sessionStorage.clear();
+                        
+                        setTimeout(() => {
+                            // Étape 4
+                            progressBar.style.width = '80%';
+                            progressText.textContent = 'Suppression cookies...';
+                            
+                            // Tentative de suppression des cookies
+                            document.cookie.split(";").forEach(function(c) { 
+                                document.cookie = c.replace(/^ +/, "").replace(/=.*/, "=;expires=" + new Date().toUTCString() + ";path=/"); 
+                            });
+                            
+                            setTimeout(() => {
+                                // Étape 5
+                                progressBar.style.width = '100%';
+                                progressText.textContent = 'Rechargement...';
+                                
+                                resultDiv.innerHTML = `
+                                    <div class="alert alert-success">
+                                        ✅ <strong>Nettoyage terminé !</strong><br><br>
+                                        📊 LocalStorage : ${beforeClean.local.length} clés supprimées<br>
+                                        📊 SessionStorage : ${beforeClean.session.length} clés supprimées<br><br>
+                                        <strong>Redirection vers l'interface propre dans 2 secondes...</strong>
+                                    </div>
+                                `;
+                                
+                                setTimeout(() => {
+                                    window.location.href = 'http://localhost:3000';
+                                }, 2000);
+                                
+                            }, 500);
+                        }, 500);
+                    }, 500);
+                }, 500);
+                
+            } catch (error) {
+                resultDiv.innerHTML = `
+                    <div class="alert alert-warning">
+                        ❌ <strong>Erreur :</strong> ${error.message}<br><br>
+                        Utilisez plutôt la méthode manuelle ci-dessous.
+                    </div>
+                `;
+                progressContainer.style.display = 'none';
+            }
+        }
+
+        function goToCleanAdmin() {
+            // Forcer ouverture dans nouvelle fenêtre pour éviter le cache
+            window.open('http://localhost:3000', '_blank');
+        }
+
+        // Analyse automatique au chargement
+        window.onload = function() {
+            analyzeCache();
+        };
+    </script>
+</body>
+</html>

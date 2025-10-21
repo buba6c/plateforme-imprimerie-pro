@@ -1,0 +1,61 @@
+# Node.js
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-lock.yaml
+package-lock.json
+
+# Builds & coverage
+build/
+dist/
+coverage/
+
+# Environnements
+.env
+.env.*.local
+backend/.env
+frontend/.env
+
+# Logs & uploads (local)
+logs/
+**/logs/
+uploads/
+backups/
+temp/
+
+# PM2 (local)
+.pm2/
+
+# Docker (local development only)
+docker-compose.yml
+docker-compose.prod.yml
+nginx/
+
+# macOS
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Archives et fichiers temporaires
+*.tar.gz
+*.zip
+*.pdf
+*.log
+
+# Fichiers de test (garder seulement pour dev)
+test-data/
+**/test-uploads/
+
+# Spécifique au projet
+phot*.pdf
+database.db

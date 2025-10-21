@@ -1,0 +1,196 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Test Frontend Dossiers</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            max-width: 900px;
+            margin: 0 auto;
+            padding: 20px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            min-height: 100vh;
+        }
+        .container {
+            background: rgba(255,255,255,0.1);
+            backdrop-filter: blur(10px);
+            border-radius: 15px;
+            padding: 30px;
+            margin-bottom: 20px;
+        }
+        .btn {
+            background: linear-gradient(45deg, #4CAF50, #45a049);
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            margin: 8px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 16px;
+            transition: all 0.3s ease;
+        }
+        .btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+        }
+        .log {
+            background: rgba(0,0,0,0.3);
+            padding: 15px;
+            border-radius: 8px;
+            margin-top: 15px;
+            font-family: 'Courier New', monospace;
+            white-space: pre-wrap;
+            max-height: 400px;
+            overflow-y: auto;
+        }
+        .success { color: #4CAF50; }
+        .error { color: #f44336; }
+        .warning { color: #ff9800; }
+        .info { color: #2196F3; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🔍 Test Direct Frontend Dossiers</h1>
+        <p>Test direct de l'API dossiers depuis le frontend</p>
+        
+        <div>
+            <button class="btn" onclick="testLogin()">1️⃣ Test Login</button>
+            <button class="btn" onclick="testDossiers()">2️⃣ Test Dossiers</button>
+            <button class="btn" onclick="testComplete()">3️⃣ Test Complet</button>
+            <button class="btn" onclick="clearLog()">🗑️ Nettoyer</button>
+        </div>
+        
+        <div id="log" class="log"></div>
+    </div>
+
+    <script>
+        const log = document.getElementById('log');
+        
+        function addLog(message, type = 'info') {
+            const timestamp = new Date().toLocaleTimeString();
+            const colorClass = type;
+            log.innerHTML += `<span class="${colorClass}">[${timestamp}] ${message}</span>\n`;
+            log.scrollTop = log.scrollBottom;
+        }
+
+        function clearLog() {
+            log.innerHTML = '';
+        }
+
+        async function testLogin() {
+            addLog('🔐 Test de connexion...', 'info');
+            
+            try {
+                const response = await fetch('/api/auth/login', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        email: 'preparateur@evocomprint.com',
+                        password: 'admin123'
+                    })
+                });
+                
+                if (!response.ok) {
+                    throw new Error(`Erreur HTTP ${response.status}: ${response.statusText}`);
+                }
+                
+                const data = await response.json();
+                addLog('✅ Connexion réussie', 'success');
+                addLog(`   Token: ${data.token.substring(0, 30)}...`, 'info');
+                addLog(`   Utilisateur: ${data.user.nom} (${data.user.role})`, 'info');
+                
+                // Sauvegarder le token
+                localStorage.setItem('auth_token', data.token);
+                localStorage.setItem('user_data', JSON.stringify(data.user));
+                addLog('💾 Token sauvegardé dans localStorage', 'success');
+                
+                return data.token;
+            } catch (error) {
+                addLog(`❌ Erreur de connexion: ${error.message}`, 'error');
+                throw error;
+            }
+        }
+
+        async function testDossiers(token) {
+            addLog('📋 Test récupération dossiers...', 'info');
+            
+            if (!token) {
+                token = localStorage.getItem('auth_token');
+                if (!token) {
+                    addLog('❌ Aucun token disponible, lancez d\'abord le test de login', 'error');
+                    return;
+                }
+            }
+            
+            try {
+                const response = await fetch('/api/dossiers', {
+                    method: 'GET',
+                    headers: { 
+                        'Authorization': `Bearer ${token}`,
+                        'Content-Type': 'application/json'
+                    }
+                });
+                
+                addLog(`📡 Statut réponse: ${response.status} ${response.statusText}`, 'info');
+                
+                if (!response.ok) {
+                    const errorText = await response.text();
+                    throw new Error(`Erreur HTTP ${response.status}: ${errorText}`);
+                }
+                
+                const data = await response.json();
+                addLog('✅ Dossiers récupérés avec succès', 'success');
+                addLog(`📊 Nombre de dossiers: ${data.dossiers?.length || 0}`, 'info');
+                
+                if (data.dossiers && data.dossiers.length > 0) {
+                    addLog('📝 Premiers dossiers:', 'info');
+                    data.dossiers.slice(0, 3).forEach((dossier, i) => {
+                        addLog(`   ${i+1}. ${dossier.client} - ${dossier.statut} (${dossier.numero || 'N/A'})`, 'info');
+                    });
+                }
+                
+                return data;
+            } catch (error) {
+                addLog(`❌ Erreur dossiers: ${error.message}`, 'error');
+                throw error;
+            }
+        }
+
+        async function testComplete() {
+            addLog('🚀 Test complet en cours...', 'info');
+            addLog('=' .repeat(50), 'info');
+            
+            try {
+                // 1. Test login
+                const token = await testLogin();
+                
+                // Attendre un peu
+                await new Promise(resolve => setTimeout(resolve, 500));
+                
+                // 2. Test dossiers
+                const dossiersData = await testDossiers(token);
+                
+                addLog('=' .repeat(50), 'info');
+                addLog('🎉 TOUS LES TESTS RÉUSSIS !', 'success');
+                addLog('💡 Le frontend peut récupérer les dossiers correctement', 'success');
+                addLog('🌐 Vérifiez maintenant sur http://localhost:3001', 'info');
+                
+            } catch (error) {
+                addLog('=' .repeat(50), 'error');
+                addLog('💥 ÉCHEC DU TEST', 'error');
+                addLog(`Erreur: ${error.message}`, 'error');
+            }
+        }
+
+        // Auto-démarrage
+        window.onload = () => {
+            addLog('🚀 Test direct chargé', 'success');
+            addLog('💡 Cliquez sur "Test Complet" pour vérifier l\'API', 'info');
+        };
+    </script>
+</body>
+</html>

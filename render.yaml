@@ -1,0 +1,156 @@
+# Configuration Render pour la Plateforme d'Imprimerie
+# Déploiement automatique sur Render.com
+
+databases:
+  - name: imprimerie-postgres
+    databaseName: imprimerie_db
+    user: imprimerie_user
+    plan: starter  # starter (gratuit), standard ou pro
+    region: oregon # ohio, oregon, singapore, frankfurt
+    version: "15"
+    
+  - name: imprimerie-redis
+    plan: starter  # starter (gratuit), standard ou pro
+    region: oregon
+
+services:
+  # Backend Node.js API
+  - type: web
+    name: imprimerie-backend
+    runtime: node
+    plan: starter  # starter (gratuit), standard ou pro
+    region: oregon
+    buildCommand: npm ci
+    startCommand: npm start
+    healthCheckPath: /api/health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 10000
+      - key: DB_HOST
+        fromDatabase:
+          name: imprimerie-postgres
+          property: host
+      - key: DB_PORT
+        fromDatabase:
+          name: imprimerie-postgres
+          property: port
+      - key: DB_NAME
+        fromDatabase:
+          name: imprimerie-postgres
+          property: database
+      - key: DB_USER
+        fromDatabase:
+          name: imprimerie-postgres
+          property: user
+      - key: DB_PASSWORD
+        fromDatabase:
+          name: imprimerie-postgres
+          property: password
+      - key: REDIS_HOST
+        fromDatabase:
+          name: imprimerie-redis
+          property: host
+      - key: REDIS_PORT
+        fromDatabase:
+          name: imprimerie-redis
+          property: port
+      - key: REDIS_PASSWORD
+        fromDatabase:
+          name: imprimerie-redis
+          property: password
+      - key: JWT_SECRET
+        generateValue: true
+      - key: JWT_EXPIRES_IN
+        value: 24h
+      - key: FRONTEND_URL
+        value: https://imprimerie-frontend.onrender.com
+      - key: BACKEND_URL
+        value: https://imprimerie-backend.onrender.com
+      - key: UPLOAD_MAX_SIZE
+        value: 100mb
+      - key: REQUEST_TIMEOUT
+        value: 300s
+      - key: TZ
+        value: Europe/Paris
+      - key: LANG
+        value: C.UTF-8
+      - key: LC_ALL
+        value: C.UTF-8
+    rootDir: ./backend
+    
+  # Frontend React (site statique)
+  - type: static_site
+    name: imprimerie-frontend
+    buildCommand: npm ci && npm run build
+    staticPublishPath: ./build
+    pullRequestPreviewsEnabled: false
+    routes:
+      - type: rewrite
+        source: /*
+        destination: /index.html
+    headers:
+      - path: /*
+        name: X-Robots-Tag
+        value: noindex
+      - path: /static/*
+        name: Cache-Control
+        value: public, max-age=31536000, immutable
+    envVars:
+      - key: REACT_APP_API_URL
+        value: https://imprimerie-backend.onrender.com/api
+      - key: REACT_APP_SOCKET_URL
+        value: https://imprimerie-backend.onrender.com
+      - key: REACT_APP_ENVIRONMENT
+        value: production
+      - key: GENERATE_SOURCEMAP
+        value: false
+      - key: CI
+        value: false
+    rootDir: ./frontend
+    
+  # Worker pour les tâches background (optionnel)
+  - type: worker
+    name: imprimerie-worker
+    runtime: node
+    plan: starter
+    region: oregon
+    buildCommand: npm ci
+    startCommand: node workers/index.js
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: DB_HOST
+        fromDatabase:
+          name: imprimerie-postgres
+          property: host
+      - key: DB_PORT
+        fromDatabase:
+          name: imprimerie-postgres
+          property: port
+      - key: DB_NAME
+        fromDatabase:
+          name: imprimerie-postgres
+          property: database
+      - key: DB_USER
+        fromDatabase:
+          name: imprimerie-postgres
+          property: user
+      - key: DB_PASSWORD
+        fromDatabase:
+          name: imprimerie-postgres
+          property: password
+      - key: REDIS_HOST
+        fromDatabase:
+          name: imprimerie-redis
+          property: host
+      - key: REDIS_PORT
+        fromDatabase:
+          name: imprimerie-redis
+          property: port
+      - key: REDIS_PASSWORD
+        fromDatabase:
+          name: imprimerie-redis
+          property: password
+    rootDir: ./backend

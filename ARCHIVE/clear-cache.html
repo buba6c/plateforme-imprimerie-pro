@@ -1,0 +1,130 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>🧹 Nettoyage Cache Plateforme</title>
+    <style>
+        body { 
+            font-family: Arial, sans-serif; 
+            max-width: 600px; 
+            margin: 50px auto; 
+            padding: 20px; 
+            background: #f5f5f5;
+        }
+        .container { 
+            background: white; 
+            padding: 30px; 
+            border-radius: 10px; 
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        button { 
+            background: #007bff; 
+            color: white; 
+            padding: 15px 30px; 
+            border: none; 
+            border-radius: 5px; 
+            cursor: pointer; 
+            font-size: 16px;
+            margin: 10px 5px;
+        }
+        button:hover { background: #0056b3; }
+        .success { color: #28a745; font-weight: bold; }
+        .warning { color: #dc3545; font-weight: bold; }
+        .info { color: #17a2b8; }
+        pre { background: #f8f9fa; padding: 10px; border-radius: 5px; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🧹 Nettoyage Cache Plateforme Imprimerie</h1>
+        
+        <div id="status">
+            <p class="info">Cliquez sur le bouton pour vider complètement le cache du navigateur.</p>
+        </div>
+
+        <button onclick="clearAllCache()">🗑️ Vider le Cache Complet</button>
+        <button onclick="goToPlatform()">🚀 Aller à la Plateforme</button>
+        
+        <div id="result" style="margin-top: 20px;"></div>
+
+        <h3>📋 Détails techniques :</h3>
+        <ul>
+            <li>✅ Backend configuré : API réelle (localhost:5001)</li>
+            <li>✅ Base de données : Complètement vide</li>
+            <li>✅ shouldUseMockApi() : Désactivé (false)</li>
+            <li>✅ Frontend : Redémarré et configuré</li>
+        </ul>
+
+        <h3>🎯 Après nettoyage :</h3>
+        <ul>
+            <li>L'interface ne devrait plus afficher de dossiers</li>
+            <li>Message "Aucun dossier trouvé" attendu</li>
+            <li>Connexion avec : admin@imprimerie.local / admin123</li>
+        </ul>
+    </div>
+
+    <script>
+        function clearAllCache() {
+            const resultDiv = document.getElementById('result');
+            
+            try {
+                // Vider localStorage
+                const localStorageKeys = Object.keys(localStorage);
+                localStorage.clear();
+                
+                // Vider sessionStorage  
+                const sessionStorageKeys = Object.keys(sessionStorage);
+                sessionStorage.clear();
+                
+                // Vider les cookies (tentative)
+                document.cookie.split(";").forEach(function(c) { 
+                    document.cookie = c.replace(/^ +/, "").replace(/=.*/, "=;expires=" + new Date().toUTCString() + ";path=/"); 
+                });
+
+                resultDiv.innerHTML = `
+                    <div class="success">
+                        ✅ Cache vidé avec succès !<br><br>
+                        🗑️ LocalStorage : ${localStorageKeys.length} clés supprimées<br>
+                        🗑️ SessionStorage : ${sessionStorageKeys.length} clés supprimées<br>
+                        🍪 Cookies : Tentative de suppression<br><br>
+                        <strong>Rechargement automatique dans 3 secondes...</strong>
+                    </div>
+                `;
+                
+                // Recharger après 3 secondes
+                setTimeout(() => {
+                    window.location.reload(true);
+                }, 3000);
+                
+            } catch (error) {
+                resultDiv.innerHTML = `
+                    <div class="warning">
+                        ❌ Erreur : ${error.message}<br><br>
+                        Utilisez plutôt : Ctrl+Shift+R (rechargement forcé)
+                    </div>
+                `;
+            }
+        }
+
+        function goToPlatform() {
+            window.open('http://localhost:3000', '_blank');
+        }
+
+        // Vérifier l'état du cache au chargement
+        window.onload = function() {
+            const localKeys = Object.keys(localStorage);
+            const mockKeys = localKeys.filter(k => k.includes('mock') || k.includes('dossier'));
+            
+            if (mockKeys.length > 0) {
+                document.getElementById('status').innerHTML = `
+                    <p class="warning">⚠️ Cache détecté : ${mockKeys.length} clés liées aux dossiers mockés.</p>
+                    <p>Clés trouvées : <code>${mockKeys.join(', ')}</code></p>
+                `;
+            } else {
+                document.getElementById('status').innerHTML = `
+                    <p class="success">✅ Aucun cache de dossiers détecté.</p>
+                `;
+            }
+        };
+    </script>
+</body>
+</html>

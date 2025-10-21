@@ -1,0 +1,223 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Import des animations personnalisées */
+@import './styles/animations.css';
+
+@layer base {
+  html {
+    @apply scroll-smooth;
+  }
+
+  body {
+    @apply bg-secondary-50 text-secondary-900 dark:bg-secondary-900 dark:text-secondary-100;
+  }
+
+  * {
+    @apply border-secondary-200 dark:border-secondary-700;
+  }
+
+  /* Transition douce lors du changement de thème */
+  @media (prefers-reduced-motion: no-preference) {
+    .theme-transition *,
+    .theme-transition *::before,
+    .theme-transition *::after {
+      transition-property: background-color, color, border-color, fill, stroke;
+      transition-duration: 200ms;
+      transition-timing-function: ease;
+    }
+  }
+}
+
+@layer components {
+  /* Boutons */
+  .btn {
+    @apply inline-flex items-center justify-center px-4 py-2 border border-transparent text-sm font-medium rounded-md focus:outline-none focus:ring-2 focus:ring-offset-2 transition-colors duration-200;
+  }
+
+  .btn-primary {
+    @apply btn bg-primary-600 text-white hover:bg-primary-700 focus:ring-primary-500;
+  }
+
+  .btn-secondary {
+    @apply btn bg-secondary-100 text-secondary-900 hover:bg-secondary-200 focus:ring-secondary-500 dark:bg-secondary-800 dark:text-secondary-100 dark:hover:bg-secondary-700;
+  }
+
+  .btn-success {
+    @apply btn bg-success-600 text-white hover:bg-success-700 focus:ring-success-500;
+  }
+
+  .btn-warning {
+    @apply btn bg-warning-600 text-white hover:bg-warning-700 focus:ring-warning-500;
+  }
+
+  .btn-danger {
+    @apply btn bg-danger-600 text-white hover:bg-danger-700 focus:ring-danger-500;
+  }
+
+  .btn-lg {
+    @apply px-6 py-3 text-base;
+  }
+
+  .btn-sm {
+    @apply px-3 py-1.5 text-xs;
+  }
+
+  /* Cards */
+  .card {
+    @apply bg-white rounded-lg shadow-md border border-secondary-200 dark:bg-secondary-800 dark:border-secondary-700;
+  }
+
+  .card-body {
+    @apply p-6;
+  }
+
+  .card-header {
+    @apply px-6 py-4 border-b border-secondary-200 bg-secondary-50 rounded-t-lg dark:bg-secondary-800 dark:border-secondary-700;
+  }
+
+  .card-footer {
+    @apply px-6 py-4 border-t border-secondary-200 bg-secondary-50 rounded-b-lg dark:bg-secondary-800 dark:border-secondary-700;
+  }
+
+  /* Forms */
+  .form-input {
+    @apply block w-full px-3 py-2 border border-secondary-300 rounded-md shadow-sm placeholder-secondary-400 focus:outline-none focus:ring-primary-500 focus:border-primary-500 sm:text-sm dark:bg-secondary-900 dark:border-secondary-700 dark:placeholder-secondary-500 dark:text-secondary-100;
+  }
+
+  .form-label {
+    @apply block text-sm font-medium text-secondary-700 mb-1 dark:text-secondary-300;
+  }
+
+  .form-error {
+    @apply mt-1 text-sm text-danger-600 dark:text-danger-400;
+  }
+
+  .form-help {
+    @apply mt-1 text-sm text-secondary-500 dark:text-secondary-400;
+  }
+
+  /* Badges */
+  .badge {
+    @apply inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium;
+  }
+
+  .badge-primary {
+    @apply badge bg-primary-100 text-primary-800 dark:bg-primary-700 dark:text-white;
+  }
+
+  .badge-success {
+    @apply badge bg-success-100 text-success-800;
+  }
+
+  .badge-warning {
+    @apply badge bg-warning-100 text-warning-800;
+  }
+
+  .badge-danger {
+    @apply badge bg-danger-100 text-danger-800;
+  }
+
+  .badge-secondary {
+    @apply badge bg-secondary-100 text-secondary-800 dark:bg-secondary-700 dark:text-secondary-100;
+  }
+
+  /* Status badges pour les dossiers */
+  .status-nouveau {
+    @apply badge-primary;
+  }
+
+  .status-en-preparation {
+    @apply badge-warning;
+  }
+
+  .status-pret-impression {
+    @apply badge bg-blue-100 text-blue-800;
+  }
+
+  .status-en-impression {
+    @apply badge bg-purple-100 text-purple-800;
+  }
+
+  .status-imprime {
+    @apply badge-success;
+  }
+
+  .status-pret-livraison {
+    @apply badge bg-indigo-100 text-indigo-800;
+  }
+
+  .status-en-livraison {
+    @apply badge bg-yellow-100 text-yellow-800;
+  }
+
+  .status-livre {
+    @apply badge-success;
+  }
+
+  .status-termine {
+    @apply badge-secondary;
+  }
+
+  /* Custom scrollbar pour les sections avec scroll */
+  .custom-scrollbar::-webkit-scrollbar {
+    width: 8px;
+  }
+
+  .custom-scrollbar::-webkit-scrollbar-track {
+    @apply bg-secondary-100 dark:bg-secondary-800 rounded-full;
+  }
+
+  .custom-scrollbar::-webkit-scrollbar-thumb {
+    @apply bg-primary-400 dark:bg-primary-600 rounded-full hover:bg-primary-500 dark:hover:bg-primary-500;
+  }
+  
+  /* Gradient backgrounds */
+  .bg-gradient-primary {
+    background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
+  }
+  
+  .bg-gradient-secondary {
+    background: linear-gradient(135deg, #64748b 0%, #475569 100%);
+  }
+  
+  .bg-gradient-success {
+    background: linear-gradient(135deg, #22c55e 0%, #16a34a 100%);
+  }
+}
+
+@layer utilities {
+  /* Animation fadeIn pour les champs dynamiques */
+  @keyframes fadeIn {
+    from {
+      opacity: 0;
+      transform: translateY(-8px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+
+  .animate-fadeIn {
+    animation: fadeIn 0.3s ease-out forwards;
+  }
+
+  /* Animation pulse pour les éléments de statut actuel */
+  @keyframes pulse-ring {
+    0% {
+      box-shadow: 0 0 0 0 rgba(147, 51, 234, 0.5);
+    }
+    70% {
+      box-shadow: 0 0 0 10px rgba(147, 51, 234, 0);
+    }
+    100% {
+      box-shadow: 0 0 0 0 rgba(147, 51, 234, 0);
+    }
+  }
+
+  .animate-pulse-ring {
+    animation: pulse-ring 2s cubic-bezier(0.455, 0.03, 0.515, 0.955) infinite;
+  }
+}

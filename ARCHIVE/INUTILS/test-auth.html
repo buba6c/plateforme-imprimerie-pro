@@ -1,0 +1,266 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Test Authentification Frontend</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; background: #f5f5f5; }
+        .container { max-width: 800px; margin: 0 auto; background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
+        .test-section { margin: 20px 0; padding: 15px; border: 1px solid #ddd; border-radius: 5px; }
+        .success { background: #d4edda; border-color: #c3e6cb; color: #155724; }
+        .error { background: #f8d7da; border-color: #f5c6cb; color: #721c24; }
+        .info { background: #d1ecf1; border-color: #bee5eb; color: #0c5460; }
+        button { background: #007bff; color: white; border: none; padding: 10px 20px; border-radius: 4px; cursor: pointer; margin: 5px; }
+        button:hover { background: #0056b3; }
+        button:disabled { background: #6c757d; cursor: not-allowed; }
+        input { width: 300px; padding: 8px; margin: 5px; border: 1px solid #ccc; border-radius: 4px; }
+        pre { background: #f8f9fa; padding: 10px; border-radius: 4px; overflow-x: auto; font-size: 12px; }
+        .status { font-weight: bold; margin: 10px 0; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🔍 Test Authentification & API</h1>
+        <p>Cet outil teste l'authentification et l'accès aux API depuis le frontend.</p>
+        
+        <div class="test-section info">
+            <h3>📊 Configuration</h3>
+            <p>API URL: <code id="apiUrl">Proxy vers localhost:5001</code></p>
+            <p>Frontend URL: <code>http://localhost:3001</code></p>
+        </div>
+
+        <div class="test-section">
+            <h3>🔑 Test d'authentification</h3>
+            <div>
+                <input type="email" id="loginEmail" value="admin@imprimerie.local" placeholder="Email">
+                <input type="password" id="loginPassword" value="admin123" placeholder="Mot de passe">
+                <button onclick="testLogin()">Se connecter</button>
+                <button onclick="clearAuth()">Effacer auth</button>
+            </div>
+            <div class="status" id="authStatus"></div>
+        </div>
+
+        <div class="test-section">
+            <h3>📁 Test récupération dossiers</h3>
+            <button onclick="testDossiers()">Récupérer dossiers</button>
+            <button onclick="testDossierDetails()">Test détails dossier</button>
+            <div class="status" id="dossiersStatus"></div>
+        </div>
+
+        <div class="test-section">
+            <h3>🔧 Debug API</h3>
+            <button onclick="checkStorageTokens()">Vérifier tokens locaux</button>
+            <button onclick="testHealthCheck()">Test health check</button>
+            <button onclick="testAuthEndpoint()">Test endpoint auth</button>
+            <div class="status" id="debugStatus"></div>
+        </div>
+
+        <div class="test-section">
+            <h3>📋 Logs des requêtes</h3>
+            <button onclick="clearLogs()">Effacer logs</button>
+            <pre id="requestLogs"></pre>
+        </div>
+    </div>
+
+    <script>
+        const API_URL = ''; // Utiliser le proxy
+        let authToken = null;
+        
+        // Fonction de logging
+        function logRequest(type, url, method, status, data) {
+            const timestamp = new Date().toLocaleTimeString();
+            const logElement = document.getElementById('requestLogs');
+            const logEntry = `[${timestamp}] ${type} ${method} ${url} - Status: ${status}\n` + 
+                           `Data: ${JSON.stringify(data, null, 2)}\n\n`;
+            logElement.textContent += logEntry;
+            logElement.scrollTop = logElement.scrollHeight;
+        }
+
+        // Effacer les logs
+        function clearLogs() {
+            document.getElementById('requestLogs').textContent = '';
+        }
+
+        // Fonction utilitaire pour les requêtes API
+        async function apiRequest(endpoint, method = 'GET', body = null, useAuth = true) {
+            const url = `${API_URL}${endpoint}`;
+            const options = {
+                method,
+                headers: {
+                    'Content-Type': 'application/json',
+                }
+            };
+
+            if (useAuth && authToken) {
+                options.headers['Authorization'] = `Bearer ${authToken}`;
+            }
+
+            if (body) {
+                options.body = JSON.stringify(body);
+            }
+
+            try {
+                const response = await fetch(url, options);
+                const data = await response.json();
+                
+                logRequest('API', url, method, response.status, data);
+                
+                return { success: response.ok, status: response.status, data };
+            } catch (error) {
+                logRequest('ERROR', url, method, 0, { error: error.message });
+                return { success: false, error: error.message };
+            }
+        }
+
+        // Test de connexion
+        async function testLogin() {
+            const email = document.getElementById('loginEmail').value;
+            const password = document.getElementById('loginPassword').value;
+            const statusElement = document.getElementById('authStatus');
+
+            statusElement.textContent = 'Connexion en cours...';
+            statusElement.className = 'status info';
+
+            const result = await apiRequest('/api/auth/login', 'POST', { email, password }, false);
+
+            if (result.success) {
+                authToken = result.data.token;
+                localStorage.setItem('auth_token', authToken);
+                localStorage.setItem('token', authToken);
+                sessionStorage.setItem('auth_token', authToken);
+                
+                statusElement.textContent = `✅ Connexion réussie ! Token: ${authToken.substring(0, 20)}...`;
+                statusElement.className = 'status success';
+            } else {
+                statusElement.textContent = `❌ Erreur: ${result.data?.error || result.error}`;
+                statusElement.className = 'status error';
+            }
+        }
+
+        // Effacer l'authentification
+        function clearAuth() {
+            authToken = null;
+            localStorage.removeItem('auth_token');
+            localStorage.removeItem('token');
+            sessionStorage.removeItem('auth_token');
+            
+            const statusElement = document.getElementById('authStatus');
+            statusElement.textContent = '🗑️ Authentification effacée';
+            statusElement.className = 'status info';
+        }
+
+        // Test récupération dossiers
+        async function testDossiers() {
+            const statusElement = document.getElementById('dossiersStatus');
+            statusElement.textContent = 'Récupération dossiers...';
+            statusElement.className = 'status info';
+
+            const result = await apiRequest('/api/dossiers');
+
+            if (result.success) {
+                const dossiers = result.data;
+                statusElement.innerHTML = `✅ ${dossiers.length} dossiers récupérés<br>` + 
+                                       `Premier dossier: ${JSON.stringify(dossiers[0], null, 2)}`;
+                statusElement.className = 'status success';
+            } else {
+                statusElement.textContent = `❌ Erreur: ${result.data?.error || result.error} (Status: ${result.status})`;
+                statusElement.className = 'status error';
+            }
+        }
+
+        // Test détails d'un dossier
+        async function testDossierDetails() {
+            // D'abord récupérer la liste des dossiers
+            const dossiersResult = await apiRequest('/api/dossiers');
+            
+            if (!dossiersResult.success || !dossiersResult.data.length) {
+                document.getElementById('dossiersStatus').textContent = '❌ Impossible de récupérer les dossiers pour le test';
+                return;
+            }
+
+            const firstDossier = dossiersResult.data[0];
+            const statusElement = document.getElementById('dossiersStatus');
+            
+            statusElement.textContent = `Test détails dossier ${firstDossier.id}...`;
+            statusElement.className = 'status info';
+
+            const result = await apiRequest(`/api/dossiers/${firstDossier.id}`);
+
+            if (result.success) {
+                statusElement.innerHTML = `✅ Détails dossier récupérés<br>` + 
+                                       `<pre>${JSON.stringify(result.data, null, 2)}</pre>`;
+                statusElement.className = 'status success';
+            } else {
+                statusElement.textContent = `❌ Erreur détails: ${result.data?.error || result.error} (Status: ${result.status})`;
+                statusElement.className = 'status error';
+            }
+        }
+
+        // Vérifier les tokens dans le stockage local
+        function checkStorageTokens() {
+            const statusElement = document.getElementById('debugStatus');
+            
+            const authTokenLS = localStorage.getItem('auth_token');
+            const tokenLS = localStorage.getItem('token');
+            const authTokenSS = sessionStorage.getItem('auth_token');
+            
+            const info = {
+                'localStorage auth_token': authTokenLS ? authTokenLS.substring(0, 20) + '...' : 'null',
+                'localStorage token': tokenLS ? tokenLS.substring(0, 20) + '...' : 'null',
+                'sessionStorage auth_token': authTokenSS ? authTokenSS.substring(0, 20) + '...' : 'null',
+                'Variable authToken': authToken ? authToken.substring(0, 20) + '...' : 'null'
+            };
+            
+            statusElement.innerHTML = `📋 Tokens disponibles:<br><pre>${JSON.stringify(info, null, 2)}</pre>`;
+            statusElement.className = 'status info';
+        }
+
+        // Test health check
+        async function testHealthCheck() {
+            const result = await apiRequest('/api/health', 'GET', null, false);
+            const statusElement = document.getElementById('debugStatus');
+            
+            if (result.success) {
+                statusElement.innerHTML = `✅ Health check OK<br><pre>${JSON.stringify(result.data, null, 2)}</pre>`;
+                statusElement.className = 'status success';
+            } else {
+                statusElement.textContent = `❌ Health check failed: ${result.error}`;
+                statusElement.className = 'status error';
+            }
+        }
+
+        // Test endpoint auth
+        async function testAuthEndpoint() {
+            if (!authToken) {
+                document.getElementById('debugStatus').textContent = '❌ Aucun token disponible, connectez-vous d\'abord';
+                return;
+            }
+
+            const result = await apiRequest('/api/auth/me');
+            const statusElement = document.getElementById('debugStatus');
+            
+            if (result.success) {
+                statusElement.innerHTML = `✅ Auth endpoint OK<br><pre>${JSON.stringify(result.data, null, 2)}</pre>`;
+                statusElement.className = 'status success';
+            } else {
+                statusElement.textContent = `❌ Auth endpoint failed: ${result.data?.error || result.error} (Status: ${result.status})`;
+                statusElement.className = 'status error';
+            }
+        }
+
+        // Initialisation au chargement
+        window.onload = function() {
+            // Récupérer le token existant s'il y en a un
+            authToken = localStorage.getItem('auth_token') || localStorage.getItem('token') || sessionStorage.getItem('auth_token');
+            
+            if (authToken) {
+                document.getElementById('authStatus').textContent = `🔑 Token existant trouvé: ${authToken.substring(0, 20)}...`;
+                document.getElementById('authStatus').className = 'status info';
+            }
+
+            logRequest('INIT', 'Page loaded', 'GET', 200, { message: 'Outil de test initialisé' });
+        };
+    </script>
+</body>
+</html>

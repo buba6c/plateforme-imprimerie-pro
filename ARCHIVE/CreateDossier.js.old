@@ -1,0 +1,873 @@
+import React, { useState, useEffect } from 'react';
+import {
+  PlusIcon,
+  PrinterIcon,
+  ExclamationTriangleIcon,
+  CheckCircleIcon,
+  XMarkIcon,
+  DocumentIcon,
+  CloudArrowUpIcon,
+} from '@heroicons/react/24/outline';
+import { dossiersService } from '../../services/apiAdapter';
+
+const CreateDossier = ({ isOpen, onClose, onSuccess }) => {
+  const [selectedType, setSelectedType] = useState('roland');
+  const [currentUser, setCurrentUser] = useState(null);
+  const [loading, setLoading] = useState(false);
+  const [errors, setErrors] = useState({});
+  const [files, setFiles] = useState([]);
+  const [selectedPreset, setSelectedPreset] = useState('');
+
+  // État du formulaire Roland
+  const [rolandData, setRolandData] = useState({
+    client: '',
+    surface_m2: '',
+    type_support: '',
+    type_support_autre: '',
+    largeur: '',
+    hauteur: '',
+    unite: 'cm',
+    finition_oeillets: '',
+    finition_position: '',
+    ourlets: [],
+    diametre_barre: '',
+  });
+
+  // État du formulaire Xerox
+  const [xeroxData, setXeroxData] = useState({
+    client: '',
+    type_document: '',
+    type_document_autre: '',
+    format: '',
+    format_personnalise: '',
+    mode_impression: 'recto_simple',
+    orientation_verso: '',
+    nombre_exemplaires: '',
+    couleur_impression: 'couleur',
+    grammage: '',
+    type_papier_autre: '',
+    finition: [],
+    faconnage: [],
+    faconnage_autre: '',
+    numerotation: false,
+    debut_numerotation: '',
+    nombre_chiffres: '',
+    conditionnement: [],
+  });
+
+  useEffect(() => {
+    // Récupérer les infos de l'utilisateur connecté
+    const userData = JSON.parse(localStorage.getItem('user_data') || '{}');
+    console.log('CreateDossier - Données utilisateur récupérées:', userData);
+    setCurrentUser(userData);
+  }, []);
+
+  // Options Roland
+  const rolandTypesSupport = [
+    'Bâche 450g',
+    'Bâche 510g',
+    'Vinyle polymère',
+    'Vinyle monomère',
+    'Vinyle Transparent',
+    'Micro-perforé',
+    'Tissu',
+    'Backlit',
+    'Mesh',
+    'Autre',
+  ];
+
+  const rolandFinitionsOeillets = ['Collage', 'Découpé'];
+  const rolandPositions = ['Angles seulement', 'Tous les côtés'];
+  const rolandOurlets = ['Haut', 'Bas', 'Gauche', 'Droite'];
+
+  // Options Xerox
+  const xeroxTypesDocument = [
+    'Carte de visite',
+    'Flyer',
+    'Brochure',
+    'Dépliant',
+    'Affiche',
+    'Autre',
+  ];
+
+  const xeroxFormats = ['A3', 'A4', 'A5', '10x15cm', '20x30cm', 'Autre'];
+
+  const xeroxModeImpression = ['Recto simple', 'Recto verso'];
+
+  const xeroxGrammages = [
+    '135g',
+    '170g',
+    '250g',
+    '300g',
+    '350g',
+    'Offset',
+    'Autocollant',
+    'Grimat',
+    'Autre',
+  ];
+
+  const xeroxConditionnements = [
+    'En liasse de 50',
+    'En liasse de 100',
+    'Filmé',
+    'Étiqueté',
+  ];
+
+  const xeroxFinitions = [
+    'Pelliculage Brillant Recto',
+    'Pelliculage Brillant Verso',
+    'Pelliculage Mat Recto',
+    'Pelliculage Mat Verso',
+    'Vernis UV',
+  ];
+
+  const xeroxFaconnages = [
+    'Coupe',
+    'Piquée',
+    'Dos carré',
+    'Perforation',
+    'Spirale',
+    'Reliure',
+    'Rabat',
+    'Rainage',
+    'Découpe forme',
+    'Encochage',
+    'Autre',
+  ];
+
+  // Handlers pour Roland
+  const handleRolandChange = (name, value) => {
+    setRolandData(prev => ({
+      ...prev,
+      [name]: value,
+    }));
+
+    if (errors[name]) {
+      setErrors(prev => ({ ...prev, [name]: null }));
+    }
+  };
+
+  const handleRolandCheckbox = (name, option, checked) => {
+    setRolandData(prev => ({
+      ...prev,
+      [name]: checked ? [...prev[name], option] : prev[name].filter(item => item !== option),
+    }));
+  };
+
+  // Handlers pour Xerox
+  const handleXeroxChange = (name, value) => {
+    setXeroxData(prev => ({
+      ...prev,
+      [name]: value,
+    }));
+
+    if (errors[name]) {
+      setErrors(prev => ({ ...prev, [name]: null }));
+    }
+  };
+
+  const handleXeroxCheckbox = (name, option, checked) => {
+    setXeroxData(prev => ({
+      ...prev,
+      [name]: checked ? [...prev[name], option] : prev[name].filter(item => item !== option),
+    }));
+  };
+
+  // Handler pour les fichiers
+  const handleFileUpload = e => {
+    const uploadedFiles = Array.from(e.target.files);
+    setFiles(prev => [...prev, ...uploadedFiles]);
+  };
+
+  const removeFile = index => {
+    setFiles(prev => prev.filter((_, i) => i !== index));
+  };
+
+  // Suggestion de surface à partir de la dimension
+  const computeSurfaceFromDimension = dim => {
+    if (!dim) return 0;
+    try {
+      let s = (dim || '').toString().toLowerCase();
+      // Déterminer l'unité
+      let unit = 'cm';
+      if (s.includes('cm')) unit = 'cm';
+      else if (s.includes('m')) unit = 'm';
+      // Normaliser séparateurs et décimales
+      s = s.replace(/,/g, '.');
+      s = s.replace(/×/g, 'x').replace(/\*/g, 'x');
+      // Retirer unités et espaces
+      s = s.replace(/[a-zA-Z]/g, '').trim();
+      // Séparer largeur et hauteur
+      const parts = s.split('x').map(p => parseFloat(p));
+      if (parts.length !== 2 || isNaN(parts[0]) || isNaN(parts[1])) return 0;
+      let w = parts[0];
+      let h = parts[1];
+      if (unit === 'cm') {
+        w = w / 100;
+        h = h / 100;
+      }
+      const area = w * h;
+      if (!isFinite(area) || area <= 0) return 0;
+      return area;
+    } catch (e) {
+      return 0;
+    }
+  };
+
+  const applySurfaceSuggestion = () => {
+    const s = computeSurfaceFromDimension(rolandData.dimension);
+    if (s > 0) {
+      handleRolandChange('surface_m2', s.toFixed(2));
+    }
+  };
+
+  const validateForm = () => {
+    const newErrors = {};
+
+    if (selectedType === 'roland') {
+      if (!rolandData.client.trim()) {
+        newErrors.client = 'Nom du client requis';
+      }
+      if (!rolandData.surface_m2 || parseFloat(rolandData.surface_m2) <= 0) {
+        newErrors.surface_m2 = 'Surface valide requise';
+      }
+      if (rolandData.types_impression.length === 0) {
+        newErrors.types_impression = "Au moins un type d'impression requis";
+      }
+      if (!rolandData.dimension.trim()) {
+        newErrors.dimension = 'Dimension requise';
+      }
+    } else {
+      if (!xeroxData.client.trim()) {
+        newErrors.client = 'Nom du client requis';
+      }
+      if (!xeroxData.type_document) {
+        newErrors.type_document = 'Type de document requis';
+      }
+      if (xeroxData.type_document === 'Autre' && !xeroxData.type_document_autre.trim()) {
+        newErrors.type_document_autre = 'Précisez le type de document';
+      }
+      if (!xeroxData.format) {
+        newErrors.format = 'Format requis';
+      }
+      if (xeroxData.format === 'Autre' && !xeroxData.format_autre.trim()) {
+        newErrors.format_autre = 'Précisez le format';
+      }
+      if (xeroxData.mode_impression.length === 0) {
+        newErrors.mode_impression = "Mode d'impression requis";
+      }
+      if (!xeroxData.nombre_exemplaires || parseInt(xeroxData.nombre_exemplaires) <= 0) {
+        newErrors.nombre_exemplaires = "Nombre d'exemplaires valide requis";
+      }
+      if (!xeroxData.type_papier) {
+        newErrors.type_papier = 'Type de papier requis';
+      }
+      if (xeroxData.type_papier === 'Autre' && !xeroxData.type_papier_autre.trim()) {
+        newErrors.type_papier_autre = 'Précisez le type de papier';
+      }
+    }
+
+    setErrors(newErrors);
+    return Object.keys(newErrors).length === 0;
+  };
+
+  const generateNumero = () => {
+    const now = new Date();
+    const year = now.getFullYear();
+    const month = String(now.getMonth() + 1).padStart(2, '0');
+    const day = String(now.getDate()).padStart(2, '0');
+    const random = Math.floor(Math.random() * 1000)
+      .toString()
+      .padStart(3, '0');
+    return `${selectedType.toUpperCase()}-${year}${month}${day}-${random}`;
+  };
+
+  const handleSubmit = async e => {
+    e.preventDefault();
+
+    if (!validateForm()) return;
+
+    setLoading(true);
+
+    try {
+      const formData = {
+        numero: generateNumero(),
+        client: selectedType === 'roland' ? rolandData.client : xeroxData.client,
+        type_formulaire: selectedType, // mapping correct
+        preparateur_id: currentUser?.id, // Ajout ID du préparateur (backend attend preparateur_id)
+        data_formulaire: selectedType === 'roland' ? rolandData : xeroxData,
+        statut: 'en_cours',
+      };
+
+      console.log('CreateDossier - Données du formulaire à envoyer:', formData);
+
+      const response = await dossiersService.createDossier(formData);
+      console.log('CreateDossier - Réponse reçue:', response);
+
+      onSuccess(response.dossier);
+
+      // Reset forms
+      setRolandData({
+        client: '',
+        surface_m2: '',
+        types_impression: [],
+        type_impression_autre: '',
+        dimension: '',
+        finition: [],
+      });
+
+      setXeroxData({
+        client: '',
+        type_document: '',
+        type_document_autre: '',
+        format: '',
+        format_autre: '',
+        mode_impression: [],
+        nombre_exemplaires: '',
+        type_papier: '',
+        type_papier_autre: '',
+        finition: [],
+        faconnage: [],
+        faconnage_autre: '',
+      });
+
+      setFiles([]);
+      setErrors({});
+    } catch (err) {
+      console.error('Erreur création dossier:', err);
+      setErrors({ general: err.error || 'Erreur lors de la création du dossier' });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  if (!isOpen) return null;
+
+  // const currentFormData = selectedType === 'roland' ? rolandData : xeroxData; // not used
+  const currentDate = new Date().toLocaleDateString('fr-FR');
+  const generatedNumero = generateNumero();
+  const surfaceSuggestion =
+    selectedType === 'roland' ? computeSurfaceFromDimension(rolandData.dimension) : 0;
+
+  return (
+    <div className="fixed inset-0 z-50 overflow-y-auto">
+      <div className="flex items-center justify-center min-h-screen pt-4 px-4 pb-20 text-center sm:block sm:p-0">
+        <div
+          className="fixed inset-0 bg-secondary-500 bg-opacity-75 transition-opacity"
+          onClick={onClose}
+        ></div>
+
+        <div className="inline-block align-bottom bg-white rounded-lg text-left overflow-hidden shadow-xl transform transition-all sm:my-8 sm:align-middle sm:max-w-5xl sm:w-full">
+          {/* Header */}
+          <div className="bg-primary-600 px-6 py-4">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center space-x-3">
+                <div className="bg-white bg-opacity-20 p-2 rounded-lg">
+                  <PlusIcon className="h-6 w-6 text-white" />
+                </div>
+                <div>
+                  <h3 className="text-lg font-semibold text-white">
+                    Formulaire {selectedType === 'roland' ? 'Roland' : 'Xerox'} Standard
+                  </h3>
+                  <p className="text-primary-100 text-sm">Nouveau dossier d'impression</p>
+                </div>
+              </div>
+
+              <button
+                onClick={onClose}
+                className="text-white hover:text-primary-200 transition-colors"
+              >
+                <XMarkIcon className="h-6 w-6" />
+              </button>
+            </div>
+
+            {/* Sélecteur de type */}
+            <div className="mt-4 flex space-x-4">
+              <button
+                onClick={() => setSelectedType('roland')}
+                className={`px-4 py-2 rounded-lg font-medium transition-colors ${
+                  selectedType === 'roland'
+                    ? 'bg-white text-primary-600'
+                    : 'bg-primary-500 text-white hover:bg-primary-400'
+                }`}
+              >
+                Roland
+              </button>
+              <button
+                onClick={() => setSelectedType('xerox')}
+                className={`px-4 py-2 rounded-lg font-medium transition-colors ${
+                  selectedType === 'xerox'
+                    ? 'bg-white text-primary-600'
+                    : 'bg-primary-500 text-white hover:bg-primary-400'
+                }`}
+              >
+                Xerox
+              </button>
+            </div>
+          </div>
+
+          <form onSubmit={handleSubmit}>
+            <div className="px-6 py-6">
+              {/* Erreur générale */}
+              {errors.general && (
+                <div className="mb-6 bg-danger-50 border border-danger-200 rounded-md p-4">
+                  <div className="flex">
+                    <ExclamationTriangleIcon className="h-5 w-5 text-danger-400" />
+                    <div className="ml-3">
+                      <p className="text-sm text-danger-800">{errors.general}</p>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Informations auto-générées */}
+              <div className="bg-gray-50 p-4 rounded-lg mb-6">
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm">
+                  <div>
+                    <span className="font-medium text-gray-700">N°:</span>
+                    <span className="ml-2 text-gray-900">{generatedNumero}</span>
+                  </div>
+                  <div>
+                    <span className="font-medium text-gray-700">Date de réception:</span>
+                    <span className="ml-2 text-gray-900">{currentDate}</span>
+                  </div>
+                  <div>
+                    <span className="font-medium text-gray-700">Préparateur:</span>
+                    <span className="ml-2 text-gray-900">{currentUser?.nom || 'Utilisateur'}</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Client */}
+              <div className="mb-6">
+                <label className="form-label">Client *</label>
+                <input
+                  type="text"
+                  value={selectedType === 'roland' ? rolandData.client : xeroxData.client}
+                  onChange={e =>
+                    selectedType === 'roland'
+                      ? handleRolandChange('client', e.target.value)
+                      : handleXeroxChange('client', e.target.value)
+                  }
+                  className={`form-input ${errors.client ? 'border-danger-300 focus:border-danger-500' : ''}`}
+                  placeholder="Nom du client ou de l'entreprise"
+                />
+                {errors.client && <p className="form-error">{errors.client}</p>}
+              </div>
+
+              {/* Formulaire Roland */}
+              {selectedType === 'roland' && (
+                <div className="space-y-8">
+                  {/* Section IMPRESSION */}
+                  <div>
+                    <h4 className="text-lg font-bold text-secondary-900 mb-4 flex items-center">
+                      <PrinterIcon className="h-6 w-6 text-primary-600 mr-2" />
+                      IMPRESSION
+                    </h4>
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                      {/* Surface */}
+                      <div>
+                        <label className="form-label">Surface (m²) *</label>
+                        <input
+                          type="number"
+                          step="0.01"
+                          value={rolandData.surface_m2}
+                          onChange={e => handleRolandChange('surface_m2', e.target.value)}
+                          className={`form-input ${errors.surface_m2 ? 'border-danger-300 focus:border-danger-500' : ''}`}
+                          placeholder="Ex: 2.5"
+                        />
+                        {errors.surface_m2 && <p className="form-error">{errors.surface_m2}</p>}
+                      </div>
+
+                      {/* Dimension */}
+                      <div>
+                        <label className="form-label">Dimension *</label>
+                        <input
+                          type="text"
+                          value={rolandData.dimension}
+                          onChange={e => handleRolandChange('dimension', e.target.value)}
+                          className={`form-input ${errors.dimension ? 'border-danger-300 focus:border-danger-500' : ''}`}
+                          placeholder="Ex: 200x100 cm"
+                        />
+                        {errors.dimension && <p className="form-error">{errors.dimension}</p>}
+                        {surfaceSuggestion > 0 && (
+                          <div className="mt-1 text-sm text-gray-600">
+                            Suggestion:{' '}
+                            <span className="font-medium">{surfaceSuggestion.toFixed(2)} m²</span>
+                            <button
+                              type="button"
+                              onClick={applySurfaceSuggestion}
+                              className="ml-2 text-primary-600 hover:underline"
+                            >
+                              Utiliser
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Type d'impression */}
+                    <div className="mt-6">
+                      <label className="form-label">Type d'impression * (cases à cocher)</label>
+                      <div className="grid grid-cols-2 md:grid-cols-3 gap-3 mt-2">
+                        {rolandTypesImpression.map(type => (
+                          <label key={type} className="flex items-center space-x-2 cursor-pointer">
+                            <input
+                              type="checkbox"
+                              checked={rolandData.types_impression.includes(type)}
+                              onChange={e =>
+                                handleRolandCheckbox('types_impression', type, e.target.checked)
+                              }
+                              className="h-4 w-4 text-primary-600 focus:ring-primary-500 border-gray-300 rounded"
+                            />
+                            <span className="text-sm font-medium text-gray-700">{type}</span>
+                          </label>
+                        ))}
+                      </div>
+                      {errors.types_impression && (
+                        <p className="form-error">{errors.types_impression}</p>
+                      )}
+
+                      {/* Autre (texte libre) */}
+                      <div className="mt-3">
+                        <label className="form-label">Autre (précisez)</label>
+                        <input
+                          type="text"
+                          value={rolandData.type_impression_autre}
+                          onChange={e =>
+                            handleRolandChange('type_impression_autre', e.target.value)
+                          }
+                          className="form-input"
+                          placeholder="Ex: Tissu, Poster spécial..."
+                        />
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Section FINITION */}
+                  <div>
+                    <h4 className="text-lg font-bold text-secondary-900 mb-4">FINITION</h4>
+
+                    <div className="grid grid-cols-2 gap-3">
+                      {rolandFinitions.map(finition => (
+                        <label
+                          key={finition}
+                          className="flex items-center space-x-2 cursor-pointer"
+                        >
+                          <input
+                            type="checkbox"
+                            checked={rolandData.finition.includes(finition)}
+                            onChange={e =>
+                              handleRolandCheckbox('finition', finition, e.target.checked)
+                            }
+                            className="h-4 w-4 text-primary-600 focus:ring-primary-500 border-gray-300 rounded"
+                          />
+                          <span className="text-sm font-medium text-gray-700">{finition}</span>
+                        </label>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Formulaire Xerox */}
+              {selectedType === 'xerox' && (
+                <div className="space-y-8">
+                  {/* Section IMPRESSION */}
+                  <div>
+                    <h4 className="text-lg font-bold text-secondary-900 mb-4 flex items-center">
+                      <PrinterIcon className="h-6 w-6 text-primary-600 mr-2" />
+                      IMPRESSION
+                    </h4>
+
+                    <div className="space-y-6">
+                      {/* Type de document */}
+                      <div>
+                        <label className="form-label">Type de document * (menu déroulant)</label>
+                        <select
+                          value={xeroxData.type_document}
+                          onChange={e => handleXeroxChange('type_document', e.target.value)}
+                          className={`form-input ${errors.type_document ? 'border-danger-300 focus:border-danger-500' : ''}`}
+                        >
+                          <option value="">Sélectionnez un type</option>
+                          {xeroxTypesDocument.map(type => (
+                            <option key={type} value={type}>
+                              {type}
+                            </option>
+                          ))}
+                        </select>
+                        {xeroxData.type_document === 'Autre' && (
+                          <input
+                            type="text"
+                            value={xeroxData.type_document_autre}
+                            onChange={e => handleXeroxChange('type_document_autre', e.target.value)}
+                            className={`form-input mt-2 ${errors.type_document_autre ? 'border-danger-300 focus:border-danger-500' : ''}`}
+                            placeholder="Précisez le type de document"
+                          />
+                        )}
+                        {errors.type_document && (
+                          <p className="form-error">{errors.type_document}</p>
+                        )}
+                        {errors.type_document_autre && (
+                          <p className="form-error">{errors.type_document_autre}</p>
+                        )}
+                      </div>
+
+                      {/* Format */}
+                      <div>
+                        <label className="form-label">Format * (menu déroulant)</label>
+                        <select
+                          value={xeroxData.format}
+                          onChange={e => handleXeroxChange('format', e.target.value)}
+                          className={`form-input ${errors.format ? 'border-danger-300 focus:border-danger-500' : ''}`}
+                        >
+                          <option value="">Sélectionnez un format</option>
+                          {xeroxFormats.map(format => (
+                            <option key={format} value={format}>
+                              {format}
+                            </option>
+                          ))}
+                        </select>
+                        {xeroxData.format === 'Autre' && (
+                          <input
+                            type="text"
+                            value={xeroxData.format_autre}
+                            onChange={e => handleXeroxChange('format_autre', e.target.value)}
+                            className={`form-input mt-2 ${errors.format_autre ? 'border-danger-300 focus:border-danger-500' : ''}`}
+                            placeholder="Précisez le format"
+                          />
+                        )}
+                        {errors.format && <p className="form-error">{errors.format}</p>}
+                        {errors.format_autre && <p className="form-error">{errors.format_autre}</p>}
+                      </div>
+
+                      {/* Mode d'impression */}
+                      <div>
+                        <label className="form-label">
+                          Mode d'impression * (cases à cocher larges)
+                        </label>
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mt-2">
+                          {xeroxModeImpression.map(mode => (
+                            <label
+                              key={mode}
+                              className="flex items-center space-x-3 p-3 border rounded-lg cursor-pointer hover:bg-gray-50"
+                            >
+                              <input
+                                type="checkbox"
+                                checked={xeroxData.mode_impression.includes(mode)}
+                                onChange={e =>
+                                  handleXeroxCheckbox('mode_impression', mode, e.target.checked)
+                                }
+                                className="h-4 w-4 text-primary-600 focus:ring-primary-500 border-gray-300 rounded"
+                              />
+                              <span className="text-sm font-medium text-gray-700">{mode}</span>
+                            </label>
+                          ))}
+                        </div>
+                        {errors.mode_impression && (
+                          <p className="form-error">{errors.mode_impression}</p>
+                        )}
+                      </div>
+
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                        {/* Nombre d'exemplaires */}
+                        <div>
+                          <label className="form-label">Nombre d'exemplaires * (numérique)</label>
+                          <input
+                            type="number"
+                            min="1"
+                            value={xeroxData.nombre_exemplaires}
+                            onChange={e => handleXeroxChange('nombre_exemplaires', e.target.value)}
+                            className={`form-input ${errors.nombre_exemplaires ? 'border-danger-300 focus:border-danger-500' : ''}`}
+                            placeholder="Ex: 100"
+                          />
+                          {errors.nombre_exemplaires && (
+                            <p className="form-error">{errors.nombre_exemplaires}</p>
+                          )}
+                        </div>
+
+                        {/* Type de papier */}
+                        <div>
+                          <label className="form-label">Type de papier * (menu déroulant)</label>
+                          <select
+                            value={xeroxData.type_papier}
+                            onChange={e => handleXeroxChange('type_papier', e.target.value)}
+                            className={`form-input ${errors.type_papier ? 'border-danger-300 focus:border-danger-500' : ''}`}
+                          >
+                            <option value="">Sélectionnez un type</option>
+                            {xeroxTypesPapier.map(type => (
+                              <option key={type} value={type}>
+                                {type}
+                              </option>
+                            ))}
+                          </select>
+                          {xeroxData.type_papier === 'Autre' && (
+                            <input
+                              type="text"
+                              value={xeroxData.type_papier_autre}
+                              onChange={e => handleXeroxChange('type_papier_autre', e.target.value)}
+                              className={`form-input mt-2 ${errors.type_papier_autre ? 'border-danger-300 focus:border-danger-500' : ''}`}
+                              placeholder="Précisez le type de papier"
+                            />
+                          )}
+                          {errors.type_papier && <p className="form-error">{errors.type_papier}</p>}
+                          {errors.type_papier_autre && (
+                            <p className="form-error">{errors.type_papier_autre}</p>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Section FINITION */}
+                  <div>
+                    <h4 className="text-lg font-bold text-secondary-900 mb-4">FINITION</h4>
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                      {xeroxFinitions.map(finition => (
+                        <label
+                          key={finition}
+                          className="flex items-center space-x-2 cursor-pointer"
+                        >
+                          <input
+                            type="checkbox"
+                            checked={xeroxData.finition.includes(finition)}
+                            onChange={e =>
+                              handleXeroxCheckbox('finition', finition, e.target.checked)
+                            }
+                            className="h-4 w-4 text-primary-600 focus:ring-primary-500 border-gray-300 rounded"
+                          />
+                          <span className="text-sm font-medium text-gray-700">{finition}</span>
+                        </label>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Section FAÇONNAGE */}
+                  <div>
+                    <h4 className="text-lg font-bold text-secondary-900 mb-4">FAÇONNAGE</h4>
+
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                      {xeroxFaconnages.map(faconnage => (
+                        <label
+                          key={faconnage}
+                          className="flex items-center space-x-2 cursor-pointer"
+                        >
+                          <input
+                            type="checkbox"
+                            checked={xeroxData.faconnage.includes(faconnage)}
+                            onChange={e =>
+                              handleXeroxCheckbox('faconnage', faconnage, e.target.checked)
+                            }
+                            className="h-4 w-4 text-primary-600 focus:ring-primary-500 border-gray-300 rounded"
+                          />
+                          <span className="text-sm font-medium text-gray-700">{faconnage}</span>
+                        </label>
+                      ))}
+                    </div>
+
+                    {xeroxData.faconnage.includes('Autre') && (
+                      <div className="mt-4">
+                        <input
+                          type="text"
+                          value={xeroxData.faconnage_autre}
+                          onChange={e => handleXeroxChange('faconnage_autre', e.target.value)}
+                          className="form-input"
+                          placeholder="Précisez le type de façonnage"
+                        />
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {/* Section FICHIERS (commune aux deux formulaires) */}
+              <div className="border-t pt-6">
+                <h4 className="text-lg font-bold text-secondary-900 mb-4 flex items-center">
+                  <DocumentIcon className="h-6 w-6 text-primary-600 mr-2" />
+                  FICHIERS
+                </h4>
+
+                <div className="space-y-4">
+                  <p className="text-sm text-gray-600">Upload PDF/images (optionnel)</p>
+
+                  {/* Zone de drop */}
+                  <div className="border-2 border-dashed border-gray-300 rounded-lg p-6">
+                    <div className="text-center">
+                      <CloudArrowUpIcon className="mx-auto h-12 w-12 text-gray-400" />
+                      <div className="mt-4">
+                        <label htmlFor="file-upload" className="cursor-pointer">
+                          <span className="mt-2 block text-sm font-medium text-gray-900">
+                            Cliquez pour uploader ou glissez-déposez vos fichiers
+                          </span>
+                          <input
+                            id="file-upload"
+                            name="file-upload"
+                            type="file"
+                            multiple
+                            accept=".pdf,.jpg,.jpeg,.png,.gif,.ai,.psd,.tiff"
+                            className="sr-only"
+                            onChange={handleFileUpload}
+                          />
+                        </label>
+                        <p className="mt-2 text-xs text-gray-500">
+                          PDF, JPG, PNG, AI, PSD, TIFF jusqu'à 500 Mo par fichier
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Liste des fichiers uploadés */}
+                  {files.length > 0 && (
+                    <div className="space-y-2">
+                      <h5 className="text-sm font-medium text-gray-700">Fichiers sélectionnés:</h5>
+                      {files.map((file, index) => (
+                        <div
+                          key={index}
+                          className="flex items-center justify-between bg-gray-50 p-2 rounded"
+                        >
+                          <span className="text-sm text-gray-700 truncate">{file.name}</span>
+                          <button
+                            type="button"
+                            onClick={() => removeFile(index)}
+                            className="text-red-500 hover:text-red-700"
+                          >
+                            <XMarkIcon className="h-4 w-4" />
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            {/* Footer avec boutons */}
+            <div className="bg-secondary-50 px-6 py-4 flex justify-end space-x-3">
+              <button type="button" onClick={onClose} className="btn-secondary">
+                Annuler
+              </button>
+
+              <button type="submit" disabled={loading} className="btn-primary">
+                {loading ? (
+                  <div className="flex items-center space-x-2">
+                    <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
+                    <span>Création...</span>
+                  </div>
+                ) : (
+                  <div className="flex items-center space-x-2">
+                    <CheckCircleIcon className="h-4 w-4" />
+                    <span>Créer le dossier {selectedType === 'roland' ? 'Roland' : 'Xerox'}</span>
+                  </div>
+                )}
+              </button>
+            </div>
+          </form>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+export default CreateDossier;

@@ -1,0 +1,60 @@
+# Dockerfile optimisé pour Podman - Backend Imprimerie
+FROM docker.io/node:20-alpine
+
+# Métadonnées
+LABEL maintainer="Plateforme Imprimerie"
+LABEL version="1.0.0"
+LABEL description="Backend Node.js pour la plateforme d'imprimerie avec PM2"
+
+# Installation des dépendances système pour Podman
+RUN apk add --no-cache \
+    curl \
+    postgresql-client \
+    dumb-init \
+    && rm -rf /var/cache/apk/*
+
+# Créer un utilisateur non-root pour la sécurité
+RUN addgroup -g 1001 -S nodejs && \
+    adduser -S nextjs -u 1001
+
+# Définir le répertoire de travail
+WORKDIR /app
+
+# Copier les fichiers de dépendances en premier (pour le cache)
+COPY package*.json ./
+COPY ecosystem.config.js ./
+
+# Installer les dépendances
+RUN npm ci --only=production && \
+    npm cache clean --force
+
+# Installer PM2 globalement
+RUN npm install -g pm2
+
+# Créer les répertoires nécessaires avec les bonnes permissions
+RUN mkdir -p uploads logs backups .pm2 tmp && \
+    chown -R 1001:1001 /app
+
+# Copier le code source
+COPY --chown=1001:1001 . .
+
+# Passer à l'utilisateur non-root
+USER 1001
+
+# Variables d'environnement
+ENV NODE_ENV=production
+ENV PM2_HOME=/app/.pm2
+ENV NPM_CONFIG_CACHE=/app/tmp/.npm
+
+# Exposer le port
+EXPOSE 5001
+
+# Health check optimisé pour Podman
+HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
+    CMD curl -f http://localhost:5001/api/health || exit 1
+
+# Utiliser dumb-init pour gérer les signaux correctement dans Podman
+ENTRYPOINT ["dumb-init", "--"]
+
+# Commande de démarrage avec PM2 runtime
+CMD ["pm2-runtime", "start", "ecosystem.config.js", "--env", "production"]

@@ -1,0 +1,172 @@
+const express = require('express');
+const router = express.Router();
+const dbHelper = require('../utils/dbHelper');
+const auth = require('../middleware/auth');
+const openaiService = require('../services/openaiService');
+const pdfService = require('../services/pdfService');
+const { v4: uuidv4 } = require('uuid');
+
+router.get('/', auth, async (req, res) => {
+  try {
+    const { statut, machine_type, limit = 50, offset = 0 } = req.query;
+    let query = 'SELECT * FROM v_devis_complet WHERE 1=1';
+    const params = [];
+    
+    if (req.user.role === 'preparateur') {
+      query += ' AND user_id = ?';
+      params.push(req.user.id);
+    }
+    if (statut) {
+      query += ' AND statut = ?';
+      params.push(statut);
+    }
+    if (machine_type) {
+      query += ' AND machine_type = ?';
+      params.push(machine_type);
+    }
+    
+    query += ' ORDER BY created_at DESC LIMIT ? OFFSET ?';
+    params.push(parseInt(limit), parseInt(offset));
+    
+    const [devis] = await dbHelper.query(query, params);
+    res.json({ devis });
+  } catch (error) {
+    console.error('Erreur récupération devis:', error);
+    res.status(500).json({ error: 'Erreur serveur' });
+  }
+});
+
+router.post('/', auth, async (req, res) => {
+  try {
+    const { machine_type, data_json, client_nom, client_contact, notes } = req.body;
+    
+    if (!machine_type || !data_json) {
+      return res.status(400).json({ error: 'Données manquantes' });
+    }
+    
+    const [tarifs] = await db.query(
+      'SELECT * FROM tarifs_config WHERE (type_machine = ? OR type_machine = ?) AND actif = TRUE',
+      [machine_type, 'global']
+    );
+    
+    const config = await openaiService.getOpenAIConfig();
+    const estimation = await openaiService.estimateQuote(
+      typeof data_json === 'string' ? JSON.parse(data_json) : data_json,
+      machine_type,
+      tarifs,
+      config?.knowledge_base_text
+    );
+    
+    const [result] = await db.query(
+      `INSERT INTO devis (user_id, machine_type, data_json, client_nom, client_contact, prix_estime, prix_final, details_prix, notes, statut)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [req.user.id, machine_type, typeof data_json === 'string' ? data_json : JSON.stringify(data_json),
+       client_nom, client_contact, estimation.prix_estime, estimation.prix_estime, JSON.stringify(estimation.details), notes, 'brouillon']
+    );
+    
+    const [devisCreated] = await db.query('SELECT * FROM devis WHERE id = ?', [result.insertId]);
+    
+    await db.query(
+      'INSERT INTO devis_historique (devis_id, user_id, action, nouveau_statut) VALUES (?, ?, ?, ?)',
+      [result.insertId, req.user.id, 'creation', 'brouillon']
+    );
+    
+    res.status(201).json({ message: 'Devis créé', devis: devisCreated[0], estimation });
+  } catch (error) {
+    console.error('Erreur création devis:', error);
+    res.status(500).json({ error: 'Erreur serveur' });
+  }
+});
+
+router.get('/:id', auth, async (req, res) => {
+  try {
+    const [devis] = await db.query('SELECT * FROM v_devis_complet WHERE id = ?', [req.params.id]);
+    if (devis.length === 0) return res.status(404).json({ error: 'Devis non trouvé' });
+    if (req.user.role === 'preparateur' && devis[0].user_id !== req.user.id) {
+      return res.status(403).json({ error: 'Accès non autorisé' });
+    }
+    res.json(devis[0]);
+  } catch (error) {
+    res.status(500).json({ error: 'Erreur serveur' });
+  }
+});
+
+router.put('/:id', auth, async (req, res) => {
+  try {
+    const { prix_final, statut, notes } = req.body;
+    const [existing] = await db.query('SELECT * FROM devis WHERE id = ?', [req.params.id]);
+    
+    if (existing.length === 0) return res.status(404).json({ error: 'Devis non trouvé' });
+    if (req.user.role === 'preparateur' && existing[0].user_id !== req.user.id) {
+      return res.status(403).json({ error: 'Accès non autorisé' });
+    }
+    if (existing[0].statut === 'converti') {
+      return res.status(400).json({ error: 'Devis converti non modifiable' });
+    }
+    
+    const updates = [];
+    const params = [];
+    if (prix_final !== undefined) { updates.push('prix_final = ?'); params.push(prix_final); }
+    if (statut) { updates.push('statut = ?'); params.push(statut); }
+    if (notes !== undefined) { updates.push('notes = ?'); params.push(notes); }
+    params.push(req.params.id);
+    
+    await db.query(`UPDATE devis SET ${updates.join(', ')}, updated_at = NOW() WHERE id = ?`, params);
+    res.json({ message: 'Devis mis à jour' });
+  } catch (error) {
+    res.status(500).json({ error: 'Erreur serveur' });
+  }
+});
+
+router.post('/:id/convert', auth, async (req, res) => {
+  try {
+    const [devis] = await db.query('SELECT * FROM devis WHERE id = ?', [req.params.id]);
+    if (devis.length === 0) return res.status(404).json({ error: 'Devis non trouvé' });
+    if (devis[0].statut === 'converti') return res.status(400).json({ error: 'Déjà converti' });
+    
+    const folderId = uuidv4();
+    const dataJson = JSON.parse(devis[0].data_json);
+    
+    await db.query(
+      `INSERT INTO dossiers (folder_id, numero, user_id, machine_type, data_json, statut, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, NOW())`,
+      [folderId, `DOS-${Date.now()}`, req.user.id, devis[0].machine_type, JSON.stringify(dataJson), 'en_cours']
+    );
+    
+    await db.query(
+      'UPDATE devis SET statut = ?, converted_folder_id = ?, converted_at = NOW() WHERE id = ?',
+      ['converti', folderId, req.params.id]
+    );
+    
+    res.json({ message: 'Devis converti en dossier', folder_id: folderId });
+  } catch (error) {
+    res.status(500).json({ error: 'Erreur serveur' });
+  }
+});
+
+router.get('/:id/pdf', auth, async (req, res) => {
+  try {
+    const [devis] = await db.query('SELECT * FROM v_devis_complet WHERE id = ?', [req.params.id]);
+    if (devis.length === 0) return res.status(404).json({ error: 'Devis non trouvé' });
+    
+    const pdfPath = await pdfService.generateQuotePDF(devis[0]);
+    res.download(pdfPath, `${devis[0].numero}.pdf`);
+  } catch (error) {
+    res.status(500).json({ error: 'Erreur serveur' });
+  }
+});
+
+router.delete('/:id', auth, async (req, res) => {
+  try {
+    const [devis] = await db.query('SELECT * FROM devis WHERE id = ?', [req.params.id]);
+    if (devis.length === 0) return res.status(404).json({ error: 'Devis non trouvé' });
+    if (devis[0].statut === 'converti') return res.status(400).json({ error: 'Impossible de supprimer' });
+    
+    await db.query('DELETE FROM devis WHERE id = ?', [req.params.id]);
+    res.json({ message: 'Devis supprimé' });
+  } catch (error) {
+    res.status(500).json({ error: 'Erreur serveur' });
+  }
+});
+
+module.exports = router;

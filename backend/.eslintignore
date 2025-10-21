@@ -1,0 +1,46 @@
+# ESLint ignore file
+# Dependencies
+node_modules/
+
+# Build outputs
+build/
+dist/
+
+# Logs
+logs/
+*.log
+
+# Environment files
+.env*
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Test files
+coverage/
+*.test.js
+*.spec.js
+
+# Database files
+*.db
+*.sqlite*
+
+# Uploads
+uploads/
+
+# Temporary files
+.cache/
+.temp/
+.tmp/
+
+# PM2 files
+ecosystem.*.js
+
+# Problematic files
+*-old.*
+*-backup.*
+*.bak
+routes/dossiers-crud.js
+routes/dossiers-files.js
+routes/dossiers-old-backup.js

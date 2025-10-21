@@ -1,0 +1,190 @@
+version: '3.8'
+
+# Configuration Podman pour la Plateforme d'Imprimerie
+# Compatible Windows et macOS/Linux
+
+services:
+  # Base de données PostgreSQL
+  postgres:
+    image: docker.io/postgres:15-alpine
+    container_name: imprimerie_postgres
+    environment:
+      POSTGRES_DB: ${DB_NAME:-imprimerie_db}
+      POSTGRES_USER: ${DB_USER:-imprimerie_user}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-imprimerie_production_password_ultra_secure_2024}
+      POSTGRES_INITDB_ARGS: "--encoding=UTF-8 --lc-collate=C --lc-ctype=C"
+    deploy:
+      resources:
+        limits:
+          memory: ${POSTGRES_MEMORY_LIMIT:-1g}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./database/init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U imprimerie_user -d imprimerie_db"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+    restart: unless-stopped
+    networks:
+      - imprimerie_network
+
+  # Backend Node.js avec PM2
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: imprimerie_backend
+    environment:
+      # Base de données
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_NAME: ${DB_NAME:-imprimerie_db}
+      DB_USER: ${DB_USER:-imprimerie_user}
+      DB_PASSWORD: ${DB_PASSWORD:-imprimerie_production_password_ultra_secure_2024}
+      
+      # JWT
+      JWT_SECRET: ${JWT_SECRET:-imprimerie_jwt_production_secret_ultra_secure_key_2024_never_share_this}
+      JWT_EXPIRES_IN: ${JWT_EXPIRES_IN:-24h}
+      
+      # Configuration
+      NODE_ENV: ${NODE_ENV:-production}
+      PORT: ${PORT:-5001}
+      
+      # URLs pour Docker/Podman
+      FRONTEND_URL: ${FRONTEND_URL:-http://localhost:3002}
+      BACKEND_URL: ${BACKEND_URL:-http://localhost:5001}
+      
+      # Redis
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-imprimerie_redis_password_2024}
+      
+      # Limites
+      UPLOAD_MAX_SIZE: ${UPLOAD_MAX_SIZE:-100mb}
+      REQUEST_TIMEOUT: ${REQUEST_TIMEOUT:-300s}
+      
+      # Locale Windows
+      TZ: ${TZ:-Europe/Paris}
+      LANG: ${LANG:-C.UTF-8}
+      LC_ALL: ${LC_ALL:-C.UTF-8}
+    deploy:
+      resources:
+        limits:
+          memory: ${BACKEND_MEMORY_LIMIT:-512m}
+    ports:
+      - "5001:5001"
+    volumes:
+      - backend_uploads:/app/uploads
+      - backend_logs:/app/logs
+      - backend_backups:/app/backups
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5001/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    restart: unless-stopped
+    networks:
+      - imprimerie_network
+
+  # Frontend React avec Nginx
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile.prod
+      args:
+        REACT_APP_API_URL: /api
+        REACT_APP_SOCKET_URL: ""
+    container_name: imprimerie_frontend
+    deploy:
+      resources:
+        limits:
+          memory: ${FRONTEND_MEMORY_LIMIT:-256m}
+    ports:
+      - "3002:80"
+    depends_on:
+      backend:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:80"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    restart: unless-stopped
+    networks:
+      - imprimerie_network
+
+  # Redis pour le cache et les sessions (optionnel mais recommandé)
+  redis:
+    image: docker.io/redis:7-alpine
+    container_name: imprimerie_redis
+    command: redis-server --appendonly yes --requirepass ${REDIS_PASSWORD:-imprimerie_redis_password_2024}
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    deploy:
+      resources:
+        limits:
+          memory: ${REDIS_MEMORY_LIMIT:-128m}
+    healthcheck:
+      test: ["CMD", "redis-cli", "--raw", "incr", "ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    restart: unless-stopped
+    networks:
+      - imprimerie_network
+
+# Volumes persistants
+volumes:
+  postgres_data:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: ${PWD}/data/postgres
+  
+  backend_uploads:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: ${PWD}/data/uploads
+  
+  backend_logs:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: ${PWD}/data/logs
+  
+  backend_backups:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: ${PWD}/data/backups
+  
+  redis_data:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: ${PWD}/data/redis
+
+# Réseau dédié
+networks:
+  imprimerie_network:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.20.0.0/16

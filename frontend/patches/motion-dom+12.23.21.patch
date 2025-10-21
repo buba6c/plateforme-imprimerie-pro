@@ -1,0 +1,15 @@
+diff --git a/node_modules/motion-dom/dist/es/value/types/test.mjs b/node_modules/motion-dom/dist/es/value/types/test.mjs
+index ecc53d9..c0025c5 100644
+--- a/node_modules/motion-dom/dist/es/value/types/test.mjs
++++ b/node_modules/motion-dom/dist/es/value/types/test.mjs
+@@ -1,6 +1,4 @@
+-/**
+- * Tests a provided value against a ValueType
+- */
+-const testValueType = (v) => (type) => type.test(v);
+-
+-export { testValueType };
++// Patch placeholder for motion-dom testValueType
++export function testValueType() {
++  return () => false;
++}

@@ -1,0 +1,42 @@
+# ESLint ignore file
+# Dependencies
+node_modules/
+
+# Build outputs
+build/
+dist/
+*.build.js
+*.bundle.js
+
+# Generated files
+*.min.js
+*.min.css
+
+# Logs
+*.log
+
+# Environment files
+.env*
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Old/backup files
+*-old.*
+*.backup.*
+*.bak
+*-backup.*
+src/components/Layout-old.js
+src/components/admin/Settings.js
+src/components/dossiers/DossierDetails-backup.js
+
+# Test files
+coverage/
+*.test.js
+*.spec.js
+
+# Temporary files
+.cache/
+.temp/
+.tmp/

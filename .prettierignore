@@ -1,0 +1,55 @@
+# Prettier ignore file
+# Ignore build outputs
+node_modules/
+build/
+dist/
+*.build.js
+*.bundle.js
+
+# Ignore logs
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Ignore uploaded files
+uploads/
+
+# Ignore generated files
+*.min.js
+*.min.css
+
+# Ignore documentation
+docs/
+*.md
+
+# Ignore configuration files
+package-lock.json
+yarn.lock
+
+# Ignore environment files
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# Ignore cache
+.cache/
+.temp/
+.tmp/
+
+# Ignore database files
+*.db
+*.sqlite
+*.sqlite3
+
+# Ignore OS files
+.DS_Store
+Thumbs.db
+
+# Ignore problematic files
+*-old.*
+*.backup.*
+*.bak

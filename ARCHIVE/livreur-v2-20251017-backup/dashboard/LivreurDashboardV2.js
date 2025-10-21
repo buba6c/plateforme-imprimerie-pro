@@ -1,0 +1,518 @@
+/**
+ * 🚚 LivreurDashboardV2 - Interface principale moderne
+ * Dashboard complet redesigné avec une expérience utilisateur optimisée
+ */
+
+import React, { useState, useEffect } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
+import { ErrorBoundary } from 'react-error-boundary';
+
+// Hooks personnalisés
+import useLivreurData from '../hooks/useLivreurData';
+import useLivreurActions from '../hooks/useLivreurActions';
+
+// Composants de l'interface
+import LivreurHeader from './LivreurHeader';
+import LivreurKPICards from './LivreurKPICards';
+import LivreurNavigation from '../navigation/LivreurNavigation';
+import LivreurFilters from '../navigation/LivreurFilters';
+
+// Sections de contenu
+import ALivrerSectionV2 from '../sections/ALivrerSectionV2';
+import ProgrammeesSectionV2 from '../sections/ProgrammeesSectionV2';
+import TermineesSectionV2 from '../sections/TermineesSectionV2';
+
+// Modales
+import ProgrammerModalV2 from '../modals/ProgrammerModalV2';
+import ValiderLivraisonModalV2 from '../modals/ValiderLivraisonModalV2';
+import DossierDetailsModalV2 from '../modals/DossierDetailsModalV2';
+
+// Utilitaires et constantes
+import { DEFAULT_CONFIG, MESSAGES } from '../utils/livreurConstants';
+
+// Composant d'erreur
+const ErrorFallback = ({ error, resetErrorBoundary }) => (
+  <div className="min-h-screen bg-gradient-to-br from-red-50 to-red-100 flex items-center justify-center p-6">
+    <motion.div
+      initial={{ opacity: 0, scale: 0.9 }}
+      animate={{ opacity: 1, scale: 1 }}
+      className="bg-white rounded-xl shadow-lg p-8 max-w-md w-full text-center"
+    >
+      <div className="text-6xl mb-4">😵</div>
+      <h2 className="text-xl font-bold text-red-700 mb-2">Oups ! Une erreur est survenue</h2>
+      <p className="text-gray-600 mb-4">
+        {error.message || 'Une erreur inattendue s\'est produite'}
+      </p>
+      <button
+        onClick={resetErrorBoundary}
+        className="px-6 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors font-medium"
+      >
+        🔄 Réessayer
+      </button>
+    </motion.div>
+  </div>
+);
+
+const LivreurDashboardV2 = ({ 
+  user, 
+  initialSection = 'a_livrer',
+  onNavigate 
+}) => {
+  // État de l'interface
+  const [activeSection, setActiveSection] = useState(initialSection);
+  const [showFilters, setShowFilters] = useState(false);
+  const [viewMode, setViewMode] = useState('cards'); // cards | list | map
+  
+  // États des modales
+  const [modals, setModals] = useState({
+    programmer: { isOpen: false, dossier: null },
+    valider: { isOpen: false, dossier: null },
+    details: { isOpen: false, dossier: null }
+  });
+
+  // Hooks personnalisés
+  const {
+    dossiers,
+    filteredDossiers,
+    groupedDossiers,
+    stats,
+    loading,
+    refreshing,
+    error,
+    lastFetch,
+    filters,
+    setFilters,
+    refreshData,
+    findDossierById,
+    getDossiersByStatus,
+    getUrgentDossiers
+  } = useLivreurData();
+
+  const {
+    programmerLivraison,
+    validerLivraison,
+    modifierLivraison,
+    naviguerVersAdresse,
+    appelerClient,
+    actionLoading,
+    isActionLoading,
+    getAvailableActions
+  } = useLivreurActions();
+
+  /**
+   * 🎯 Gestionnaires des modales
+   */
+  const openModal = (type, dossier = null) => {
+    setModals(prev => ({
+      ...prev,
+      [type]: { isOpen: true, dossier }
+    }));
+  };
+
+  const closeModal = (type) => {
+    setModals(prev => ({
+      ...prev,
+      [type]: { isOpen: false, dossier: null }
+    }));
+  };
+
+  const closeAllModals = () => {
+    setModals({
+      programmer: { isOpen: false, dossier: null },
+      valider: { isOpen: false, dossier: null },
+      details: { isOpen: false, dossier: null }
+    });
+  };
+
+  /**
+   * 🎬 Gestionnaires d'actions
+   */
+  const handleProgrammer = (dossier) => {
+    openModal('programmer', dossier);
+  };
+
+  const handleValider = (dossier) => {
+    openModal('valider', dossier);
+  };
+
+  const handleVoirDetails = (dossier) => {
+    openModal('details', dossier);
+  };
+
+  const handleModifier = (dossier) => {
+    openModal('programmer', dossier); // Réutilise la même modale
+  };
+
+  const handleNavigation = (dossier) => {
+    naviguerVersAdresse(dossier);
+  };
+
+  const handleAppel = (dossier) => {
+    appelerClient(dossier);
+  };
+
+  /**
+   * 🔄 Gestion du rafraîchissement
+   */
+  const handleRefresh = async () => {
+    try {
+      await refreshData();
+    } catch (error) {
+      console.error('Erreur lors du rafraîchissement:', error);
+    }
+  };
+
+  /**
+   * 🎛️ Gestion de la navigation entre sections
+   */
+  const handleSectionChange = (section) => {
+    setActiveSection(section);
+    
+    // Réinitialiser les filtres quand on change de section
+    if (section !== activeSection) {
+      setFilters({
+        searchTerm: '',
+        filterStatus: 'all',
+        filterZone: 'all'
+      });
+    }
+    
+    // Callback externe si fourni
+    if (onNavigate) {
+      onNavigate(section);
+    }
+  };
+
+  /**
+   * 🔍 Gestion des filtres
+   */
+  const handleFiltersChange = (newFilters) => {
+    setFilters(newFilters);
+  };
+
+  const toggleFilters = () => {
+    setShowFilters(prev => !prev);
+  };
+
+  /**
+   * 📱 Gestionnaire du mode d'affichage
+   */
+  const handleViewModeChange = (mode) => {
+    setViewMode(mode);
+  };
+
+  /**
+   * ⚡ Actions sur les dossiers avec gestion d'erreurs
+   */
+  const handleProgrammerAction = async (dossier, data) => {
+    try {
+      await programmerLivraison(dossier, data);
+      closeModal('programmer');
+    } catch (error) {
+      console.error('Erreur programmation:', error);
+    }
+  };
+
+  const handleValiderAction = async (dossier, data) => {
+    try {
+      await validerLivraison(dossier, data);
+      closeModal('valider');
+    } catch (error) {
+      console.error('Erreur validation:', error);
+    }
+  };
+
+  const handleModifierAction = async (dossier, data) => {
+    try {
+      await modifierLivraison(dossier, data);
+      closeModal('programmer');
+    } catch (error) {
+      console.error('Erreur modification:', error);
+    }
+  };
+
+  /**
+   * 📊 Calcul des données pour les sections
+   */
+  const getSectionData = (section) => {
+    switch (section) {
+      case 'a_livrer':
+        return groupedDossiers.aLivrer || [];
+      case 'programmees':
+        return groupedDossiers.programmees || [];
+      case 'terminees':
+        return groupedDossiers.livrees || [];
+      default:
+        return [];
+    }
+  };
+
+  /**
+   * 🎨 Rendu conditionnel du contenu principal
+   */
+  const renderMainContent = () => {
+    const sectionData = getSectionData(activeSection);
+    
+    if (loading && !refreshing) {
+      return (
+        <div className="flex items-center justify-center py-20">
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            className="text-center"
+          >
+            <div className="w-16 h-16 border-4 border-blue-200 border-t-blue-600 rounded-full animate-spin mx-auto mb-4"></div>
+            <p className="text-gray-600">{MESSAGES.LOADING.DOSSIERS}</p>
+          </motion.div>
+        </div>
+      );
+    }
+
+    if (error && !dossiers.length) {
+      return (
+        <div className="flex items-center justify-center py-20">
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="text-center bg-red-50 rounded-xl p-8 max-w-md"
+          >
+            <div className="text-4xl mb-4">⚠️</div>
+            <h3 className="text-lg font-semibold text-red-700 mb-2">Erreur de chargement</h3>
+            <p className="text-red-600 mb-4">{error}</p>
+            <button
+              onClick={handleRefresh}
+              className="px-6 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors"
+            >
+              🔄 Réessayer
+            </button>
+          </motion.div>
+        </div>
+      );
+    }
+
+    switch (activeSection) {
+      case 'a_livrer':
+        return (
+          <ALivrerSectionV2
+            dossiers={sectionData}
+            onProgrammer={handleProgrammer}
+            onVoirDetails={handleVoirDetails}
+            onNavigation={handleNavigation}
+            onAppel={handleAppel}
+            viewMode={viewMode}
+            refreshing={refreshing}
+            actionLoading={actionLoading}
+          />
+        );
+
+      case 'programmees':
+        return (
+          <ProgrammeesSectionV2
+            dossiers={sectionData}
+            onModifier={handleModifier}
+            onValider={handleValider}
+            onVoirDetails={handleVoirDetails}
+            onNavigation={handleNavigation}
+            onAppel={handleAppel}
+            viewMode={viewMode}
+            refreshing={refreshing}
+            actionLoading={actionLoading}
+          />
+        );
+
+      case 'terminees':
+        return (
+          <TermineesSectionV2
+            dossiers={sectionData}
+            onVoirDetails={handleVoirDetails}
+            onNavigation={handleNavigation}
+            onAppel={handleAppel}
+            viewMode={viewMode}
+            refreshing={refreshing}
+          />
+        );
+
+      default:
+        return (
+          <div className="flex items-center justify-center py-20">
+            <div className="text-center">
+              <div className="text-4xl mb-4">🤔</div>
+              <h3 className="text-lg font-semibold text-gray-700 mb-2">Section introuvable</h3>
+              <p className="text-gray-600">La section "{activeSection}" n'existe pas.</p>
+            </div>
+          </div>
+        );
+    }
+  };
+
+  /**
+   * ⚡ Effet pour les raccourcis clavier
+   */
+  useEffect(() => {
+    const handleKeyPress = (event) => {
+      // Fermer les modales avec Escape
+      if (event.key === 'Escape') {
+        closeAllModals();
+        setShowFilters(false);
+      }
+      
+      // Raccourcis pour la navigation
+      if (event.ctrlKey || event.metaKey) {
+        switch (event.key) {
+          case '1':
+            event.preventDefault();
+            handleSectionChange('a_livrer');
+            break;
+          case '2':
+            event.preventDefault();
+            handleSectionChange('programmees');
+            break;
+          case '3':
+            event.preventDefault();
+            handleSectionChange('terminees');
+            break;
+          case 'r':
+            event.preventDefault();
+            handleRefresh();
+            break;
+          case 'f':
+            event.preventDefault();
+            toggleFilters();
+            break;
+        }
+      }
+    };
+
+    document.addEventListener('keydown', handleKeyPress);
+    return () => document.removeEventListener('keydown', handleKeyPress);
+  }, [activeSection]);
+
+  return (
+    <ErrorBoundary
+      FallbackComponent={ErrorFallback}
+      onReset={handleRefresh}
+    >
+      <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-cyan-50">
+        {/* En-tête principal */}
+        <LivreurHeader
+          user={user}
+          refreshing={refreshing}
+          onRefresh={handleRefresh}
+          lastUpdate={lastFetch}
+          viewMode={viewMode}
+          onViewModeChange={handleViewModeChange}
+          onToggleFilters={toggleFilters}
+          showFilters={showFilters}
+        />
+
+        {/* KPI Cards */}
+        <div className="max-w-7xl mx-auto px-6 -mt-6 mb-8">
+          <LivreurKPICards
+            stats={stats}
+            urgentCount={getUrgentDossiers().length}
+            loading={loading}
+          />
+        </div>
+
+        {/* Navigation des sections */}
+        <div className="max-w-7xl mx-auto px-6 mb-6">
+          <LivreurNavigation
+            activeSection={activeSection}
+            onSectionChange={handleSectionChange}
+            stats={stats}
+            groupedDossiers={groupedDossiers}
+          />
+        </div>
+
+        {/* Filtres (si activés) */}
+        <AnimatePresence>
+          {showFilters && (
+            <motion.div
+              initial={{ opacity: 0, height: 0 }}
+              animate={{ opacity: 1, height: 'auto' }}
+              exit={{ opacity: 0, height: 0 }}
+              className="max-w-7xl mx-auto px-6 mb-6"
+            >
+              <LivreurFilters
+                filters={filters}
+                onFiltersChange={handleFiltersChange}
+                resultCount={filteredDossiers.length}
+                totalCount={dossiers.length}
+                onClose={() => setShowFilters(false)}
+              />
+            </motion.div>
+          )}
+        </AnimatePresence>
+
+        {/* Contenu principal */}
+        <div className="max-w-7xl mx-auto px-6 pb-8">
+          <AnimatePresence mode="wait" initial={false}>
+            <motion.div
+              key={activeSection}
+              initial={{ opacity: 0, x: 20 }}
+              animate={{ opacity: 1, x: 0 }}
+              exit={{ opacity: 0, x: -20 }}
+              transition={{ duration: 0.2 }}
+            >
+              {renderMainContent()}
+            </motion.div>
+          </AnimatePresence>
+        </div>
+
+        {/* Modales */}
+        <AnimatePresence>
+          {modals.programmer.isOpen && (
+            <ProgrammerModalV2
+              dossier={modals.programmer.dossier}
+              isOpen={modals.programmer.isOpen}
+              onClose={() => closeModal('programmer')}
+              onProgrammer={handleProgrammerAction}
+              onModifier={handleModifierAction}
+              loading={isActionLoading('programmer', modals.programmer.dossier?.id)}
+            />
+          )}
+
+          {modals.valider.isOpen && (
+            <ValiderLivraisonModalV2
+              dossier={modals.valider.dossier}
+              isOpen={modals.valider.isOpen}
+              onClose={() => closeModal('valider')}
+              onValider={handleValiderAction}
+              loading={isActionLoading('valider', modals.valider.dossier?.id)}
+            />
+          )}
+
+          {modals.details.isOpen && (
+            <DossierDetailsModalV2
+              dossier={modals.details.dossier}
+              isOpen={modals.details.isOpen}
+              onClose={() => closeModal('details')}
+              availableActions={getAvailableActions(modals.details.dossier || {})}
+              onAction={(action) => {
+                const dossier = modals.details.dossier;
+                closeModal('details');
+                
+                switch (action) {
+                  case 'programmer':
+                    handleProgrammer(dossier);
+                    break;
+                  case 'valider':
+                    handleValider(dossier);
+                    break;
+                  case 'navigation':
+                    handleNavigation(dossier);
+                    break;
+                  case 'appel':
+                    handleAppel(dossier);
+                    break;
+                }
+              }}
+            />
+          )}
+        </AnimatePresence>
+      </div>
+    </ErrorBoundary>
+  );
+};
+
+export default LivreurDashboardV2;

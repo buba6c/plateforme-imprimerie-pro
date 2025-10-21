@@ -1,0 +1,19 @@
+{
+  "name": "workflow-adapter",
+  "version": "0.1.0",
+  "description": "Portable workflow engine (statuses, role-based transitions, guards, notifications) extracted from plateforme-impression-v2",
+  "main": "src/index.js",
+  "type": "module",
+  "scripts": {
+    "demo": "node demo/demo.js"
+  },
+  "keywords": [
+    "workflow",
+    "printing",
+    "roles",
+    "transitions",
+    "notifications"
+  ],
+  "author": "",
+  "license": "MIT"
+}

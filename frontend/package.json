@@ -1,0 +1,89 @@
+{
+  "name": "imprimerie-frontend",
+  "version": "1.0.0",
+  "description": "Frontend React pour la plateforme d'imprimerie numérique",
+  "private": true,
+  "dependencies": {
+    "@headlessui/react": "^1.7.17",
+    "@heroicons/react": "^2.2.0",
+    "axios": "^1.6.2",
+    "bcryptjs": "^3.0.2",
+    "chart.js": "^4.5.0",
+    "docx-preview": "^0.3.7",
+    "file-saver": "^2.0.5",
+    "framer-motion": "^12.23.22",
+    "html2canvas": "^1.4.1",
+    "lucide-react": "^0.544.0",
+    "mammoth": "^1.11.0",
+    "next-themes": "^0.4.6",
+    "pdfjs-dist": "^3.11.174",
+    "prop-types": "^15.8.1",
+    "react": "^18.2.0",
+    "react-chartjs-2": "^5.3.0",
+    "react-colorful": "^5.6.1",
+    "react-dom": "^18.2.0",
+    "react-error-boundary": "^6.0.0",
+    "react-file-icon": "^1.6.0",
+    "react-hot-toast": "^2.6.0",
+    "react-hotkeys-hook": "^5.1.0",
+    "react-image-gallery": "^1.4.0",
+    "react-pdf": "^7.7.1",
+    "react-router-dom": "^6.8.1",
+    "react-scripts": "5.0.1",
+    "react-zoom-pan-pinch": "^3.7.0",
+    "recharts": "^3.2.1",
+    "socket.io-client": "^4.7.4",
+    "web-vitals": "^3.5.0"
+  },
+  "devDependencies": {
+    "@tailwindcss/cli": "^4.1.14",
+    "@tailwindcss/forms": "^0.5.7",
+    "@types/react": "^18.2.45",
+    "@types/react-dom": "^18.2.18",
+    "autoprefixer": "^10.4.21",
+    "eslint-config-prettier": "^10.1.8",
+    "eslint-plugin-prettier": "^5.5.4",
+    "patch-package": "^8.0.1",
+    "postcss": "^8.5.6",
+    "postcss-dark-theme-class": "^2.0.0",
+    "postcss-preset-env": "^10.4.0",
+    "prettier": "^3.6.2",
+    "tailwindcss": "^3.3.6",
+    "tailwindcss-themer": "^4.1.1"
+  },
+  "scripts": {
+    "start": "PORT=3001 react-scripts start",
+    "build": "GENERATE_SOURCEMAP=false react-scripts build",
+    "build:analyze": "npm run build && npx serve -s build",
+    "test": "react-scripts test",
+    "eject": "react-scripts eject",
+    "lint": "eslint src --max-warnings 0",
+    "lint:fix": "eslint src --fix",
+    "format": "prettier --write \"src/**/*.{js,jsx,css,json}\"",
+    "format:check": "prettier --check \"src/**/*.{js,jsx,css,json}\"",
+    "quality": "npm run lint && npm run format:check",
+    "quality:fix": "npm run lint:fix && npm run format",
+    "dark-mode:fix": "node scripts/dark-mode-fixer.js",
+    "dark-mode:analyze": "grep -r 'bg-white\\|text-gray\\|border-gray' src/ --include='*.js' --include='*.jsx' | grep -v dark:",
+    "dark-mode:validate": "node scripts/validate-dark-mode.js",
+    "colors:unify": "node scripts/color-system-fixer.js",
+    "colors:validate": "grep -r 'primary-\\|secondary-\\|gray-\\|slate-' src/ --include='*.js' --include='*.jsx' | head -20",
+    "colors:check": "node scripts/validate-color-system.js"
+  },
+  "overrides": {
+    "html-webpack-plugin": "5.5.0"
+  },
+  "browserslist": {
+    "production": [
+      ">0.2%",
+      "not dead",
+      "not op_mini all"
+    ],
+    "development": [
+      "last 1 chrome version",
+      "last 1 firefox version",
+      "last 1 safari version"
+    ]
+  },
+  "proxy": "http://localhost:5001"
+}

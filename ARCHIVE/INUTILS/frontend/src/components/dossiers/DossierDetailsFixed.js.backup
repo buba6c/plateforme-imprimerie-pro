@@ -1,0 +1,1771 @@
+import React, { useState, useEffect, useCallback } from 'react';
+import PropTypes from 'prop-types';
+import {
+  XMarkIcon,
+  ClockIcon,
+  TruckIcon,
+  ExclamationTriangleIcon,
+  CheckCircleIcon,
+  ArrowRightIcon,
+  ArrowDownTrayIcon,
+  ClipboardDocumentListIcon,
+  EyeIcon,
+  TrashIcon,
+} from '@heroicons/react/24/outline';
+import { dossiersService } from '../../services/apiAdapter';
+import filesService from '../../services/filesService';
+import FileUpload from '../files/FileUpload';
+import FileViewer from '../files/FileViewer';
+import FileThumbnail from '../files/FileThumbnailSimple';
+import { useAuth } from '../../context/AuthContext';
+import {
+  getAvailableActions,
+  mapAppRoleToAdapter,
+  mapAppStatusToAdapter,
+  mapAdapterStatusToApp,
+} from '../../workflow-adapter';
+import { normalizeDossier } from '../../services/dossierNormalizer';
+
+const DossierDetails = ({ dossierId, dossier: dossierProp = null, isOpen, onClose, onStatusChange }) => {
+  const { user } = useAuth();
+  const [showDebugger, setShowDebugger] = useState(false);
+  
+  // Debug du rôle utilisateur
+  console.log('🔍 DossierDetails - Rôle utilisateur:', user?.role);
+  console.log('🔍 DossierDetails - Utilisateur complet:', user);
+  // Fonction pour déverrouiller un dossier validé (admin)
+  const handleUnlockDossier = async () => {
+    try {
+      setChangingStatut(true);
+      await dossiersService.unlockDossier(dossierId);
+      await loadDossierDetails();
+      setChangingStatut(false);
+    } catch (err) {
+      setError(err?.error || 'Erreur lors du déverrouillage du dossier');
+      setChangingStatut(false);
+    }
+  };
+  const [dossier, setDossier] = useState(dossierProp ? normalizeDossier(dossierProp) : null);
+  const [files, setFiles] = useState([]);
+  const [statutHistory, setStatutHistory] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+  // Nettoyage: plus de bloc diagnostic détaillé
+  const [changingStatut, setChangingStatut] = useState(false);
+  const [reviewComment, setReviewComment] = useState('');
+  const [showReviewModal, setShowReviewModal] = useState(false);
+  const [uploadingFiles, setUploadingFiles] = useState(false);
+  const [showUpload, setShowUpload] = useState(false);
+  const [loadingFiles, setLoadingFiles] = useState(false);
+  const [showScheduleModal, setShowScheduleModal] = useState(false);
+  const [scheduleDate, setScheduleDate] = useState(() => new Date().toISOString().slice(0, 10));
+  const [showDeliveryModal, setShowDeliveryModal] = useState(false);
+  const [deliveryDate, setDeliveryDate] = useState(() => new Date().toISOString().slice(0, 10));
+  const [paymentMode, setPaymentMode] = useState('Espèces');
+  const [paymentAmount, setPaymentAmount] = useState('');
+
+  // États pour le prévisualiseur avancé
+  const [showFileViewer, setShowFileViewer] = useState(false);
+  const [selectedFile, setSelectedFile] = useState(null);
+
+  // Fonction helper pour formater les dates en sécurité
+  const formatDateSafe = dateString => {
+    try {
+      if (!dateString) return 'Date inconnue';
+      return new Date(dateString).toLocaleDateString('fr-FR', {
+        day: '2-digit',
+        month: '2-digit',
+        year: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit',
+      });
+    } catch {
+      return 'Date invalide';
+    }
+  };
+
+  const mapFrenchStatutToApp = s => {
+    if (!s) return '';
+    const val = String(s).toLowerCase();
+    if (val.includes('cours')) return 'en_cours';
+    if (val.includes('revoir')) return 'a_revoir';
+    if (val.includes('impression') && !val.includes('prêt')) return 'en_impression';
+    if (val.includes('prêt') && val.includes('livraison')) return 'pret_livraison';
+    if (val.includes('livraison')) return 'en_livraison';
+    if (val.includes('livré') || val.includes('termin')) return 'termine';
+    if (val.includes('imprim')) return 'termine';
+    return '';
+  };
+
+  const loadDossierDetails = useCallback(async () => {
+    const effectiveId = dossierId || dossierProp?.folder_id || dossierProp?.id;
+    if (!effectiveId) return;
+    
+    // Debug: vérifier l'authentification
+    const token = localStorage.getItem('auth_token');
+    console.log('🔍 Debug loadDossierDetails:', {
+      dossierId,
+      hasToken: !!token,
+      tokenLength: token?.length || 0
+    });
+    
+    try {
+      setLoading(true);
+      setError('');
+      const response = await dossiersService.getDossier(effectiveId);
+      const raw = response?.dossier || response;
+      const normalized = normalizeDossier(raw);
+      setDossier(normalized);
+
+      // Utiliser les fichiers de la réponse principale ou les recharger
+      const dossierFiles = response.files || raw?.fichiers || [];
+      setFiles(dossierFiles);
+
+      // Si pas de fichiers dans la réponse, les charger séparément
+      if (dossierFiles.length === 0) {
+        try {
+          const filesResponse = await filesService.getFiles(dossierId);
+          setFiles(filesResponse.files || []);
+        } catch (err) {
+          console.warn('Impossible de charger les fichiers:', err);
+        }
+      }
+
+      setStatutHistory(response.statut_history || raw?.historique || []);
+    } catch (err) {
+      const status = err?.response?.status;
+      const code = err?.response?.data?.code;
+      // Diagnostic détaillé (non intrusif) pour tracer les erreurs 404 récurrentes
+      try {
+        // eslint-disable-next-line no-console
+        console.error('[DossierDetails][loadDossierDetails] Échec chargement', {
+          dossierId,
+          status,
+          code,
+          backendMessage: err?.response?.data?.message || err?.response?.data?.error,
+        });
+        if (typeof window !== 'undefined') {
+          window.__LAST_DOSSIER_FETCH__ = {
+            at: new Date().toISOString(),
+            dossierId,
+            status,
+            code,
+            data: err?.response?.data,
+          };
+        }
+      } catch (_) {
+        /* ignorer toute erreur de logging */
+      }
+      let userMessage;
+      if (status === 401) {
+        userMessage = 'Session expirée - Veuillez vous reconnecter';
+      } else if (status === 404) {
+        userMessage =
+          code === 'DOSSIER_NOT_FOUND'
+            ? "Ce dossier n'existe pas ou a été supprimé."
+            : 'Dossier introuvable.';
+      } else if (status === 403) {
+        userMessage =
+          code === 'ACCESS_DENIED'
+            ? `Accès refusé : ${err?.response?.data?.message?.replace('Accès refusé : ', '')}`
+            : "Vous n'avez pas les permissions pour consulter ce dossier.";
+      } else {
+        userMessage =
+          err?.response?.data?.message ||
+          err?.response?.data?.error ||
+          err?.message ||
+          'Erreur lors du chargement des détails';
+      }
+      setError(userMessage || 'Erreur lors du chargement des détails');
+    } finally {
+      setLoading(false);
+    }
+  }, [dossierId, dossierProp?.folder_id, dossierProp?.id]);
+
+  const loadFiles = useCallback(async () => {
+    const effectiveId = dossierId || dossierProp?.folder_id || dossierProp?.id;
+    if (!effectiveId) return;
+    
+    try {
+      setLoadingFiles(true);
+      
+      console.log('📁 Chargement fichiers pour dossier:', dossierId);
+      
+      // Utiliser le service de fichiers avec notre résolution d'ID améliorée
+      const response = await filesService.getFiles(effectiveId);
+      const files = response.files || response || [];
+      
+      console.log(`📋 ${files.length} fichiers chargés:`, files.map(f => f.original_filename || f.nom).join(', '));
+      
+      setFiles(files);
+      setError(''); // Clear any previous error
+    } catch (err) {
+      console.error('❌ Erreur chargement fichiers dossier', dossierId, err);
+      setError('Erreur lors du chargement des fichiers');
+    } finally {
+      setLoadingFiles(false);
+    }
+  }, [dossierId, dossierProp?.folder_id, dossierProp?.id]);
+
+  useEffect(() => {
+    if (isOpen) {
+      loadDossierDetails();
+      loadFiles(); // Charger les fichiers automatiquement
+    }
+  }, [isOpen, loadDossierDetails, loadFiles]);
+
+  // Fonction supprimée: getAvailableTransitions n'est plus utilisée
+
+  const getStatusIcon = status => {
+    const icons = {
+      en_cours: ClipboardDocumentListIcon,
+      a_revoir: ExclamationTriangleIcon,
+      en_impression: CheckCircleIcon,
+      termine: CheckCircleIcon,
+      en_livraison: TruckIcon,
+    };
+    const IconComponent = icons[status] || ClockIcon;
+    return <IconComponent className="h-5 w-5" />;
+  };
+
+  const getStatusLabel = status =>
+    ({
+      en_cours: 'En cours',
+      a_revoir: 'À revoir',
+      en_impression: 'En impression',
+      termine: 'Terminé',
+      pret_livraison: 'Prêt livraison',
+      en_livraison: 'En livraison',
+      livre: 'Livré',
+    })[status] || status;
+
+  // Get colored badge for status
+  const getStatusBadge = (status) => {
+    const statusConfig = {
+      en_cours: { color: 'bg-blue-100 text-blue-800 border-blue-300', icon: '📋', label: 'En cours' },
+      a_revoir: { color: 'bg-orange-100 text-orange-800 border-orange-300', icon: '⚠️', label: 'À revoir' },
+      en_impression: { color: 'bg-purple-100 text-purple-800 border-purple-300', icon: '🖨️', label: 'En impression' },
+      pret_livraison: { color: 'bg-indigo-100 text-indigo-800 border-indigo-300', icon: '📦', label: 'Prêt livraison' },
+      en_livraison: { color: 'bg-yellow-100 text-yellow-800 border-yellow-300', icon: '🚚', label: 'En livraison' },
+      livre: { color: 'bg-green-100 text-green-800 border-green-300', icon: '✅', label: 'Livré' },
+      termine: { color: 'bg-green-100 text-green-800 border-green-300', icon: '✅', label: 'Terminé' },
+    };
+    
+    const config = statusConfig[status] || { 
+      color: 'bg-gray-100 text-gray-800 border-gray-300', 
+      icon: '📋', 
+      label: status 
+    };
+    
+    return (
+      <span className={`inline-flex items-center gap-2 px-4 py-2 rounded-lg font-semibold text-sm border-2 ${config.color}`}>
+        <span>{config.icon}</span>
+        {config.label}
+      </span>
+    );
+  };
+
+  // Format date with time for history
+  const formatDateTime = dateString => {
+    try {
+      if (!dateString) return 'Date inconnue';
+      return new Date(dateString).toLocaleString('fr-FR', {
+        day: '2-digit',
+        month: 'short',
+        year: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit',
+      });
+    } catch {
+      return 'Date invalide';
+    }
+  };
+
+  const canPreparatorValidate = () => {
+    if (!dossier || !user) return false;
+    if (user.role !== 'preparateur') return false;
+    const statusPrep = ['en_cours', 'a_revoir', 'PREPARATION', 'REVISION'];
+    const isStatusOk = statusPrep.includes(dossier.status);
+    const isOwner = dossier.created_by === user.id || dossier.createdById === user.id;
+    if (!isStatusOk) {
+      console.warn('Valider désactivé: statut non autorisé', dossier.status);
+    }
+    if (!isOwner) {
+      console.warn('Valider désactivé: utilisateur non propriétaire', dossier.created_by, user.id);
+    }
+    return isStatusOk && isOwner;
+  };
+
+  const handleValidateDossier = async () => {
+    try {
+      console.log('🔄 Validation dossier - Statut actuel:', dossier.status || dossier.statut);
+      console.log('🔄 Dossier complet:', dossier);
+      
+      // Vérifier les conditions avant validation
+      const currentStatus = (dossier.status || dossier.statut || '').toLowerCase().replace(/\s/g, '_');
+      console.log('🔄 Statut normalisé:', currentStatus);
+      
+      if (!['en_cours', 'a_revoir'].includes(currentStatus)) {
+        const statusLabel = getStatusLabel(dossier.status || dossier.statut);
+        setError(`Impossible de valider ce dossier. Statut actuel: "${statusLabel}". Le dossier doit être "en_cours" ou "a_revoir".`);
+        return;
+      }
+      
+      const effectiveId = dossierId || dossier?.folder_id || dossier?.id;
+      await dossiersService.validateDossier(effectiveId);
+      await loadDossierDetails();
+      if (onStatusChange) onStatusChange(dossierId, dossier.statut, 'en_impression');
+    } catch (err) {
+      console.error('❌ Erreur validation dossier:', err);
+      setError(err?.error || err?.message || 'Erreur lors de la validation du dossier');
+    }
+  };
+
+  const handleReprintDossier = async (comment = null) => {
+    try {
+      setChangingStatut(true);
+      const effectiveId = dossierId || dossier?.folder_id || dossier?.id;
+      await dossiersService.reprintDossier(effectiveId, comment);
+      await loadDossierDetails();
+      if (onStatusChange) onStatusChange(dossierId, dossier.statut, 'en_impression');
+    } catch (err) {
+      setError(err?.error || err?.message || 'Erreur lors de la remise en impression du dossier');
+    } finally {
+      setChangingStatut(false);
+    }
+  };
+
+  const handleStatusChange = async (newStatus, comment = null) => {
+    try {
+      setChangingStatut(true);
+      const effectiveId = dossierId || dossier?.folder_id || dossier?.id;
+      await dossiersService.changeStatus(effectiveId, newStatus, comment || undefined);
+      await loadDossierDetails();
+      if (onStatusChange) onStatusChange(dossierId, dossier.statut, newStatus);
+      setShowReviewModal(false);
+      setReviewComment('');
+    } catch (err) {
+      setError(err?.error || err?.message || 'Erreur lors du changement de statut');
+    } finally {
+      setChangingStatut(false);
+    }
+  };
+
+  const handleStatusClick = next => {
+    // Imprimeur: le bouton "Terminé" doit envoyer au Livreur → on mappe vers 'pret_livraison'
+    if (
+      (user?.role === 'imprimeur_roland' || user?.role === 'imprimeur_xerox') &&
+      next === 'termine'
+    ) {
+      return handleStatusChange('pret_livraison');
+    }
+    if (next === 'a_revoir') setShowReviewModal(true);
+    else handleStatusChange(next);
+  };
+
+  const handleFileUpload = async selected => {
+    try {
+      setUploadingFiles(true);
+      
+      // Upload des fichiers
+      const uploadResult = await filesService.uploadFiles(dossierId, selected);
+      console.log('✅ Upload réussi:', uploadResult);
+      
+      // Forcer le rechargement des fichiers avec un léger délai pour la cohérence DB
+      setTimeout(async () => {
+        await loadFiles();
+        console.log('🔄 Fichiers rechargés après upload');
+      }, 500);
+      
+      setShowUpload(false);
+    } catch (err) {
+      console.error('❌ Erreur upload fichiers:', err);
+      setError(err?.error || "Erreur lors de l'upload des fichiers");
+    } finally {
+      setUploadingFiles(false);
+    }
+  };
+
+  const canUploadFiles = () => {
+    if (!dossier || !user) return false;
+
+    // Le livreur ne peut jamais uploader des fichiers
+    if (user.role === 'livreur') return false;
+
+    // Admin peut toujours uploader
+    if (user.role === 'admin') return true;
+
+    // Préparateur: seulement sur ses dossiers ET selon le workflow
+    if (user.role === 'preparateur') {
+      const isOwner = dossier.created_by === user.id || dossier.createdById === user.id;
+      if (!isOwner) return false;
+
+      // Workflow de validation des fichiers:
+      // - Si dossier non validé: upload autorisé sur statuts en_cours et a_revoir
+      // - Si dossier validé (valide_preparateur): upload interdit SAUF si statut = "a_revoir"
+      const allowedStatusesBase = ['en_cours', 'a_revoir'];
+
+      if (dossier.valide_preparateur || dossier.validated) {
+        // Dossier déjà validé: upload autorisé UNIQUEMENT si remis "À revoir"
+        return dossier.status === 'a_revoir';
+      } else {
+        // Dossier non validé: upload sur statuts de préparation
+        return allowedStatusesBase.includes(dossier.status);
+      }
+    }
+
+    // Imprimeurs peuvent uploader sur leurs dossiers de machine selon le backend
+    if (user.role === 'imprimeur_roland' || user.role === 'imprimeur_xerox') {
+      const machineType = (dossier.type_formulaire || dossier.machine || '').toLowerCase();
+      const requiredMachine = user.role === 'imprimeur_roland' ? 'roland' : 'xerox';
+      
+      // Peut uploader sur les dossiers de sa machine en impression/terminé
+      if (machineType.includes(requiredMachine)) {
+        const allowedStatuses = ['en_impression', 'termine', 'en_cours'];
+        return allowedStatuses.includes(dossier.status || dossier.statut);
+      }
+      
+      return false;
+    }
+
+    // Livreurs peuvent uploader des preuves de livraison
+    if (user.role === 'livreur') {
+      const allowedStatuses = ['pret_livraison', 'en_livraison', 'livre', 'termine'];
+      const status = (dossier.status || dossier.statut || '').toLowerCase().replace(/\s/g, '_');
+      return allowedStatuses.includes(status);
+    }
+
+    return false;
+  };
+
+  if (!isOpen) return null;
+
+  if (loading) {
+    return (
+      <div className="fixed inset-0 z-50 overflow-y-auto">
+        <div className="flex items-center justify-center min-h-screen pt-4 px-4 pb-20">
+          <div className="fixed inset-0 bg-secondary-500 bg-opacity-75"></div>
+          <div className="relative bg-white dark:bg-secondary-800 rounded-lg p-8">
+            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary-600 mx-auto"></div>
+            <p className="text-center mt-4 text-secondary-600">Chargement...</p>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (!dossier || error) {
+    const friendlyError = (() => {
+      if (!error) return 'Ce dossier n\'existe pas ou vous n\'avez pas l\'autorisation pour cette action';
+      if (/non trouv/i.test(error)) return error; // Garder le message explicite du serveur
+      if (/autorisé|permission|refusé/i.test(error)) return error; // Garder le message explicite du serveur
+      if (/invalide|uuid/i.test(error) && dossierId && dossierId.length < 10)
+        return 'Identifiant dossier invalide (format inattendu)';
+      return error;
+    })();
+    return (
+      <div className="fixed inset-0 z-50 overflow-y-auto">
+        <div className="flex items-center justify-center min-h-screen pt-4 px-4 pb-20">
+          <button
+            type="button"
+            aria-label="Fermer la fenêtre"
+            className="fixed inset-0 bg-secondary-500 bg-opacity-75 cursor-pointer"
+            onClick={onClose}
+            onKeyDown={e => {
+              if (['Enter', ' ', 'Escape'].includes(e.key)) onClose();
+            }}
+          />
+          <div className="relative bg-white dark:bg-secondary-800 rounded-lg p-8">
+            <div className="text-center">
+              <ExclamationTriangleIcon className="h-12 w-12 text-danger-400 mx-auto mb-4" />
+              <h3 className="text-lg font-medium text-secondary-900 mb-2">{friendlyError}</h3>
+              <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-center gap-3">
+                {friendlyError.includes('Session expirée') ? (
+                  <>
+                    <button
+                      onClick={() => {
+                        // Rediriger vers la page de connexion
+                        window.location.href = '/login';
+                      }}
+                      className="btn-primary"
+                    >
+                      🔑 Se reconnecter
+                    </button>
+                    <button
+                      onClick={() => {
+                        setError('');
+                        loadDossierDetails();
+                      }}
+                      className="btn-secondary"
+                    >
+                      Réessayer
+                    </button>
+                  </>
+                ) : (
+                  <button
+                    onClick={() => {
+                      setError('');
+                      loadDossierDetails();
+                    }}
+                    className="btn-secondary"
+                  >
+                    Réessayer
+                  </button>
+                )}
+                <button onClick={onClose} className="btn-primary">
+                  Fermer
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 overflow-y-auto">
+      <div className="flex items-center justify-center min-h-screen pt-4 px-4 pb-20 text-center sm:block sm:p-0">
+        <button
+          type="button"
+          aria-label="Fermer la fenêtre"
+          className="fixed inset-0 bg-secondary-500 bg-opacity-75 transition-opacity cursor-pointer"
+          onClick={onClose}
+          onKeyDown={e => {
+            if (['Enter', ' ', 'Escape'].includes(e.key)) onClose();
+          }}
+        />
+        <div className="inline-block align-bottom bg-white dark:bg-secondary-800 rounded-2xl text-left overflow-hidden shadow-2xl transform transition-all sm:my-8 sm:align-middle sm:max-w-5xl sm:w-full border border-secondary-100 dark:border-secondary-700">
+          {/* Header */}
+          <div className="bg-gradient-to-r from-primary-600 to-primary-700 px-8 py-6">
+            <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+              <div className="flex items-center gap-4">
+                <div className="bg-white bg-opacity-30 p-4 rounded-xl shadow-md">
+                  {getStatusIcon(dossier.status)}
+                </div>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <h3 className="text-2xl font-extrabold text-white tracking-wide drop-shadow-lg">
+                      {dossier.numero_commande || dossier.numero}
+                    </h3>
+                    {dossier.urgence && (
+                      <ExclamationTriangleIcon
+                        className="h-6 w-6 text-yellow-300 animate-bounce"
+                        title="Urgence"
+                      />
+                    )}
+                  </div>
+                  <p className="text-primary-100 text-lg font-medium mt-1">
+                    {dossier.client_nom || dossier.client} •{' '}
+                    <span className="capitalize">
+                      {dossier.type?.charAt(0).toUpperCase() + dossier.type?.slice(1)}
+                    </span>
+                  </p>
+                  <div className="text-primary-200 text-sm mt-1">
+                    Créé le {formatDateSafe(dossier.created_at)}
+                  </div>
+                </div>
+              </div>
+              <div className="flex items-center gap-4">
+                {getStatusBadge(dossier.status)}
+                <button
+                  onClick={onClose}
+                  className="text-white hover:text-primary-200 transition-colors duration-150 p-2 hover:bg-white/10 rounded-lg"
+                  title="Fermer"
+                >
+                  <XMarkIcon className="h-7 w-7" />
+                </button>
+              </div>
+            </div>
+          </div>
+
+          {/* Body */}
+          <div className="px-8 py-8 grid grid-cols-1 lg:grid-cols-3 gap-8">
+            {/* Colonne principale */}
+            <div className="lg:col-span-2 space-y-8">
+              {/* Infos générales optimisées */}
+              <div className="bg-white dark:bg-secondary-800 rounded-xl shadow border border-secondary-200 dark:border-secondary-700 overflow-hidden">
+                <div className="px-6 py-4 border-b border-secondary-200 dark:border-secondary-700">
+                  <div className="flex items-center justify-between">
+                    <h4 className="text-lg font-semibold text-secondary-900 dark:text-secondary-100">
+                      Informations détaillées
+                    </h4>
+                    {/* Infos rapides en ligne */}
+                    <div className="flex flex-wrap gap-2">
+                      {(dossier.quantite || dossier.data_formulaire?.quantite) && (
+                        <span className="px-3 py-1 rounded text-xs font-medium bg-secondary-100 text-secondary-700 border border-secondary-200">
+                          Qté: {dossier.quantite || dossier.data_formulaire?.quantite}
+                        </span>
+                      )}
+                      {dossier.deadline && (
+                        <span className="px-3 py-1 rounded text-xs font-medium bg-secondary-100 text-secondary-700 border border-secondary-200">
+                          Échéance: {formatDateSafe(dossier.deadline)}
+                        </span>
+                      )}
+                      {dossier.urgence && (
+                        <span className="px-3 py-1 rounded text-xs font-semibold bg-red-100 text-red-700 border border-red-200">
+                          URGENT
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                </div>
+                <div className="p-5">
+
+                  {/* Détails du formulaire organisés par catégories */}
+                  {(() => {
+                    // Helper pour vérifier si une valeur est valide
+                    const isValidValue = (val) => {
+                      if (!val) return false;
+                      if (typeof val === 'string' && val.trim() === '') return false;
+                      if (typeof val === 'string' && val.toLowerCase() === 'non spécifié') return false;
+                      return true;
+                    };
+
+                    // Catégoriser les champs avec noms de sections explicites
+                    const categorizeField = (key) => {
+                      const lowerKey = key.toLowerCase();
+                      
+                      // Client et informations générales
+                      if (['client', 'telephone', 'email', 'adresse'].some(k => lowerKey.includes(k))) {
+                        return { 
+                          category: 'client', 
+                          sectionTitle: 'INFORMATIONS CLIENT',
+                          priority: 1, 
+                          fullWidth: false 
+                        };
+                      }
+                      
+                      // Type de support/document
+                      if (['type_support', 'type_document', 'support', 'document'].some(k => lowerKey.includes(k))) {
+                        return { 
+                          category: 'type', 
+                          sectionTitle: 'TYPE',
+                          priority: 2, 
+                          fullWidth: false 
+                        };
+                      }
+                      
+                      // Dimensions
+                      if (['largeur', 'hauteur', 'dimension', 'taille', 'format', 'surface', 'unite'].some(k => lowerKey.includes(k))) {
+                        return { 
+                          category: 'dimensions', 
+                          sectionTitle: 'DIMENSIONS',
+                          priority: 3, 
+                          fullWidth: false 
+                        };
+                      }
+                      
+                      // Impression
+                      if (['impression', 'mode_impression', 'couleur', 'recto', 'verso'].some(k => lowerKey.includes(k))) {
+                        return { 
+                          category: 'impression', 
+                          sectionTitle: 'IMPRESSION',
+                          priority: 4, 
+                          fullWidth: false 
+                        };
+                      }
+                      
+                      // Papier et matériaux
+                      if (['papier', 'type_papier', 'grammage', 'support', 'materiau'].some(k => lowerKey.includes(k))) {
+                        return { 
+                          category: 'materiaux', 
+                          sectionTitle: 'MATÉRIAUX',
+                          priority: 5, 
+                          fullWidth: false 
+                        };
+                      }
+                      
+                      // Finitions
+                      if (['finition', 'reliure', 'pelliculage', 'vernis', 'plastification', 'oeillets', 'position'].some(k => lowerKey.includes(k))) {
+                        return { 
+                          category: 'finitions', 
+                          sectionTitle: 'FINITIONS',
+                          priority: 6, 
+                          fullWidth: false 
+                        };
+                      }
+                      
+                      // Façonnage
+                      if (['faconnage', 'pliage', 'decoupe', 'perforation', 'spirale', 'dos'].some(k => lowerKey.includes(k))) {
+                        return { 
+                          category: 'faconnage', 
+                          sectionTitle: 'FAÇONNAGE',
+                          priority: 7, 
+                          fullWidth: false 
+                        };
+                      }
+                      
+                      // Quantités
+                      if (['quantite', 'nombre', 'exemplaires'].some(k => lowerKey.includes(k))) {
+                        return { 
+                          category: 'quantite', 
+                          sectionTitle: 'QUANTITÉ',
+                          priority: 8, 
+                          fullWidth: false 
+                        };
+                      }
+                      
+                      // Description et notes
+                      if (['description', 'notes', 'commentaire', 'remarques', 'informations'].some(k => lowerKey.includes(k))) {
+                        return { 
+                          category: 'description', 
+                          sectionTitle: 'DESCRIPTION',
+                          priority: 9, 
+                          fullWidth: true 
+                        };
+                      }
+                      
+                      // Autres
+                      return { 
+                        category: 'autres', 
+                        sectionTitle: 'AUTRES INFORMATIONS',
+                        priority: 10, 
+                        fullWidth: false 
+                      };
+                    };
+
+                    // Fonction de rendu d'un champ
+                    const renderField = (key, value, meta) => {
+                      if (!isValidValue(value)) return null;
+                      
+                      const label = key
+                        .replace(/_/g, ' ')
+                        .split(' ')
+                        .map(word => word.charAt(0).toUpperCase() + word.slice(1))
+                        .join(' ');
+                      
+                      return (
+                        <div key={key} className={meta.fullWidth ? 'col-span-full' : ''}>
+                          <div className="space-y-1">
+                            <label className="block text-xs font-semibold text-secondary-600 dark:text-secondary-400 uppercase tracking-wide">
+                              {label}
+                            </label>
+                            <div className="text-sm font-medium text-secondary-900 dark:text-secondary-100 bg-secondary-50 dark:bg-secondary-700 px-3 py-2 rounded-lg border border-secondary-200 dark:border-secondary-600">
+                              {value}
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    };
+
+                    // Traiter les données du formulaire
+                    if (dossier.data_formulaire && Object.keys(dossier.data_formulaire).length > 0) {
+                      const formData = dossier.data_formulaire;
+                      const categorizedFields = {};
+                      
+                      // Catégoriser tous les champs
+                      Object.entries(formData).forEach(([key, value]) => {
+                        if (!isValidValue(value)) return;
+                        const meta = categorizeField(key);
+                        if (!categorizedFields[meta.category]) {
+                          categorizedFields[meta.category] = [];
+                        }
+                        categorizedFields[meta.category].push({ key, value, meta });
+                      });
+
+                      // Trier par priorité et afficher
+                      const sortedCategories = Object.entries(categorizedFields)
+                        .sort((a, b) => {
+                          const priorityA = a[1][0]?.meta.priority || 999;
+                          const priorityB = b[1][0]?.meta.priority || 999;
+                          return priorityA - priorityB;
+                        });
+
+                      if (sortedCategories.length === 0) {
+                        return (
+                          <div className="text-center py-8">
+                            <p className="text-secondary-600 font-medium">Aucune information détaillée disponible</p>
+                          </div>
+                        );
+                      }
+
+                      return (
+                        <div className="space-y-5">
+                          {sortedCategories.map(([category, fields]) => {
+                            const sectionTitle = fields[0]?.meta?.sectionTitle || 'INFORMATIONS';
+                            return (
+                              <div key={category} className="border border-secondary-200 dark:border-secondary-700 rounded-lg p-4">
+                                {/* Section header */}
+                                <h5 className="text-xs font-semibold text-secondary-700 dark:text-secondary-300 mb-3 pb-2 border-b border-secondary-200 dark:border-secondary-700 uppercase tracking-wide">
+                                  {sectionTitle}
+                                </h5>
+                                {/* Fields grid */}
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                                  {fields.map(({ key, value, meta }) => renderField(key, value, meta))}
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      );
+                    } else {
+                      // Affichage de fallback pour les anciens dossiers
+                      const hasAnyData = dossier.description || dossier.quantite;
+                      
+                      if (!hasAnyData) {
+                        return (
+                          <div className="text-center py-8">
+                            <p className="text-secondary-600 font-medium">Aucune information détaillée disponible</p>
+                          </div>
+                        );
+                      }
+
+                      return (
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                          {dossier.description && (
+                            <div className="md:col-span-2 animate-fadeIn">
+<div className="bg-white/60 rounded-xl p-4 border-2 border-secondary-100 hover:border-indigo-400 hover:bg-white/80 hover:shadow-md transition-all duration-200">
+                                <label className="block text-xs font-semibold text-secondary-700 uppercase tracking-wider mb-2">
+                                  Description du projet
+                                </label>
+                                <p className="text-sm text-secondary-900 font-medium leading-relaxed">
+                                  {dossier.description}
+                                </p>
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    }
+                  })()}
+                </div>
+              </div>
+
+              {/* Interface simplifiée pour préparateurs */}
+{user?.role === 'preparateur' && (
+                <div className="bg-white dark:bg-secondary-800 rounded-xl shadow border border-secondary-200 dark:border-secondary-700 overflow-hidden">
+                  <div className="px-6 py-4 border-b border-secondary-200 dark:border-secondary-700">
+                    <div className="flex items-center justify-between">
+                      <h4 className="text-lg font-semibold text-secondary-900 dark:text-secondary-100">
+                        Validation et workflow
+                      </h4>
+                      <p className="text-sm text-secondary-600 dark:text-secondary-400">
+                        Statut: <span className="font-semibold text-secondary-800 dark:text-secondary-200">{getStatusLabel(dossier.status)}</span>
+                      </p>
+                    </div>
+                  </div>
+                  
+                  <div className="p-5">
+                    {/* Afficher le commentaire uniquement si le dossier est à revoir ET qu'il y a un commentaire */}
+{dossier.status === 'a_revoir' && (() => {
+                      const comment = dossier.commentaire_revision || 
+                                     dossier.commentaireRevision || 
+                                     dossier.comment || 
+                                     dossier.commentaire ||
+                                     dossier.revision_comment;
+                      return comment;
+                    })() && (
+                      <div className="mb-6 border-l-4 border-amber-500 bg-amber-50 rounded-lg p-5">
+                        <h5 className="font-semibold text-amber-900 mb-2 text-base">Corrections demandées</h5>
+                        <div className="bg-white rounded border border-amber-200 p-4">
+                          <p className="text-amber-900 leading-relaxed">
+                            {dossier.commentaire_revision || 
+                              dossier.commentaireRevision || 
+                              dossier.comment || 
+                              dossier.commentaire ||
+                              dossier.revision_comment}
+                          </p>
+                        </div>
+                        <p className="text-xs text-amber-700 mt-2">
+                          Veuillez apporter les modifications nécessaires avant de revalider.
+                        </p>
+                      </div>
+                    )}
+
+                      {/* Section fichiers pour préparateurs */}
+                      <div className="mt-6 border-t pt-6">
+                        <div className="flex items-center justify-between mb-4">
+<div className="font-semibold text-secondary-900">
+                            Fichiers ({files.length})
+                          </div>
+                          {canUploadFiles() && (
+                            <button
+                              onClick={() => setShowUpload(!showUpload)}
+                              className={`px-4 py-2 rounded-lg text-sm font-medium border transition-colors ${
+                                showUpload
+                                  ? 'border-red-300 text-red-700 bg-red-50 hover:bg-red-100'
+                                  : 'border-secondary-300 text-secondary-700 bg-white hover:bg-secondary-50'
+                              }`}
+                            >
+                              {showUpload ? 'Annuler' : 'Ajouter des fichiers'}
+                            </button>
+                          )}
+                        </div>
+
+                        {/* Zone d'upload pour préparateurs */}
+                        {showUpload && canUploadFiles() && (
+                          <div className="mb-6">
+<div className="rounded-xl border-2 border-dashed border-secondary-300 p-6 hover:border-secondary-400 transition-colors bg-secondary-50">
+                              <FileUpload
+                                onUpload={handleFileUpload}
+                                uploading={uploadingFiles}
+                                disabled={uploadingFiles}
+                              />
+                            </div>
+                          </div>
+                        )}
+
+                        {/* Liste des fichiers pour préparateurs */}
+                        {files.length > 0 ? (
+                          <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                            {files.map(file => (
+                              <div key={file.id} className="relative group">
+                                <FileThumbnail
+                                  file={file}
+                                  onClick={() => {
+                                    setSelectedFile(file);
+                                    setShowFileViewer(true);
+                                  }}
+                                />
+                              </div>
+                            ))}
+                          </div>
+                        ) : (
+<div className="text-center py-8 text-secondary-600">
+                            <p className="font-medium">Aucun fichier uploadé</p>
+                            {canUploadFiles() && (
+                              <p className="text-sm mt-1">Cliquez sur « Ajouter des fichiers » pour commencer</p>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Fichiers optimisés - visible pour admin et autres rôles */}
+{user?.role !== 'preparateur' && (
+              <div className="bg-white dark:bg-secondary-800 rounded-xl shadow border border-secondary-200 dark:border-secondary-700 overflow-hidden">
+                <div className="px-6 py-4 border-b border-secondary-200 dark:border-secondary-700">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <h4 className="text-lg font-semibold text-secondary-900 dark:text-secondary-100">
+                        Documents et fichiers
+                      </h4>
+                      <div className="flex items-center gap-3 mt-1">
+                        <span className="text-sm text-secondary-600 dark:text-secondary-400">
+                          {files.length} fichier{files.length !== 1 ? 's' : ''}
+                        </span>
+                        {dossier.valide_preparateur && (
+                          <span className="px-2 py-1 text-xs font-medium bg-green-100 text-green-700 rounded border border-green-200">
+                            Validés
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                    {canUploadFiles() && (
+                      <button
+                        onClick={() => setShowUpload(!showUpload)}
+                        className={`px-5 py-2 rounded-lg text-sm font-medium border transition-colors ${
+                          showUpload
+                            ? 'border-red-300 text-red-700 bg-red-50 hover:bg-red-100'
+                            : 'border-secondary-300 text-secondary-700 bg-white hover:bg-secondary-50'
+                        } ${uploadingFiles ? 'opacity-60 cursor-not-allowed' : ''}`}
+                        disabled={uploadingFiles}
+                      >
+                        {showUpload
+                          ? 'Annuler'
+                          : dossier.status === 'a_revoir'
+                            ? 'Remplacer les fichiers'
+                            : 'Ajouter des fichiers'}
+                      </button>
+                    )}
+                  </div>
+
+                  {/* Messages d'information */}
+{!canUploadFiles() && user?.role === 'preparateur' && (
+                    <div className="mt-4 p-4 bg-amber-50 border border-amber-200 rounded-lg">
+                      <p className="text-sm text-amber-800">
+                        {dossier.valide_preparateur && dossier.status !== 'a_revoir'
+                          ? 'Fichiers figés après validation. Modifiables uniquement si remis "À revoir".'
+                          : 'Upload disponible uniquement sur vos dossiers en préparation.'}
+                      </p>
+                    </div>
+                  )}
+                </div>
+
+<div className="p-6">
+                  {/* Zone d'upload */}
+                  {showUpload && canUploadFiles() && (
+                    <div className="mb-6 p-6 bg-secondary-50 rounded-xl border-2 border-dashed border-secondary-300">
+                      <FileUpload
+                        onUpload={handleFileUpload}
+                        uploading={uploadingFiles}
+                        disabled={uploadingFiles}
+                      />
+                    </div>
+                  )}
+
+                  {/* Gestionnaire de fichiers amélioré */}
+                  {files.length > 0 ? (
+                    <div className="space-y-4">
+                      {files.map((file, index) => {
+                        const isImage =
+                          file.type?.includes('image') ||
+                          file.nom?.match(/\.(jpg|jpeg|png|gif|webp)$/i);
+                        const isPdf = file.type?.includes('pdf') || file.nom?.match(/\.pdf$/i);
+                        const sizeFormatted = file.taille
+                          ? `${(file.taille / 1024).toFixed(1)} KB`
+                          : 'Taille inconnue';
+
+                        // Obtenir l'icône selon le type de fichier
+                        const getFileIcon = () => {
+                          if (isImage)
+                            return { icon: '🖼️', color: 'text-green-600', bg: 'bg-green-100' };
+                          if (isPdf) return { icon: '📄', color: 'text-red-600', bg: 'bg-red-100' };
+                          const ext = file.nom?.toLowerCase().split('.').pop() || '';
+                          if (['doc', 'docx'].includes(ext))
+                            return { icon: '📝', color: 'text-blue-600', bg: 'bg-blue-100' };
+                          if (['xls', 'xlsx'].includes(ext))
+                            return { icon: '📊', color: 'text-green-700', bg: 'bg-green-100' };
+                          if (['ppt', 'pptx'].includes(ext))
+                            return { icon: '📢', color: 'text-orange-600', bg: 'bg-orange-100' };
+                          if (ext === 'ai')
+                            return { icon: '🎨', color: 'text-purple-600', bg: 'bg-purple-100' };
+                          if (ext === 'psd')
+                            return { icon: '🎭', color: 'text-indigo-600', bg: 'bg-indigo-100' };
+                          return { icon: '📎', color: 'text-gray-600', bg: 'bg-gray-100' };
+                        };
+
+                        const fileIcon = getFileIcon();
+                        const canPreview = isImage || isPdf;
+
+                        // Fonction de prévisualisation avec le nouveau FileViewer
+                        const previewFile = () => {
+                          setSelectedFile(file);
+                          setShowFileViewer(true);
+                        };
+
+                        return (
+                          <div
+                            key={file.id || index}
+                            className="bg-white rounded-lg p-4 border border-secondary-200 hover:border-secondary-300 hover:shadow transition-all"
+                          >
+                            <div className="flex items-start gap-4">
+                              {/* Miniature */}
+                              <div className="flex-shrink-0">
+                                <FileThumbnail 
+                                  file={file}
+                                  size={48}
+                                  className="rounded-lg"
+                                  showLabel={false}
+                                  onClick={() => {
+                                    if (canPreview) {
+                                      previewFile();
+                                    }
+                                  }}
+                                />
+                              </div>
+
+{/* Informations du fichier */}
+                              <div className="flex-1 min-w-0">
+                                <h5 className="font-medium text-secondary-900 dark:text-secondary-100 truncate text-sm">
+                                  {file.nom || file.nom_original || 'Fichier sans nom'}
+                                </h5>
+                                <div className="flex flex-wrap items-center gap-2 mt-1 text-xs text-secondary-600">
+                                  <span>{sizeFormatted}</span>
+                                  <span>•</span>
+                                  <span className="capitalize">
+                                    {file.type?.split('/')[1] || 'fichier'}
+                                  </span>
+                                  {file.created_at && (
+                                    <>
+                                      <span>•</span>
+                                      <span>{formatDateSafe(file.created_at)}</span>
+                                    </>
+                                  )}
+                                </div>
+                                {file.uploaded_by && (
+                                  <div className="mt-1 text-xs text-secondary-500">
+                                    Par {file.prenom || 'Utilisateur'} {file.nom || ''}
+                                  </div>
+                                )}
+                              </div>
+
+{/* Actions */}
+                              <div className="flex gap-2">
+                                {/* Téléchargement */}
+                                <button
+                                  onClick={() =>
+                                    filesService
+                                      .downloadFile(file.id)
+                                      .then(result => {
+                                        console.log('📥 Téléchargement réussi:', result.filename);
+                                      })
+                                      .catch(() => setError('Erreur téléchargement'))
+                                  }
+                                  className="p-2 text-secondary-700 hover:bg-secondary-100 rounded transition-colors"
+                                  title="Télécharger"
+                                >
+                                  <ArrowDownTrayIcon className="h-4 w-4" />
+                                </button>
+
+                                {/* Prévisualisation */}
+                                {canPreview && (
+                                  <button
+                                    onClick={previewFile}
+                                    className="p-2 text-secondary-700 hover:bg-secondary-100 rounded transition-colors"
+                                    title="Aperçu"
+                                  >
+                                    <EyeIcon className="h-4 w-4" />
+                                  </button>
+                                )}
+
+                                {/* Suppression (admin seulement) */}
+                                {user?.role === 'admin' && (
+                                  <button
+                                    onClick={() => {
+                                      if (
+                                        window.confirm(
+                                          `Supprimer le fichier "${file.nom || file.nom_original}" ?`
+                                        )
+                                      ) {
+                                        filesService
+                                          .deleteFile(file.id)
+                                          .then(() => {
+                                            loadFiles();
+                                            console.log('🗑️ Fichier supprimé avec succès');
+                                          })
+                                          .catch(() => setError('Erreur suppression'));
+                                      }
+                                    }}
+                                    className="p-2 text-red-600 hover:bg-red-50 rounded transition-colors"
+                                    title="Supprimer"
+                                  >
+                                    <TrashIcon className="h-4 w-4" />
+                                  </button>
+                                )}
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  ) : (
+                    <div className="text-center py-12">
+                      <div className="p-4 bg-secondary-100 rounded-full w-20 h-20 mx-auto mb-4 flex items-center justify-center">
+                        <span className="text-4xl">📁</span>
+                      </div>
+                      <h3 className="text-xl font-semibold text-secondary-900 mb-2">
+                        Aucun fichier
+                      </h3>
+                      <p className="text-secondary-600 mb-6">
+                        Ce dossier ne contient pas encore de fichiers.
+                      </p>
+                      {canUploadFiles() && (
+                        <button onClick={() => setShowUpload(true)} className="btn-primary">
+                          Ajouter des fichiers
+                        </button>
+                      )}
+                    </div>
+                  )}
+
+                  {loadingFiles && (
+                    <div className="flex items-center justify-center py-8">
+                      <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-emerald-600"></div>
+                      <span className="ml-3 text-secondary-600">Chargement des fichiers...</span>
+                    </div>
+                  )}
+                </div>
+              </div>
+              )}
+            </div>
+
+            {/* Colonne latérale */}
+            <div className="space-y-8">
+              {/* Boutons d'action optimisés */}
+              <div className="bg-gradient-to-br from-white via-violet-50/30 to-purple-50/50 dark:from-secondary-800 dark:via-secondary-800 dark:to-secondary-700 rounded-xl shadow-lg border border-violet-100 dark:border-secondary-600 overflow-hidden">
+                <div className="px-6 py-4 bg-gradient-to-r from-violet-600/5 to-purple-600/5 border-b border-violet-100">
+                  <div className="flex items-center gap-3">
+                    <div className="p-2 bg-violet-100 rounded-lg">
+                      <span className="text-xl">⚡</span>
+                    </div>
+                    <div>
+                      <h4 className="text-xl font-bold text-secondary-900">
+                        🎯 Actions disponibles
+                      </h4>
+                      <p className="text-xs text-violet-600 font-medium mt-1">
+                        {user?.role?.replace('_', ' ').toUpperCase()} •{' '}
+                        {getStatusLabel(dossier.status)}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="p-6 space-y-3">
+                  {/* Feedback d'action amélioré */}
+                  {changingStatut && (
+                    <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 mb-6">
+                      <div className="flex items-center justify-center gap-3">
+                        <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-blue-600"></div>
+                        <span className="text-blue-700 font-medium">⏳ Traitement en cours...</span>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Boutons d'action redesignés */}
+                  {(() => {
+                    const job = {
+                      status: mapAppStatusToAdapter(dossier.statut || dossier.status),
+                      machineType: dossier.type,
+                      jobNumber: dossier.numero_commande || dossier.numero,
+                      createdById: dossier.created_by || dossier.createdById,
+                    };
+                    const adaptedUser = { id: user.id, role: mapAppRoleToAdapter(user.role) };
+                    let actions = getAvailableActions(adaptedUser, job);
+
+                    // Filtrer les actions selon le rôle et les permissions backend
+                    if (user?.role === 'preparateur') {
+                      actions = actions.filter(a => {
+                        const next = mapAdapterStatusToApp(a.status);
+                        return (
+                          ['en_impression'].includes(next) ||
+                          a.label.includes('Valider') ||
+                          a.label.includes('Revalider')
+                        );
+                      });
+                    } else if (user?.role === 'imprimeur_roland' || user?.role === 'imprimeur_xerox') {
+                      // Imprimeurs peuvent changer statut sur leurs dossiers de machine
+                      const machineType = (dossier.type_formulaire || dossier.machine || '').toLowerCase();
+                      const requiredMachine = user.role === 'imprimeur_roland' ? 'roland' : 'xerox';
+                      
+                      if (machineType.includes(requiredMachine)) {
+                        // Actions complètes sur leurs dossiers de machine
+                        const currentStatus = (dossier.status || dossier.statut || '').toLowerCase().replace(/\s/g, '_');
+                        
+                        actions = actions.filter(a => {
+                          const next = mapAdapterStatusToApp(a.status);
+                          // Permettre plus d'actions selon le statut actuel
+                          if (currentStatus === 'en_cours' || currentStatus === 'en_impression') {
+                            // Depuis en_cours/en_impression: À revoir, démarrer/reprendre impression, marquer imprimé, prêt livraison
+                            return ['a_revoir', 'en_impression', 'imprime', 'pret_livraison', 'en_cours'].includes(next);
+                          } else if (currentStatus === 'a_revoir') {
+                            return ['en_cours', 'en_impression'].includes(next);
+                          } else if (currentStatus === 'imprime') {
+                            return ['pret_livraison', 'en_impression', 'a_revoir'].includes(next);
+                          } else if (currentStatus === 'termine') {
+                            return ['en_livraison', 'livre', 'a_revoir'].includes(next);
+                          }
+                          return ['a_revoir', 'en_impression', 'imprime', 'pret_livraison', 'en_cours'].includes(next);
+                        });
+                        
+                        // Ajouter la gestion des clics pour les imprimeurs
+                        actions = actions.map(action => ({
+                          ...action,
+                          onClick: () => {
+                            const next = mapAdapterStatusToApp(action.status);
+                            console.log(`🖨️ Imprimeur ${user.role} change le statut vers:`, next);
+                            if (next === 'a_revoir') {
+                              setReviewComment('');
+                              setShowReviewModal(true);
+                            } else {
+                              handleStatusChange(next);
+                            }
+                          },
+                          disabled: changingStatut
+                        }));
+                      } else {
+                        // Pas d'actions sur les dossiers d'autres machines
+                        actions = [];
+                      }
+                    } else if (user?.role === 'livreur') {
+                      // Livreurs peuvent gérer les statuts de livraison
+                      const status = (dossier.status || dossier.statut || '').toLowerCase().replace(/\s/g, '_');
+                      const canManage = ['pret_livraison', 'en_livraison', 'livre', 'termine'].includes(status);
+                      
+                      if (canManage) {
+                        actions = actions.filter(a => {
+                          const next = mapAdapterStatusToApp(a.status);
+                          return ['en_livraison', 'livre', 'termine'].includes(next);
+                        });
+                        
+                        // Ajouter la gestion des clics pour les livreurs
+                        actions = actions.map(action => ({
+                          ...action,
+                          onClick: () => {
+                            console.log(`🚚 Livreur change le statut vers:`, mapAdapterStatusToApp(action.status));
+                            handleStatusChange(mapAdapterStatusToApp(action.status));
+                          },
+                          disabled: changingStatut
+                        }));
+                      } else {
+                        actions = [];
+                      }
+                    }
+
+                    // Message si aucune action
+                    if (!actions.length) {
+                      const isWrongMachine = (user?.role === 'imprimeur_roland' || user?.role === 'imprimeur_xerox') && 
+                        dossier && !((dossier.type_formulaire || dossier.machine || '').toLowerCase().includes(
+                          user.role === 'imprimeur_roland' ? 'roland' : 'xerox'
+                        ));
+                      
+                      return (
+                        <div className="text-center py-8">
+                          <div className="p-4 bg-gray-100 rounded-full w-16 h-16 mx-auto mb-4 flex items-center justify-center">
+                            <span className="text-2xl">{isWrongMachine ? '🔄' : '🔒'}</span>
+                          </div>
+                          <h3 className="font-semibold text-secondary-900 mb-2">
+                            {isWrongMachine ? 'Dossier d\'une autre machine' : 'Aucune action disponible'}
+                          </h3>
+                          <p className="text-sm text-secondary-600">
+                            {isWrongMachine 
+                              ? `Ce dossier est pour une autre machine (${dossier.type_formulaire || dossier.machine || 'non définie'}).`
+                              : 'Le statut actuel ne permet aucune action pour votre rôle.'
+                            }
+                          </p>
+                        </div>
+                      );
+                    }
+
+                    // Traitement spécial pour préparateur
+                    if (!dossier?.valide_preparateur) {
+                      actions = actions.map(action => {
+                        const backendStatus = mapAppStatusToAdapter(dossier.status);
+                        const isValider =
+                          (action.label.includes('Valider') ||
+                            action.label.includes('Revalider')) &&
+                          (backendStatus === 'PREPARATION' || backendStatus === 'REVISION');
+
+                        if (user?.role === 'preparateur' && isValider) {
+                          return {
+                            ...action,
+                            onClick: handleValidateDossier,
+                            disabled: !canPreparatorValidate() || changingStatut,
+                          };
+                        }
+
+                        if (user?.role === 'admin' && isValider) {
+                          return {
+                            ...action,
+                            onClick: () => handleStatusChange(mapAdapterStatusToApp(action.status)),
+                            disabled: changingStatut,
+                          };
+                        }
+                        
+                        // Gestion spéciale pour "Remettre en impression" admin
+                        if (user?.role === 'admin' && action.label && action.label.includes('Remettre en impression')) {
+                          return {
+                            ...action,
+                            onClick: () => handleReprintDossier('Remise en impression par admin'),
+                            disabled: changingStatut,
+                          };
+                        }
+                        return action;
+                      });
+                    }
+
+                    // Interface moderne des boutons
+                    const renderActionButton = action => {
+                      const colorMap = {
+                        primary:
+                          'from-blue-500 to-blue-600 hover:from-blue-600 hover:to-blue-700 text-white',
+                        success:
+                          'from-green-500 to-green-600 hover:from-green-600 hover:to-green-700 text-white',
+                        warning:
+                          'from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 text-white',
+                        danger:
+                          'from-red-500 to-red-600 hover:from-red-600 hover:to-red-700 text-white',
+                      };
+
+                      const gradientClass = colorMap[action.type] || colorMap.primary;
+                      const isDisabled = action.disabled || changingStatut;
+
+                      // Nettoyer le label en enlevant les emojis et le mot "action"
+                      const cleanLabel = action.label
+                        .replace(/^[^\w\s]+/, '') // Enlever les emojis au début
+                        .replace(/action/gi, '') // Enlever le mot "action" (insensible à la casse)
+                        .trim();
+
+                      return (
+                        <button
+                          key={action.status}
+                          onClick={() => {
+                            if (action.onClick) {
+                              action.onClick();
+                            } else {
+                              handleStatusClick(mapAdapterStatusToApp(action.status));
+                            }
+                          }}
+                          disabled={isDisabled}
+                          className={`w-full p-3 rounded-lg bg-gradient-to-r ${gradientClass} shadow-md hover:shadow-lg transform hover:scale-105 transition-all duration-200 ${
+                            isDisabled ? 'opacity-60 cursor-not-allowed transform-none' : ''
+                          }`}
+                        >
+                          <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-2">
+                              <div className="text-lg">
+                                {typeof action.icon === 'string' ? action.icon : '⚡'}
+                              </div>
+                              <div className="text-left">
+                                <div className="font-semibold text-base">{cleanLabel}</div>
+                              </div>
+                            </div>
+                            {changingStatut ? (
+                              <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
+                            ) : (
+                              <ArrowRightIcon className="h-4 w-4" />
+                            )}
+                          </div>
+                        </button>
+                      );
+                    };
+
+                    const showUnlock = user?.role === 'admin' && dossier?.valide_preparateur;
+
+                    return (
+                      <div className="space-y-4">
+                        {actions.map(renderActionButton)}
+
+                        {/* Bouton unlock pour admin */}
+                        {showUnlock && (
+                          <button
+                            onClick={handleUnlockDossier}
+                            disabled={changingStatut}
+                            className="w-full p-3 rounded-lg bg-gradient-to-r from-orange-500 to-red-500 hover:from-orange-600 hover:to-red-600 text-white shadow-md hover:shadow-lg transform hover:scale-105 transition-all duration-200"
+                          >
+                            <div className="flex items-center justify-between">
+                              <div className="flex items-center gap-2">
+                                <div className="text-lg">🔓</div>
+                                <div className="text-left">
+                                  <div className="font-semibold text-base">Déverrouiller</div>
+                                </div>
+                              </div>
+                              <ArrowRightIcon className="h-4 w-4" />
+                            </div>
+                          </button>
+                        )}
+                      </div>
+                    );
+                  })()}
+
+                  {/* Actions spéciales livreur */}
+                  {user?.role === 'livreur' && (
+                    <div className="space-y-4">
+                      {['termine', 'pret_livraison'].includes(dossier.status) && (
+                        <button
+                          onClick={() => setShowScheduleModal(true)}
+                          disabled={changingStatut}
+                          className="w-full p-3 rounded-lg bg-gradient-to-r from-blue-500 to-indigo-600 hover:from-blue-600 hover:to-indigo-700 text-white shadow-md hover:shadow-lg transform hover:scale-105 transition-all duration-200"
+                        >
+                          <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-2">
+                              <div className="text-lg">📅</div>
+                              <div className="text-left">
+                                <div className="font-semibold text-base">Programmer livraison</div>
+                              </div>
+                            </div>
+                            <ArrowRightIcon className="h-4 w-4" />
+                          </div>
+                        </button>
+                      )}
+                      {['en_livraison'].includes(dossier.status) && (
+                        <button
+                          onClick={() => setShowDeliveryModal(true)}
+                          disabled={changingStatut}
+                          className="w-full p-3 rounded-lg bg-gradient-to-r from-green-500 to-emerald-600 hover:from-green-600 hover:to-emerald-700 text-white shadow-md hover:shadow-lg transform hover:scale-105 transition-all duration-200"
+                        >
+                          <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-2">
+                              <div className="text-lg">🚚</div>
+                              <div className="text-left">
+                                <div className="font-semibold text-base">Confirmer livraison</div>
+                              </div>
+                            </div>
+                            <ArrowRightIcon className="h-4 w-4" />
+                          </div>
+                        </button>
+                      )}
+
+                      {!['termine', 'pret_livraison', 'en_livraison'].includes(dossier.status) && (
+                        <div className="text-center py-8">
+                          <div className="p-4 bg-gray-100 rounded-full w-16 h-16 mx-auto mb-4 flex items-center justify-center">
+                            <span className="text-2xl">⏳</span>
+                          </div>
+                          <h3 className="font-semibold text-secondary-900 mb-2">En attente</h3>
+                          <p className="text-sm text-secondary-600">
+                            Le dossier doit être terminé avant livraison.
+                          </p>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Historique moderne et design */}
+              <div className="bg-gradient-to-br from-white via-purple-50/20 to-indigo-50/30 dark:from-secondary-800 dark:via-secondary-800 dark:to-secondary-700 rounded-xl shadow-lg border border-purple-100 dark:border-secondary-600 overflow-hidden">
+                <div className="px-6 py-4 bg-gradient-to-r from-purple-600/5 to-indigo-600/5 border-b border-purple-100 dark:border-secondary-600">
+                  <div className="flex items-center gap-3">
+                    <div className="p-2 bg-purple-100 rounded-lg">
+                      <span className="text-xl">🕰️</span>
+                    </div>
+                    <div>
+                      <h4 className="text-xl font-bold text-secondary-900 dark:text-secondary-100">
+                        📜 Historique du dossier
+                      </h4>
+                      <p className="text-sm font-medium text-purple-600 dark:text-purple-400 mt-1">
+                        {statutHistory?.length ? `${statutHistory.length} entrée${statutHistory.length > 1 ? 's' : ''} enregistrée${statutHistory.length > 1 ? 's' : ''}` : 'Aucune entrée'}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+                <div className="p-6">
+                  <div className="max-h-96 overflow-y-auto custom-scrollbar space-y-3">
+                    {statutHistory?.length ? (
+                      statutHistory.map((h, i) => {
+                        const status = mapFrenchStatutToApp(h.new_status || h.nouveau_statut);
+                        const colorMap = {
+                          en_cours: { bg: 'bg-blue-500', text: 'text-blue-700', lightBg: 'bg-blue-50' },
+                          a_revoir: { bg: 'bg-amber-500', text: 'text-amber-700', lightBg: 'bg-amber-50' },
+                          en_impression: { bg: 'bg-purple-500', text: 'text-purple-700', lightBg: 'bg-purple-50' },
+                          termine: { bg: 'bg-emerald-600', text: 'text-emerald-700', lightBg: 'bg-emerald-50' },
+                          pret_livraison: { bg: 'bg-indigo-500', text: 'text-indigo-700', lightBg: 'bg-indigo-50' },
+                          en_livraison: { bg: 'bg-yellow-500', text: 'text-yellow-700', lightBg: 'bg-yellow-50' },
+                          livre: { bg: 'bg-green-600', text: 'text-green-700', lightBg: 'bg-green-50' },
+                        };
+                        const colors = colorMap[status] || { bg: 'bg-gray-400', text: 'text-gray-700', lightBg: 'bg-gray-50' };
+                        return (
+                          <div
+                            key={`${h.changed_at || 'ts'}-${h.new_status || h.nouveau_statut || i}`}
+                            className={`${colors.lightBg} rounded-lg p-4 border-l-4 border-${status === 'en_cours' ? 'blue' : status === 'a_revoir' ? 'amber' : status === 'en_impression' ? 'purple' : status === 'pret_livraison' ? 'indigo' : status === 'en_livraison' ? 'yellow' : 'green'}-500 shadow-sm hover:shadow-md transition-all duration-200`}
+                          >
+                            <div className="flex items-start justify-between gap-4">
+                              <div className="min-w-0 flex-1">
+                                <div className="flex items-center gap-3 mb-2">
+                                  <span className={`h-3 w-3 rounded-full ${colors.bg} shadow-sm`}></span>
+                                  <span className={`font-bold text-base ${colors.text}`}>
+                                    {getStatusLabel(status)}
+                                  </span>
+                                </div>
+                                <div className="flex items-center gap-2 mb-2">
+                                  {h.changed_by_name && (
+                                    <div className="flex items-center gap-1 text-xs font-medium text-secondary-600 dark:text-secondary-400">
+                                      <span>👤</span>
+                                      <span>par <span className="font-semibold">{h.changed_by_name}</span></span>
+                                    </div>
+                                  )}
+                                  <span className="text-xs text-secondary-500 dark:text-secondary-400">•</span>
+                                  <div className="text-xs font-medium text-secondary-600 dark:text-secondary-400">
+                                    📅 {formatDateTime(h.changed_at)}
+                                  </div>
+                                </div>
+                                {h.notes && (
+                                  <div className="mt-2 rounded-lg bg-white/60 dark:bg-secondary-700/50 p-3 text-sm text-secondary-800 dark:text-secondary-200 border border-secondary-200/50 dark:border-secondary-600">
+                                    <div className="flex items-start gap-2">
+                                      <span className="text-base flex-shrink-0">💬</span>
+                                      <span className="leading-relaxed">{h.notes}</span>
+                                    </div>
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })
+                    ) : (
+                      <div className="text-center py-12">
+                        <div className="inline-flex items-center justify-center w-16 h-16 bg-gradient-to-br from-purple-100 to-indigo-100 rounded-full mb-4">
+                          <span className="text-3xl">🕰️</span>
+                        </div>
+                        <h3 className="font-semibold text-secondary-900 dark:text-secondary-100 mb-2">
+                          Aucun historique disponible
+                        </h3>
+                        <p className="text-sm text-secondary-600 dark:text-secondary-400">
+                          Les changements de statut apparaîtront ici automatiquement.
+                        </p>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Footer */}
+          <div className="bg-secondary-50 px-8 py-6 flex justify-end rounded-b-2xl border-t border-secondary-100">
+            <button
+              onClick={onClose}
+              className="btn-secondary text-base font-semibold px-6 py-2 rounded-lg shadow transition-all duration-150"
+            >
+              Fermer
+            </button>
+          </div>
+        </div>
+      </div>
+
+      {/* Modal commentaire "À revoir" */}
+      {showReviewModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-lg shadow-xl max-w-lg w-full">
+            <div className="p-6">
+              <h3 className="text-lg font-semibold text-secondary-900 mb-4">Marquer à revoir</h3>
+              <textarea
+                value={reviewComment}
+                onChange={e => setReviewComment(e.target.value)}
+                placeholder="Décrivez les corrections nécessaires..."
+                className="w-full p-3 border border-secondary-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 resize-none"
+                rows={4}
+              />
+            </div>
+            <div className="px-6 py-4 bg-secondary-50 rounded-b-lg flex justify-end space-x-3">
+              <button
+                onClick={() => {
+                  setShowReviewModal(false);
+                  setReviewComment('');
+                }}
+                className="btn-secondary"
+                disabled={changingStatut}
+              >
+                Annuler
+              </button>
+              <button
+                onClick={() => handleStatusChange('a_revoir', reviewComment.trim())}
+                className="btn-primary"
+                disabled={changingStatut || reviewComment.trim() === ''}
+              >
+                {changingStatut ? 'Traitement...' : 'Confirmer'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal programmer livraison */}
+      {showScheduleModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-lg shadow-xl max-w-md w-full">
+            <div className="p-6">
+              <h3 className="text-lg font-semibold text-secondary-900 mb-4">
+                Programmer la livraison
+              </h3>
+              <label htmlFor="scheduleDate" className="block text-sm text-secondary-700 mb-1">
+                Date de livraison
+              </label>
+              <input
+                id="scheduleDate"
+                type="date"
+                value={scheduleDate}
+                onChange={e => setScheduleDate(e.target.value)}
+                className="form-input w-full"
+              />
+            </div>
+            <div className="px-6 py-4 bg-secondary-50 rounded-b-lg flex justify-end space-x-3">
+              <button onClick={() => setShowScheduleModal(false)} className="btn-secondary">
+                Annuler
+              </button>
+              <button
+                onClick={async () => {
+                  await handleStatusChange('en_livraison');
+                  setShowScheduleModal(false);
+                }}
+                className="btn-primary"
+              >
+                Programmer
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal valider livraison */}
+      {showDeliveryModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-lg shadow-xl max-w-md w-full">
+            <div className="p-6 space-y-4">
+              <h3 className="text-lg font-semibold text-secondary-900">Valider la livraison</h3>
+              <div>
+                <label htmlFor="deliveryDate" className="block text-sm text-secondary-700 mb-1">
+                  Date de livraison
+                </label>
+                <input
+                  id="deliveryDate"
+                  type="date"
+                  value={deliveryDate}
+                  onChange={e => setDeliveryDate(e.target.value)}
+                  className="form-input w-full"
+                />
+              </div>
+              <div>
+                <label htmlFor="paymentMode" className="block text-sm text-secondary-700 mb-1">
+                  Mode de paiement
+                </label>
+                <select
+                  id="paymentMode"
+                  value={paymentMode}
+                  onChange={e => setPaymentMode(e.target.value)}
+                  className="form-input w-full"
+                >
+                  <option>Wave</option>
+                  <option>Orange Money</option>
+                  <option>Virement bancaire</option>
+                  <option>Chèque</option>
+                  <option>Espèces</option>
+                </select>
+              </div>
+              <div>
+                <label htmlFor="paymentAmount" className="block text-sm text-secondary-700 mb-1">
+                  Montant payé (CFA)
+                </label>
+                <input
+                  id="paymentAmount"
+                  type="number"
+                  min="0"
+                  value={paymentAmount}
+                  onChange={e => setPaymentAmount(e.target.value)}
+                  className="form-input w-full"
+                />
+              </div>
+            </div>
+            <div className="px-6 py-4 bg-secondary-50 rounded-b-lg flex justify-end space-x-3">
+              <button onClick={() => setShowDeliveryModal(false)} className="btn-secondary">
+                Annuler
+              </button>
+              <button
+                onClick={async () => {
+                  await dossiersService.confirmDelivery(dossierId, {
+                    date_livraison: deliveryDate,
+                    mode_paiement: paymentMode,
+                    montant_paye: paymentAmount,
+                  });
+                  await loadDossierDetails();
+                  setShowDeliveryModal(false);
+                }}
+                className="btn-primary"
+              >
+                Valider
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Nouveau prévisualiseur de fichiers avancé */}
+      <FileViewer
+        file={selectedFile}
+        isOpen={showFileViewer}
+        onClose={() => {
+          setShowFileViewer(false);
+          setSelectedFile(null);
+        }}
+      />
+    </div>
+  );
+};
+
+DossierDetails.propTypes = {
+  dossierId: PropTypes.string,
+  dossier: PropTypes.object,
+  isOpen: PropTypes.bool,
+  onClose: PropTypes.func.isRequired,
+  onStatusChange: PropTypes.func,
+};
+
+DossierDetails.defaultProps = {
+  dossierId: null,
+  isOpen: false,
+  onStatusChange: () => {},
+};
+
+export default DossierDetails;

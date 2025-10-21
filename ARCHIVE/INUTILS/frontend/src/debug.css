@@ -1,0 +1,28 @@
+/* Styles de débogage pour identifier les problèmes d'alignement */
+
+/* Rouge = sidebar, vert = contenu principal */
+.debug-sidebar {
+  background-color: rgba(255, 0, 0, 0.1) !important;
+  border: 2px solid red !important;
+}
+
+.debug-main-content {
+  background-color: rgba(0, 255, 0, 0.1) !important;
+  border: 2px solid green !important;
+}
+
+/* Forcer l'alignement */
+.force-correct-layout {
+  display: flex !important;
+  flex-direction: row !important;
+}
+
+.force-sidebar {
+  width: 256px !important; /* 64 * 4 */
+  flex-shrink: 0 !important;
+}
+
+.force-main {
+  flex: 1 !important;
+  margin-left: 0 !important;
+}

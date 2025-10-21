@@ -1,0 +1,133 @@
+# Dockerfile optimisé pour Podman - Frontend React
+# Stage 1: Build
+FROM docker.io/node:20-alpine as build
+
+# Métadonnées
+LABEL maintainer="Plateforme Imprimerie"
+LABEL version="1.0.0"
+LABEL description="Frontend React pour la plateforme d'imprimerie"
+
+# Arguments de build
+ARG REACT_APP_API_URL
+ARG REACT_APP_SOCKET_URL
+
+# Variables d'environnement pour le build
+ENV REACT_APP_API_URL=$REACT_APP_API_URL
+ENV REACT_APP_SOCKET_URL=$REACT_APP_SOCKET_URL
+ENV NODE_ENV=production
+ENV NPM_CONFIG_PRODUCTION=false
+
+# Définir le répertoire de travail
+WORKDIR /app
+
+# Installer les dépendances système
+RUN apk add --no-cache git
+
+# Copier les fichiers de configuration
+COPY package*.json ./
+COPY tailwind.config.js ./
+COPY postcss.config.js ./
+
+# Installer les dépendances
+RUN npm ci && npm cache clean --force
+
+# Copier le code source
+COPY public/ ./public/
+COPY src/ ./src/
+
+# Build de production optimisé
+RUN npm run build && \
+    ls -la build/
+
+# Stage 2: Production avec Nginx
+FROM docker.io/nginx:1.25-alpine
+
+# Métadonnées
+LABEL maintainer="Plateforme Imprimerie"
+LABEL version="1.0.0"
+LABEL description="Frontend statique avec Nginx pour Podman"
+
+# Installer curl pour les health checks
+RUN apk add --no-cache curl
+
+# Copier les fichiers buildés depuis le stage précédent
+COPY --from=build /app/build /usr/share/nginx/html
+
+# Configuration Nginx optimisée pour Podman
+COPY <<EOF /etc/nginx/conf.d/default.conf
+# Configuration Nginx pour Podman
+server {
+    listen 80;
+    server_name localhost;
+    root /usr/share/nginx/html;
+    index index.html index.htm;
+    
+    # Compression
+    gzip on;
+    gzip_vary on;
+    gzip_min_length 1024;
+    gzip_types text/plain text/css text/xml text/javascript application/javascript application/xml+rss application/json;
+    
+    # Sécurité
+    add_header X-Frame-Options "SAMEORIGIN" always;
+    add_header X-XSS-Protection "1; mode=block" always;
+    add_header X-Content-Type-Options "nosniff" always;
+    add_header Referrer-Policy "no-referrer-when-downgrade" always;
+    add_header Content-Security-Policy "default-src 'self' http: https: data: blob: 'unsafe-inline'" always;
+    
+    # Servir les fichiers statiques
+    location / {
+        try_files \$uri \$uri/ /index.html;
+        expires 1h;
+        add_header Cache-Control "public, immutable";
+    }
+    
+    # Cache plus long pour les assets
+    location /static/ {
+        expires 1y;
+        add_header Cache-Control "public, immutable";
+    }
+    
+    # Proxy API vers le backend
+    location /api/ {
+        proxy_pass http://backend:5001/api/;
+        proxy_http_version 1.1;
+        proxy_set_header Host \$host;
+        proxy_set_header X-Real-IP \$remote_addr;
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto \$scheme;
+        proxy_connect_timeout 30s;
+        proxy_send_timeout 30s;
+        proxy_read_timeout 30s;
+    }
+    
+    # Proxy Socket.IO
+    location /socket.io/ {
+        proxy_pass http://backend:5001/socket.io/;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade \$http_upgrade;
+        proxy_set_header Connection "Upgrade";
+        proxy_set_header Host \$host;
+        proxy_set_header X-Real-IP \$remote_addr;
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto \$scheme;
+    }
+    
+    # Health check endpoint
+    location /health {
+        access_log off;
+        return 200 "healthy\n";
+        add_header Content-Type text/plain;
+    }
+}
+EOF
+
+# Exposer le port
+EXPOSE 80
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=10s --start-period=30s --retries=3 \
+    CMD curl -f http://localhost/health || exit 1
+
+# Démarrer Nginx
+CMD ["nginx", "-g", "daemon off;"]
