@@ -340,9 +340,14 @@ server.listen(PORT, async () => {
   console.log(`❤️ Health check: http://localhost:${PORT}/api/health`);
   console.log(`🌍 Environnement: ${process.env.NODE_ENV || 'development'}`);
   
-  // Auto-initialisation de la base en production
+  // Auto-initialisation et correction de la base en production
   if (process.env.NODE_ENV === 'production' && process.env.DATABASE_URL) {
     try {
+      // 1. Correction automatique du schéma manquant
+      const autoFixSchema = require('./utils/autoFixSchema');
+      await autoFixSchema();
+      
+      // 2. Auto-initialisation de la base
       const { autoInitDatabase } = require('./scripts/auto-init-db');
       await autoInitDatabase();
     } catch (error) {
