@@ -74,7 +74,7 @@ export function createApp(config: Config, log: Logger): Express {
     app.use(express.static(dir, { index: false, maxAge: '1y', immutable: true, setHeaders: (res, file) => {
       if (file.endsWith('index.html')) res.setHeader('Cache-Control', 'no-cache');
     } }));
-    app.get('/*splat', (_req, res) => {
+    app.get(['/', '/*splat'], (_req, res) => {
       res.setHeader('Cache-Control', 'no-cache');
       res.sendFile(path.join(dir, 'index.html'));
     });
