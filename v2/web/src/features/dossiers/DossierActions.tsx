@@ -179,7 +179,7 @@ function ProgrammerDialog({ numero, adresse, busy, onClose, onValider }: {
       footer={
         <>
           <Button onClick={onClose}>Annuler</Button>
-          <Button variant="primary" busy={busy} disabled={!date} icon={<Truck />} onClick={() => onValider({ date_prevue: date, adresse: adr.trim() || null, notes: notes.trim() || null })}>
+          <Button variant="primary" busy={busy} disabled={!date} icon={<Truck />} onClick={() => onValider({ date_prevue: new Date(date).toISOString(), adresse: adr.trim() || null, notes: notes.trim() || null })}>
             Programmer
           </Button>
         </>

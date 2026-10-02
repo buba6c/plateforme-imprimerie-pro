@@ -5,9 +5,9 @@ import { useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useQueries, useQuery } from '@tanstack/react-query';
 import { Banknote, RotateCw } from 'lucide-react';
-import { formatDateHeure, formatFCFA, formatHeure, MODE_PAIEMENT_LABELS, type StatutPaiement } from '@evocom/shared';
+import { formatFCFA, formatHeure, MODE_PAIEMENT_LABELS, type StatutPaiement } from '@evocom/shared';
 import { useUser } from '../../auth/AuthContext';
-import { debutJour, isoJour } from '../../features/livraisons/dates';
+import { debutJour, isoJour, libelleRendezVous } from '../../features/livraisons/dates';
 import type { ListePaiements, PaiementLigne } from '../../features/livraisons/hooks';
 import { Resume } from '../../features/livraisons/Resume';
 import '../../features/livraisons/livraisons.css';
@@ -31,7 +31,7 @@ function bornes(p: Periode): { from: string; to: string } {
 const PERIODE_LIBELLE: Record<Periode, string> = { jour: "aujourd'hui", semaine: 'ces 7 derniers jours', mois: 'ce mois-ci' };
 
 function quand(iso: string, periode: Periode): string {
-  return periode === 'jour' ? `à ${formatHeure(iso)}` : formatDateHeure(iso);
+  return periode === 'jour' ? `à ${formatHeure(iso)}` : libelleRendezVous(iso).replace(/^\S/, (c) => c.toLowerCase());
 }
 
 function LignePaiement({ p, periode }: { p: PaiementLigne; periode: Periode }) {
@@ -51,7 +51,7 @@ function LignePaiement({ p, periode }: { p: PaiementLigne; periode: Periode }) {
         <span>Encaissé {quand(p.encaisse_at, periode)}</span>
         {p.statut !== 'a_valider' && p.valide_at && (
           <span>
-            {p.statut === 'valide' ? 'Validé' : 'Refusé'} {formatDateHeure(p.valide_at)}
+            {p.statut === 'valide' ? 'Validé' : 'Refusé'} {quand(p.valide_at, 'semaine')}
             {p.valide_par_nom ? ` par ${p.valide_par_nom}` : ''}
           </span>
         )}
@@ -179,7 +179,7 @@ export default function Encaissements() {
               },
             ]}
           />
-          <div className="lv-onglets">
+          <div className="lv-onglets" data-serre="">
             <Tabs<Filtre>
               label="Filtrer par état"
               value={filtre}

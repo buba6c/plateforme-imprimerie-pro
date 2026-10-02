@@ -12,6 +12,11 @@ import { getTarifs, invalidateTarifs } from '../../lib/tarifs';
 export const tarifsRouter = Router();
 tarifsRouter.use(requireAuth);
 
+/** Libellés et unités, sans les prix : utiles à tous les rôles pour lire les spécifications. */
+tarifsRouter.get('/libelles', async (_req, res) => {
+  res.json(await query(`SELECT machine, categorie, code, libelle, unite FROM tarifs ORDER BY machine, categorie, ordre, libelle`));
+});
+
 tarifsRouter.get('/', requireRole('admin', 'preparateur'), async (_req, res) => {
   res.json(await query(`SELECT * FROM tarifs ORDER BY machine, categorie, ordre, libelle`));
 });

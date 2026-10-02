@@ -51,7 +51,7 @@ export default function ALivrer() {
     const autres = enLivraison.length - tournee.length;
     const groupes = GROUPES.map((g) => ({ ...g, items: tournee.filter((d) => groupeDe(d) === g.id) })).filter((g) => g.items.length);
     const restes = tournee.map(resteAEncaisser);
-    const aEncaisser = restes.some((r) => r !== null) ? restes.reduce<number>((s, r) => s + (r ?? 0), 0) : null;
+    const aEncaisser = !restes.length || restes.some((r) => r !== null) ? restes.reduce<number>((s, r) => s + (r ?? 0), 0) : null;
     const sansMontant = restes.filter((r) => r === null).length;
     const aujourdhui = tournee.filter((d) => groupeDe(d) === 'aujourdhui').length;
     const retard = tournee.filter((d) => groupeDe(d) === 'retard').length;

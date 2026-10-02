@@ -19,7 +19,7 @@ Montants : entiers en FCFA. Dates : ISO 8601 (`date` = `AAAA-MM-JJ`).
 | POST | /users/:id/reinitialiser-mot-de-passe | admin | `{mot_de_passe_provisoire}` (affiché une fois) |
 | GET | /dossiers?statut=a,b&machine&q&urgent=1&mine=1&file=travail&client_id&page&limit&tri=priorite\|recent\|ancien | tous (filtré par rôle) | `{items,total,page,limit,compteurs:{statut:n}}` |
 | POST | /dossiers | admin, preparateur | fiche complète (201) |
-| GET | /dossiers/:id | tous (filtré) | fiche : champs + `actions[]`, `peut_modifier`, `peut_supprimer`, `peut_deposer_fichiers`, `fichiers[]`, `historique[]`, `paiements[]`, `facture` |
+| GET | /dossiers/:id | tous (filtré) | fiche : champs (dont `resume_specs`, résumé lisible) + `actions[]`, `peut_modifier`, `peut_supprimer`, `peut_deposer_fichiers`, `fichiers[]`, `historique[]`, `paiements[]`, `facture` |
 | PATCH | /dossiers/:id | admin, preparateur propriétaire (en_cours/a_revoir) | fiche |
 | DELETE | /dossiers/:id `{motif?}` | admin ; préparateur propriétaire si en_cours sans paiement | 204 (corbeille) |
 | POST | /dossiers/:id/restaurer | admin | |
@@ -34,6 +34,7 @@ Montants : entiers en FCFA. Dates : ISO 8601 (`date` = `AAAA-MM-JJ`).
 | PATCH | /fichiers/:id `{a_reimprimer}` | admin, imprimeur de la machine, préparateur propriétaire | 204 |
 | DELETE | /fichiers/:id | comme l'envoi | 204 |
 | GET | /tarifs | admin, preparateur | toutes les lignes |
+| GET | /tarifs/libelles | tous | `[{machine,categorie,code,libelle,unite}]` sans les prix |
 | POST / PATCH | /tarifs[/:id] | admin | |
 | POST | /tarifs/estimer `{machine,specs}` | admin, preparateur | `ResultatPrix` ou `{ok:false,erreurs}` |
 

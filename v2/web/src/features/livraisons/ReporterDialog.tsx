@@ -79,7 +79,7 @@ export function ReporterDialog({ dossier, onClose }: { dossier: Pick<DossierResu
       <div className="stack-sm">
         <div className="lv-raccourcis" role="group" aria-label="Motifs fréquents">
           {MOTIFS.map((m) => (
-            <Button key={m} size="sm" variant="ghost" aria-pressed={motif === m} className={motif === m ? 'lv-choisi' : undefined} onClick={() => setMotif(m)}>
+            <Button key={m} size="sm" aria-pressed={motif === m} className={motif === m ? 'lv-choisi' : undefined} onClick={() => setMotif(m)}>
               {m}
             </Button>
           ))}

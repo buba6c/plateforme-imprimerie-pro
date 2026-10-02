@@ -22,6 +22,8 @@ export interface DossierResume {
   description: string | null;
   consignes: string | null;
   specs: Specs;
+  /** Résumé lisible des spécifications, calculé par le serveur avec les libellés des tarifs. */
+  resume_specs?: string;
   urgent: boolean;
   date_promise: string | null;
   preparateur_id: number | null;

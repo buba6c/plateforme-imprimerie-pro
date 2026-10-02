@@ -27,6 +27,8 @@
 /* ---------- Onglets pleine largeur sur téléphone ---------- */
 @media (max-width: 560px) {
   .lv-onglets .ev-tab { flex: 1 1 auto; justify-content: center; gap: 6px; padding: 12px 6px; font-size: 15px; }
+  .lv-onglets[data-serre] .ev-tabs { gap: 0; }
+  .lv-onglets[data-serre] .ev-tab { gap: 4px; padding: 12px 4px; font-size: 14px; }
 }
 .lv-onglets {
   position: sticky; top: var(--topbar); z-index: 5; background: var(--canvas); min-width: 0;

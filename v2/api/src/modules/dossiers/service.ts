@@ -7,6 +7,7 @@ import {
   dossierUpdateSchema,
   isStatut,
   machineOfRole,
+  resumeLigne,
   situationPaiement,
   specsSchemaFor,
   STATUT_LABELS,
@@ -14,6 +15,8 @@ import {
   verifierAction,
   type ActionId,
   type ActionInput,
+  type LigneRoland,
+  type LigneXerox,
   type Machine,
   type Specs,
   type Statut,
@@ -55,8 +58,26 @@ export type DossierRow = Record<string, any> & {
   client_nom: string;
 };
 
+export type Libelles = Map<string, string>;
+
+/** Libellés des tarifs (sans les prix), pour décrire les spécifications à tous les rôles. */
+export async function libellesTarifs(db?: Db): Promise<Libelles> {
+  const tarifs = await getTarifs(db);
+  return new Map(tarifs.map((t) => [`${t.machine}:${t.code}`, t.libelle]));
+}
+
+/** Résumé lisible des spécifications : « Bâche standard · 300 × 200 cm · 1 ex. · +1 ligne ». */
+export function resumeSpecs(machine: Machine, specs: any, description: string | null, libelles: Libelles): string {
+  const lignes = (specs?.lignes ?? []) as (LigneRoland | LigneXerox)[];
+  if (!lignes.length) return description ?? '';
+  const first = lignes[0]!;
+  const lib = libelles.get(`${machine}:${first.support}`) ?? libelles.get(`global:${first.support}`) ?? first.support;
+  const base = resumeLigne(machine, first, lib);
+  return lignes.length > 1 ? `${base} · +${lignes.length - 1} ligne${lignes.length > 2 ? 's' : ''}` : base;
+}
+
 /** Mise en forme pour l'API : retire ce que le rôle ne doit pas voir. */
-export function presenter(row: DossierRow, user: AuthUser) {
+export function presenter(row: DossierRow, user: AuthUser, libelles: Libelles = new Map()) {
   const montants = peutVoirMontants(user);
   const contact = peutVoirContactClient(user);
   const out: Record<string, unknown> = {
@@ -71,6 +92,7 @@ export function presenter(row: DossierRow, user: AuthUser) {
     description: row.description,
     consignes: row.consignes,
     specs: row.specs,
+    resume_specs: resumeSpecs(row.machine, row.specs, row.description, libelles),
     urgent: row.urgent,
     date_promise: row.date_promise,
     preparateur_id: row.preparateur_id,
@@ -165,8 +187,9 @@ export async function listerDossiers(user: AuthUser, f: ListeFiltres) {
     `${SELECT_DOSSIER} WHERE ${where.join(' AND ')} ORDER BY ${order} LIMIT ${limit} OFFSET ${(page - 1) * limit}`,
     args,
   );
+  const libelles = await libellesTarifs();
   return {
-    items: rows.map((r) => ({ ...presenter(r, user), actions: actionsDisponibles(user, r).map((a) => a.id) })),
+    items: rows.map((r) => ({ ...presenter(r, user, libelles), actions: actionsDisponibles(user, r).map((a) => a.id) })),
     total: totalRow?.n ?? 0,
     page,
     limit,
@@ -225,7 +248,7 @@ export async function detailDossier(user: AuthUser, id: number) {
       ? await one(`SELECT id, numero, total_ttc, date_emission FROM factures WHERE dossier_id = $1 AND statut = 'emise'`, [id])
       : null;
   return {
-    ...presenter(row, user),
+    ...presenter(row, user, await libellesTarifs()),
     actions: actionsDisponibles(user, row).map((a) => a.id),
     peut_modifier: peutModifier(user, row),
     peut_supprimer: peutSupprimer(user, row),

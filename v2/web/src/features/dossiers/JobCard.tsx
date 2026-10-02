@@ -4,7 +4,8 @@ import type { DossierResume } from '../../lib/types';
 import { MachineChip, Ref, StatusBadge, UrgentTag } from '../../ui';
 import { DossierActions } from './DossierActions';
 
-export function specResume(d: Pick<DossierResume, 'machine' | 'specs' | 'description'>): string {
+export function specResume(d: Pick<DossierResume, 'machine' | 'specs' | 'description' | 'resume_specs'>): string {
+  if (d.resume_specs) return d.resume_specs;
   const lignes = (d.specs?.lignes ?? []) as (LigneRoland | LigneXerox)[];
   if (!lignes.length) return d.description ?? 'Spécifications à voir dans la fiche';
   const first = resumeLigne(d.machine, lignes[0]!);
