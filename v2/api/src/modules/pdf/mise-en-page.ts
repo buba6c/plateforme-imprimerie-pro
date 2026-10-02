@@ -181,7 +181,13 @@ export interface LigneTableau {
 }
 
 /** Tableau à filets fins, en-tête répété à chaque page. Renvoie le y sous le tableau. */
-export function tableau(doc: Doc, yDepart: number, colonnes: Colonne[], lignes: LigneTableau[]): number {
+export function tableau(
+  doc: Doc,
+  yDepart: number,
+  colonnes: Colonne[],
+  lignes: LigneTableau[],
+  opts: { /** Colonne sous laquelle s'affiche le détail ; il s'étend jusqu'au bord droit si `detailEtendu`. */ detailColonne?: number; detailEtendu?: boolean } = {},
+): number {
   const x0 = doc.page.margins.left;
   const total = largeurUtile(doc);
   const fixe = colonnes.reduce((s, c) => s + c.largeur, 0);
@@ -192,6 +198,9 @@ export function tableau(doc: Doc, yDepart: number, colonnes: Colonne[], lignes: 
     return acc + w;
   }, x0);
   const pad = 5;
+  const colDetail = opts.detailColonne ?? 0;
+  const xDetail = xs[colDetail]! + pad;
+  const largeurDetail = (opts.detailEtendu ? x0 + total - xs[colDetail]! : largeurs[colDetail]!) - 2 * pad;
 
   const entete = (y: number): number => {
     colonnes.forEach((c, i) => {
@@ -217,7 +226,7 @@ export function tableau(doc: Doc, yDepart: number, colonnes: Colonne[], lignes: 
     let hDetail = 0;
     if (ligne.detail) {
       doc.font(POLICE).fontSize(8);
-      hDetail = doc.heightOfString(t(ligne.detail), { width: largeurs[0]! - 2 * pad }) + 2;
+      hDetail = doc.heightOfString(t(ligne.detail), { width: largeurDetail }) + 2;
     }
     const hLigne = Math.max(h, 11) + hDetail + 8;
     if (y + hLigne > basDePage(doc)) {
@@ -231,7 +240,7 @@ export function tableau(doc: Doc, yDepart: number, colonnes: Colonne[], lignes: 
       });
     });
     if (ligne.detail) {
-      doc.font(POLICE).fontSize(8).fillColor(COULEURS.discret).text(t(ligne.detail), xs[0]! + pad, y + h + 2, { width: largeurs[0]! - 2 * pad });
+      doc.font(POLICE).fontSize(8).fillColor(COULEURS.discret).text(t(ligne.detail), xDetail, y + h + 2, { width: largeurDetail });
     }
     y += hLigne;
     filet(doc, y - 4, x0, x0 + total);
@@ -293,7 +302,7 @@ export function piedsDePage(doc: Doc, texte: string, reference: string) {
     const y = doc.page.height - 42;
     filet(doc, y - 6, x, x + width);
     if (texte) {
-      doc.font(POLICE).fontSize(7.5).fillColor(COULEURS.discret).text(t(texte), x, y, { width: width - 90, height: 22, ellipsis: true });
+      doc.font(POLICE).fontSize(7.5).fillColor(COULEURS.discret).text(t(texte), x, y, { width: width - 180, height: 22, ellipsis: true });
     }
     doc
       .font(POLICE)

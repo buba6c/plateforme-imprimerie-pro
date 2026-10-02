@@ -58,7 +58,7 @@ export function lignesFacture(d: DossierRow, params: Parametres, totalHt: number
 }
 
 const SELECT_FACTURE = `
-  SELECT f.*, dos.numero AS dossier_numero, dos.montant AS dossier_montant,
+  SELECT f.*, dos.numero AS dossier_numero, dos.montant AS dossier_montant, dos.machine AS dossier_machine, dos.description AS dossier_description,
          uc.nom AS created_by_nom, ua.nom AS annulee_par_nom,
          coalesce((SELECT sum(p.montant) FROM paiements p WHERE p.dossier_id = f.dossier_id AND p.statut = 'valide'), 0)::bigint AS deja_paye,
          coalesce((SELECT sum(p.montant) FROM paiements p WHERE p.dossier_id = f.dossier_id AND p.statut = 'a_valider'), 0)::bigint AS en_attente_validation
@@ -127,6 +127,8 @@ facturesRouter.get('/:id/pdf', async (req, res) => {
   const pdf = await pdfFacture(
     {
       numero: f.numero,
+      machine: f.dossier_machine,
+      objet: f.dossier_description,
       statut: f.statut,
       date_emission: f.date_emission,
       dossier_numero: f.dossier_numero,

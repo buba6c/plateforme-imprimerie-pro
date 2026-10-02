@@ -168,6 +168,8 @@ export async function pdfDevis(d: DevisPdf, params: Parametres): Promise<Buffer>
 
 export interface FacturePdf {
   numero: string;
+  machine: Machine | null;
+  objet: string | null;
   statut: string;
   date_emission: string;
   dossier_numero: string;
@@ -197,7 +199,16 @@ export async function pdfFacture(f: FacturePdf, params: Parametres): Promise<Buf
     x: doc.page.margins.left + largeurUtile(doc) * 0.5,
     width: largeurUtile(doc) * 0.5,
   });
-  y = yClient + 16;
+  const lg = largeurUtile(doc) * 0.45;
+  etiquette(doc, 'Prestation', doc.page.margins.left, y + 10);
+  doc
+    .font(POLICE_GRAS)
+    .fontSize(10.5)
+    .fillColor(COULEURS.texte)
+    .text(t(f.machine ? `Impression ${MACHINE_LABELS[f.machine]}` : "Travaux d'impression"), doc.page.margins.left, y + 22, { width: lg });
+  doc.font(POLICE).fontSize(9).fillColor(COULEURS.discret).text(t(`Dossier ${f.dossier_numero}`), { width: lg });
+  if (f.objet) doc.text(t(f.objet.length > 160 ? `${f.objet.slice(0, 157)}...` : f.objet), { width: lg });
+  y = Math.max(yClient, doc.y) + 16;
 
   if (f.statut === 'annulee') {
     y = paragraphe(
@@ -376,7 +387,7 @@ export async function pdfBonDeTravail(d: BonDeTravailPdf, params: Parametres, ta
       { titre: 'Quantité', largeur: 55, align: 'right' },
       { titre: 'Surface', largeur: 55, align: 'right' },
       { titre: 'Finitions et options', largeur: 130 },
-    ], rows);
+    ], rows, { detailColonne: 1, detailEtendu: true });
   } else {
     const rows = (lignes as LigneXerox[]).map((l, i) => ({
       cellules: [
@@ -392,11 +403,11 @@ export async function pdfBonDeTravail(d: BonDeTravailPdf, params: Parametres, ta
     y = tableau(doc, y, [
       { titre: 'N°', largeur: 24 },
       { titre: 'Format', largeur: 0 },
-      { titre: 'Pages', largeur: 95 },
-      { titre: 'Exemplaires', largeur: 60, align: 'right' },
-      { titre: 'Feuilles', largeur: 50, align: 'right' },
-      { titre: 'Finitions et options', largeur: 130 },
-    ], rows);
+      { titre: 'Pages', largeur: 90 },
+      { titre: 'Exemplaires', largeur: 74, align: 'right' },
+      { titre: 'Feuilles', largeur: 60, align: 'right' },
+      { titre: 'Finitions et options', largeur: 125 },
+    ], rows, { detailColonne: 1, detailEtendu: true });
   }
   const forfaits = d.specs?.forfaits ?? [];
   if (forfaits.length) y = paragraphe(doc, y + 2, 'Services associés', choixTexte(tarifs, d.machine, forfaits, []));
