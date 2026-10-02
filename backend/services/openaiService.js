@@ -9,14 +9,6 @@
 const OpenAI = require('openai');
 const crypto = require('crypto');
 const dbHelper = require('../utils/dbHelper');
-const {
-  mapRolandSupport,
-  mapXeroxDocument,
-  mapXeroxFormat,
-  mapXeroxGrammage,
-  mapXeroxCouleur,
-  mapFinition
-} = require('../utils/tariffMapping');
 
 // Constantes de chiffrement
 const ENCRYPTION_ALGORITHM = 'aes-256-cbc';
@@ -104,14 +96,15 @@ async function getOpenAIClient() {
     return null;
   }
   
-  if (!config.api_key_encrypted || !config.api_key_iv) {
+  // Utilisation directe de api_key (sans encryption)
+  if (!config.api_key) {
     console.log('🔑 Clé API OpenAI manquante - configurez-la depuis l\'interface admin');
     return null;
   }
   
   try {
-    const apiKey = decryptApiKey(config.api_key_encrypted, config.api_key_iv);
-    return new OpenAI({ apiKey });
+    console.log('✅ Initialisation client OpenAI avec clé de longueur:', config.api_key.length);
+    return new OpenAI({ apiKey: config.api_key });
   } catch (error) {
     console.error('❌ Erreur initialisation client OpenAI:', error.message);
     console.log('💡 Solution: Reconfigurer la clé API depuis l\'interface admin');
@@ -294,42 +287,22 @@ async function estimateQuoteManually(formulaireData, machineType, tarifs) {
   
   if (machineType === 'roland') {
     // Calcul Roland basé sur surface
-    const largeur = parseFloat(formulaireData.largeur) || 0;
-    const hauteur = parseFloat(formulaireData.hauteur) || 0;
-    const unite = formulaireData.unite || 'cm';
-    
-    let surface = 0;
-    if (unite === 'cm') {
-      surface = (largeur * hauteur) / 10000;
-    } else if (unite === 'm') {
-      surface = largeur * hauteur;
-    }
-    
-    // Mapper le support et chercher le tarif
-    const supportField = formulaireData.type_support || formulaireData.support;
-    const tarifClue = mapRolandSupport(supportField);
-    const tarifSupport = tarifClue ? tarifs.find(t => t.cle === tarifClue) : null;
+    const surface = parseFloat(formulaireData.surface || formulaireData.largeur * formulaireData.hauteur / 10000) || 0;
+    const tarifSupport = tarifs.find(t => t.cle === formulaireData.support + '_m2');
     
     if (tarifSupport) {
-      prixBase = surface * parseFloat(tarifSupport.valeur);
-      details.base = { 
-        surface, 
-        support: supportField,
-        tarif_cle: tarifClue,
-        prix_m2: parseFloat(tarifSupport.valeur), 
-        total: prixBase 
-      };
+      prixBase = surface * tarifSupport.valeur;
+      details.base = { surface, prix_m2: tarifSupport.valeur, total: prixBase };
     }
     
     // Finitions
-    if (formulaireData.finitions && Array.isArray(formulaireData.finitions)) {
+    if (formulaireData.finitions) {
       formulaireData.finitions.forEach(finition => {
-        const finitionCle = mapFinition(finition);
-        const tarifFinition = finitionCle ? tarifs.find(t => t.cle === finitionCle) : null;
+        const tarifFinition = tarifs.find(t => t.cle === finition);
         if (tarifFinition) {
           const montant = tarifFinition.unite === 'm²' 
-            ? surface * parseFloat(tarifFinition.valeur)
-            : parseFloat(tarifFinition.valeur);
+            ? surface * tarifFinition.valeur 
+            : tarifFinition.valeur;
           prixFinitions += montant;
         }
       });
@@ -337,49 +310,20 @@ async function estimateQuoteManually(formulaireData, machineType, tarifs) {
     
   } else if (machineType === 'xerox') {
     // Calcul Xerox basé sur pages
-    const nbPages = parseInt(formulaireData.nombre_pages || formulaireData.pages) || 0;
-    const exemplaires = parseInt(formulaireData.exemplaires || formulaireData.nombre_exemplaires) || 1;
-    const totalPages = nbPages * exemplaires;
-    
-    // Déterminer le tarif papier
-    let tarifPapierCle = null;
-    if (formulaireData.format) {
-      tarifPapierCle = mapXeroxFormat(formulaireData.format);
-    }
-    if (!tarifPapierCle && formulaireData.type_document) {
-      tarifPapierCle = mapXeroxDocument(formulaireData.type_document);
-    }
-    if (!tarifPapierCle && formulaireData.grammage) {
-      tarifPapierCle = mapXeroxGrammage(formulaireData.grammage);
-    }
-    if (!tarifPapierCle) {
-      tarifPapierCle = 'papier_a4_couleur'; // Défaut
-    }
-    
-    const tarifPage = tarifPapierCle ? tarifs.find(t => t.cle === tarifPapierCle) : null;
+    const nbPages = parseInt(formulaireData.nombre_pages || formulaireData.exemplaires) || 0;
+    const tarifPage = tarifs.find(t => t.cle === formulaireData.papier);
     
     if (tarifPage) {
-      prixBase = totalPages * parseFloat(tarifPage.valeur);
-      details.base = { 
-        pages: totalPages, 
-        format: formulaireData.format || 'Standard',
-        tarif_cle: tarifPapierCle,
-        prix_page: parseFloat(tarifPage.valeur), 
-        total: prixBase 
-      };
+      prixBase = nbPages * tarifPage.valeur;
+      details.base = { pages: nbPages, prix_page: tarifPage.valeur, total: prixBase };
     }
     
     // Finitions
-    if (formulaireData.finition && Array.isArray(formulaireData.finition)) {
-      formulaireData.finition.forEach(finition => {
-        const finitionCle = mapFinition(finition);
-        const tarifFinition = finitionCle ? tarifs.find(t => t.cle === finitionCle) : null;
+    if (formulaireData.finitions) {
+      formulaireData.finitions.forEach(finition => {
+        const tarifFinition = tarifs.find(t => t.cle === finition);
         if (tarifFinition) {
-          let montant = parseFloat(tarifFinition.valeur);
-          if (tarifFinition.unite === 'forfait' || tarifFinition.unite === 'exemplaire') {
-            montant = montant * exemplaires;
-          }
-          prixFinitions += montant;
+          prixFinitions += tarifFinition.valeur;
         }
       });
     }
@@ -579,7 +523,6 @@ module.exports = {
   getOpenAIClient,
   testConnection,
   estimateQuote,
-  estimateQuoteManually,
   optimizePricing,
   analyzeWithGPT
 };

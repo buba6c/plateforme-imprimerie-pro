@@ -1,0 +1,341 @@
+/**
+ * Service d'Estimation avec Support des Sections Multiples
+ * Extension de realtimeEstimationService pour gérer sections[] et supports[]
+ */
+
+const dbHelper = require('../utils/dbHelper');
+
+/**
+ * Estime le prix total d'un dossier avec sections multiples (Xerox)
+ * @param {Array} sections - Tableau de sections [{type, mode_impression, copies, paper_types, finitions, faconnage}]
+ * @param {Array} tarifs - Tarifs chargés depuis la DB
+ * @returns {object} - Estimation détaillée par section
+ */
+async function estimateWithSections(sections, tarifs) {
+  if (!Array.isArray(sections) || sections.length === 0) {
+    return {
+      prix_estime: 0,
+      prix_brut: 0,
+      sections_details: [],
+      message: 'Aucune section fournie'
+    };
+  }
+
+  const sectionsDetails = [];
+  let prixTotal = 0;
+
+  for (let i = 0; i < sections.length; i++) {
+    const section = sections[i];
+    const sectionEstimation = await estimateSingleSection(section, tarifs, i + 1);
+    sectionsDetails.push(sectionEstimation);
+    prixTotal += sectionEstimation.prix_section;
+  }
+
+  // Arrondir au multiple de 100 supérieur (convention imprimerie)
+  const prixEstime = Math.ceil(prixTotal / 100) * 100;
+
+  return {
+    prix_estime: prixEstime,
+    prix_brut: Math.round(prixTotal),
+    sections_count: sections.length,
+    sections_details: sectionsDetails,
+    message: `Estimation pour ${sections.length} section(s)`
+  };
+}
+
+/**
+ * Estime le prix d'une section unique
+ */
+async function estimateSingleSection(section, tarifs, sectionNumber) {
+  const {
+    type,
+    mode_impression,
+    copies,
+    paper_types,
+    finitions = [],
+    faconnage = []
+  } = section;
+
+  let prixBase = 0;
+  let prixFinitions = 0;
+  let prixFaconnage = 0;
+  const details = {
+    paper_types_details: [],
+    finitions_details: [],
+    faconnage_details: []
+  };
+
+  // ========================================
+  // 1. CALCUL PAR TYPE DE PAPIER
+  // ========================================
+  if (Array.isArray(paper_types)) {
+    for (const pt of paper_types) {
+      const { grammage, type: paperType, pages = 1 } = pt;
+
+      // Trouver le tarif correspondant au papier
+      const tarifPapier = tarifs.find(t =>
+        (t.cle.includes(grammage) && t.cle.includes(paperType)) ||
+        t.cle.includes(`${paperType}_${grammage}`) ||
+        t.cle === paperType
+      );
+
+      if (tarifPapier) {
+        // Calcul: prix par page * nombre de pages * nombre d'exemplaires
+        const totalPages = pages * copies;
+        const prixPapier = totalPages * tarifPapier.valeur;
+
+        // Facteur recto-verso (1 feuille = 2 pages)
+        const facteur = mode_impression === 'recto_verso' ? 0.6 : 1; // 40% de réduction pour recto-verso
+        const prixAjuste = prixPapier * facteur;
+
+        prixBase += prixAjuste;
+
+        details.paper_types_details.push({
+          grammage,
+          type: paperType,
+          pages,
+          copies,
+          total_pages: totalPages,
+          mode_impression,
+          prix_unitaire: tarifPapier.valeur,
+          facteur_recto_verso: facteur,
+          prix_total: Math.round(prixAjuste)
+        });
+      } else {
+        console.warn(`⚠️  Tarif non trouvé pour: ${paperType} ${grammage}g`);
+        details.paper_types_details.push({
+          grammage,
+          type: paperType,
+          error: 'Tarif non trouvé',
+          prix_total: 0
+        });
+      }
+    }
+  }
+
+  // ========================================
+  // 2. FINITIONS (pelliculage, vernis, etc.)
+  // ========================================
+  if (Array.isArray(finitions) && finitions.length > 0) {
+    for (const finition of finitions) {
+      const tarifFinition = tarifs.find(t =>
+        t.cle === finition ||
+        t.cle.includes(finition.toLowerCase())
+      );
+
+      if (tarifFinition) {
+        const montant = tarifFinition.valeur * copies;
+        prixFinitions += montant;
+        details.finitions_details.push({
+          nom: finition,
+          prix_unitaire: tarifFinition.valeur,
+          copies,
+          prix_total: Math.round(montant)
+        });
+      }
+    }
+  }
+
+  // ========================================
+  // 3. FAÇONNAGE (pliage, agrafage, reliure, etc.)
+  // ========================================
+  if (Array.isArray(faconnage) && faconnage.length > 0) {
+    for (const operation of faconnage) {
+      const tarifFaconnage = tarifs.find(t =>
+        t.cle === operation ||
+        t.cle.includes(operation.toLowerCase())
+      );
+
+      if (tarifFaconnage) {
+        const montant = tarifFaconnage.valeur * copies;
+        prixFaconnage += montant;
+        details.faconnage_details.push({
+          nom: operation,
+          prix_unitaire: tarifFaconnage.valeur,
+          copies,
+          prix_total: Math.round(montant)
+        });
+      }
+    }
+  }
+
+  // ========================================
+  // TOTAL SECTION
+  // ========================================
+  const prixSection = prixBase + prixFinitions + prixFaconnage;
+
+  return {
+    section_number: sectionNumber,
+    type,
+    mode_impression,
+    copies,
+    prix_section: Math.round(prixSection),
+    details: {
+      base: Math.round(prixBase),
+      finitions: Math.round(prixFinitions),
+      faconnage: Math.round(prixFaconnage),
+      breakdown: details
+    }
+  };
+}
+
+/**
+ * Estime le prix total d'un dossier Roland avec supports multiples
+ * @param {Array} supports - Tableau de supports [{type_support, largeur, hauteur, unite, exemplaires, finitions}]
+ * @param {Array} tarifs - Tarifs chargés depuis la DB
+ * @returns {object} - Estimation détaillée par support
+ */
+async function estimateWithSupports(supports, tarifs) {
+  if (!Array.isArray(supports) || supports.length === 0) {
+    return {
+      prix_estime: 0,
+      prix_brut: 0,
+      supports_details: [],
+      message: 'Aucun support fourni'
+    };
+  }
+
+  const supportsDetails = [];
+  let prixTotal = 0;
+
+  for (let i = 0; i < supports.length; i++) {
+    const support = supports[i];
+    const supportEstimation = await estimateSingleSupport(support, tarifs, i + 1);
+    supportsDetails.push(supportEstimation);
+    prixTotal += supportEstimation.prix_support;
+  }
+
+  // Arrondir au multiple de 100 supérieur
+  const prixEstime = Math.ceil(prixTotal / 100) * 100;
+
+  return {
+    prix_estime: prixEstime,
+    prix_brut: Math.round(prixTotal),
+    supports_count: supports.length,
+    supports_details: supportsDetails,
+    message: `Estimation pour ${supports.length} support(s)`
+  };
+}
+
+/**
+ * Estime le prix d'un support Roland unique
+ */
+async function estimateSingleSupport(support, tarifs, supportNumber) {
+  const {
+    type_support,
+    largeur,
+    hauteur,
+    unite,
+    exemplaires,
+    finitions = []
+  } = support;
+
+  let prixBase = 0;
+  let prixFinitions = 0;
+  const details = {
+    dimensions: {},
+    finitions_details: []
+  };
+
+  // ========================================
+  // 1. CALCUL SURFACE ET PRIX BASE
+  // ========================================
+  let surface = 0;
+  if (unite === 'cm') {
+    surface = (largeur * hauteur) / 10000; // cm² → m²
+  } else if (unite === 'm') {
+    surface = largeur * hauteur;
+  } else {
+    surface = (largeur * hauteur) / 1000000; // mm² → m²
+  }
+
+  details.dimensions = {
+    largeur,
+    hauteur,
+    unite,
+    surface_m2: surface.toFixed(4),
+    exemplaires
+  };
+
+  // Trouver le tarif du support
+  const tarifSupport = tarifs.find(t =>
+    t.cle === `${type_support}_m2` ||
+    t.cle === type_support ||
+    t.cle.includes(type_support.toLowerCase())
+  );
+
+  if (tarifSupport) {
+    prixBase = surface * tarifSupport.valeur * exemplaires;
+    details.support = {
+      type: type_support,
+      prix_par_m2: tarifSupport.valeur,
+      prix_total: Math.round(prixBase)
+    };
+  } else {
+    console.warn(`⚠️  Tarif non trouvé pour support: ${type_support}`);
+    details.support = {
+      type: type_support,
+      error: 'Tarif non trouvé',
+      prix_total: 0
+    };
+  }
+
+  // ========================================
+  // 2. FINITIONS (oeillets, découpe, etc.)
+  // ========================================
+  if (Array.isArray(finitions) && finitions.length > 0) {
+    for (const finition of finitions) {
+      const tarifFinition = tarifs.find(t =>
+        t.cle === finition ||
+        t.cle.includes(finition.toLowerCase())
+      );
+
+      if (tarifFinition) {
+        const montant = tarifFinition.valeur * exemplaires;
+        prixFinitions += montant;
+        details.finitions_details.push({
+          nom: finition,
+          prix_unitaire: tarifFinition.valeur,
+          exemplaires,
+          prix_total: Math.round(montant)
+        });
+      }
+    }
+  }
+
+  // ========================================
+  // TOTAL SUPPORT
+  // ========================================
+  const prixSupport = prixBase + prixFinitions;
+
+  return {
+    support_number: supportNumber,
+    type_support,
+    exemplaires,
+    prix_support: Math.round(prixSupport),
+    details: {
+      base: Math.round(prixBase),
+      finitions: Math.round(prixFinitions),
+      breakdown: details
+    }
+  };
+}
+
+/**
+ * Récupère les tarifs depuis la DB (wrapper pour cohérence)
+ */
+async function getTarifsByMachine(machineType) {
+  const [rows] = await dbHelper.query(
+    'SELECT * FROM tarifs_config WHERE (type_machine = $1 OR type_machine = $2) AND actif = TRUE',
+    [machineType, 'global']
+  );
+  return rows;
+}
+
+module.exports = {
+  estimateWithSections,
+  estimateWithSupports,
+  estimateSingleSection,
+  estimateSingleSupport,
+  getTarifsByMachine
+};

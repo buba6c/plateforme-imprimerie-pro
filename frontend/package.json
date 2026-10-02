@@ -1,11 +1,13 @@
 {
   "name": "imprimerie-frontend",
-  "version": "1.0.0",
-  "description": "Frontend React pour la plateforme d'imprimerie numérique",
+  "version": "2.0.1",
+  "description": "Frontend React pour la plateforme d'imprimerie numérique - Déploiement 26 oct 2025",
   "private": true,
   "dependencies": {
     "@headlessui/react": "^1.7.17",
     "@heroicons/react": "^2.2.0",
+    "@uppy/core": "^5.1.1",
+    "@uppy/tus": "^5.0.2",
     "axios": "^1.6.2",
     "bcryptjs": "^3.0.2",
     "chart.js": "^4.5.0",
@@ -53,8 +55,7 @@
   },
   "scripts": {
     "start": "PORT=3001 react-scripts start",
-    "build": "GENERATE_SOURCEMAP=false react-scripts build",
-    "build:analyze": "npm run build && npx serve -s build",
+    "build": "react-scripts build",
     "test": "react-scripts test",
     "eject": "react-scripts eject",
     "lint": "eslint src --max-warnings 0",

@@ -1,6 +1,7 @@
 const express = require('express');
 const cors = require('cors');
 const http = require('http');
+const path = require('path');
 const swaggerJsdoc = require('swagger-jsdoc');
 const swaggerUi = require('swagger-ui-express');
 const helmet = require('helmet');
@@ -9,6 +10,11 @@ const rateLimit = require('express-rate-limit');
 
 const app = express();
 const server = http.createServer(app);
+
+// Configuration des timeouts pour les gros uploads
+server.timeout = 600000; // 10 minutes (600 secondes)
+server.keepAliveTimeout = 610000; // 10min 10s (doit être > server.timeout)
+server.headersTimeout = 620000; // 10min 20s (doit être > keepAliveTimeout)
 
 // Variables d'environnement
 const PORT = process.env.PORT || 5001;
@@ -37,11 +43,29 @@ app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec));
 // SERVICES
 // ================================
 const socketService = require('./services/socketService');
+const NotificationService = require('./services/notifications');
+
+// Configuration CORS pour Socket.IO - mêmes origines autorisées
+const allowedOriginsForSocket = [
+  process.env.FRONTEND_URL || 'http://localhost:3001',
+  'http://localhost:3000',
+  'http://localhost:3001',
+  'http://72.61.145.37',
+  'https://72.61.145.37',
+  'https://evocomprint.site',
+  'https://www.evocomprint.site',
+];
+
 socketService.initSocketIO(server, {
-  origin: process.env.FRONTEND_URL || 'http://localhost:3000',
+  origin: allowedOriginsForSocket,
   methods: ['GET', 'POST', 'PUT', 'DELETE'],
   credentials: true,
 });
+
+// Initialiser le service de notifications avec Socket.IO
+const io = socketService.getIO();
+global.notificationService = new NotificationService(io);
+console.log('✅ Service de notifications initialisé');
 
 // ================================
 // MIDDLEWARE GLOBAL
@@ -74,31 +98,45 @@ app.use('/api/', apiLimiter);
 app.use('/api/auth/login', loginLimiter);
 app.use('/api/devis/estimate-realtime', estimateLimiter);
 
-// Configuration CORS pour production et développement
+// Configuration CORS - accepte plusieurs origines
 const allowedOrigins = [
+  process.env.FRONTEND_URL || 'http://localhost:3001',
   'http://localhost:3000',
-  'http://localhost:3001', 
-  'https://imprimerie-frontend.onrender.com',
-  process.env.FRONTEND_URL
-].filter(Boolean);
+  'http://localhost:3001',
+  'http://localhost:5001', // Ajouté pour gérer les cas de requêtes locales
+  'http://72.61.145.37',
+  'https://72.61.145.37',
+  'https://evocomprint.site',
+  'https://www.evocomprint.site',
+];
 
 app.use(cors({
   origin: function (origin, callback) {
-    // Autoriser les requêtes sans origin (mobile apps, postman, etc.)
+    // Autoriser les requêtes sans origine (comme les appels depuis Postman ou curl)
     if (!origin) return callback(null, true);
-    
-    if (allowedOrigins.includes(origin) || origin.includes('.onrender.com')) {
-      return callback(null, true);
+
+    if (allowedOrigins.indexOf(origin) !== -1) {
+      callback(null, true);
+    } else {
+      console.warn(`⚠️  Origine non autorisée bloquée: ${origin}`);
+      callback(new Error('Non autorisé par CORS'));
     }
-    
-    console.log('🚫 CORS bloqué pour:', origin);
-    callback(new Error('Non autorisé par CORS'));
   },
   credentials: true,
 }));
 
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ extended: true, limit: '50mb' }));
+
+// Servir les fichiers uploadés directement si nécessaires
+// Mappe /uploads -> <repoRoot>/uploads (parent du dossier backend)
+try {
+  const uploadsRoot = path.join(__dirname, '..', 'uploads');
+  app.use('/uploads', express.static(uploadsRoot));
+  console.log('📁 Static /uploads servi depuis:', uploadsRoot);
+} catch (e) {
+  console.warn('⚠️  Impossible de monter /uploads en statique:', e.message);
+}
 
 // Middleware de logs
 app.use((req, res, next) => {
@@ -121,110 +159,18 @@ app.get('/api/health', (req, res) => {
     database: 'connected',
     memory: process.memoryUsage(),
   };
-  
-  res.status(200).json(healthCheck);
-});
 
-// Route temporaire pour corriger le schéma (ADMIN SEULEMENT)
-app.post('/api/admin/fix-schema', async (req, res) => {
-  try {
-    console.log('🔧 [/api/admin/fix-schema] Endpoint appelé');
-    
-    // Exécuter le SQL directement
-    const { query } = require('./config/database');
-    
-    console.log('📝 [fix-schema] Création séquence...');
-    await query(`
-      DO $$
-      BEGIN
-        IF NOT EXISTS (SELECT 1 FROM pg_class WHERE relname = 'numero_commande_seq') THEN
-          CREATE SEQUENCE numero_commande_seq START 1;
-        END IF;
-      END$$;
-    `);
-    
-    console.log('📝 [fix-schema] Ajout colonne quantite...');
-    await query(`
-      DO $$
-      BEGIN
-        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'dossiers' AND column_name = 'quantite') THEN
-          ALTER TABLE dossiers ADD COLUMN quantite INTEGER DEFAULT 1;
-          UPDATE dossiers SET quantite = 1 WHERE quantite IS NULL;
-        END IF;
-      END$$;
-    `);
-    
-    console.log('📝 [fix-schema] Ajout colonne folder_id...');
-    await query(`
-      DO $$
-      BEGIN
-        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'dossiers' AND column_name = 'folder_id') THEN
-          ALTER TABLE dossiers ADD COLUMN folder_id UUID DEFAULT gen_random_uuid() UNIQUE;
-          UPDATE dossiers SET folder_id = gen_random_uuid() WHERE folder_id IS NULL;
-        END IF;
-      END$$;
-    `);
-    
-    console.log('📝 [fix-schema] Correction contrainte CHECK statut...');
-    await query(`
-      DO $$
-      BEGIN
-        -- Supprimer l'ancienne contrainte
-        ALTER TABLE dossiers DROP CONSTRAINT IF EXISTS dossiers_statut_check;
-        
-        -- Ajouter nouvelle contrainte avec libellés français ET snake_case
-        ALTER TABLE dossiers ADD CONSTRAINT dossiers_statut_check 
-        CHECK (statut IN (
-          'en_cours', 'a_revoir', 'en_impression', 'termine', 'en_livraison', 'livre',
-          'En cours', 'À revoir', 'En impression', 'Terminé', 'En livraison', 'Livré',
-          'pret_impression', 'Prêt impression', 'imprime', 'Imprimé',
-          'pret_livraison', 'Prêt livraison'
-        ));
-      END$$;
-    `);
-    
-    console.log('✅ [fix-schema] Vérification...');
-    const checkResult = await query(`
-      SELECT column_name FROM information_schema.columns 
-      WHERE table_name = 'dossiers' AND column_name IN ('quantite', 'folder_id')
-      ORDER BY column_name
-    `);
-    
-    const seqCheck = await query(`
-      SELECT EXISTS (SELECT 1 FROM pg_class WHERE relname = 'numero_commande_seq') as exists
-    `);
-    
-    const colonnes = checkResult.rows.map(r => r.column_name);
-    const seqExists = seqCheck.rows[0].exists;
-    
-    console.log('✅ [fix-schema] Colonnes trouvées:', colonnes);
-    console.log('✅ [fix-schema] Séquence exists:', seqExists);
-    
-    res.json({ 
-      success: true,
-      message: 'Schéma corrigé avec succès (+ contrainte CHECK)',
-      details: {
-        colonnes_ajoutees: colonnes,
-        sequence_creee: seqExists,
-        contrainte_statut: 'mise_a_jour'
-      }
-    });
-  } catch (error) {
-    console.error('❌ [fix-schema] Erreur:', error.message);
-    res.status(500).json({ 
-      success: false, 
-      error: error.message,
-      stack: error.stack
-    });
-  }
+  res.status(200).json(healthCheck);
 });
 
 // Import et utilisation des routes
 try {
   const authRoutes = require('./routes/auth');
   const dossiersRoutes = require('./routes/dossiers');
+  const clientsRoutes = require('./routes/clients');
   const systemConfigRoutes = require('./routes/system-config');
-  
+  const systemResetRoutes = require('./routes/system-reset');
+
   // Montage des routes principales
   if (authRoutes) {
     app.use('/api/auth', authRoutes);
@@ -234,14 +180,22 @@ try {
     app.use('/api/dossiers', dossiersRoutes);
     console.log('✅ Route dossiers montée');
   }
+  if (clientsRoutes) {
+    app.use('/api/clients', clientsRoutes);
+    console.log('✅ Route clients montée');
+  }
   if (systemConfigRoutes) {
     app.use('/api/system-config', systemConfigRoutes);
-      // Alias pour compatibilité : /dossiers → /api/dossiers
-      app.use('/dossiers', dossiersRoutes);
-      console.log('✅ Alias /dossiers monté');
+    // Alias pour compatibilité : /dossiers → /api/dossiers
+    app.use('/dossiers', dossiersRoutes);
+    console.log('✅ Alias /dossiers monté');
     console.log('✅ Route system-config montée');
   }
-  
+  if (systemResetRoutes) {
+    app.use('/api/system', systemResetRoutes);
+    console.log('✅ Route system-reset montée');
+  }
+
   // Chargement des autres routes (si pas d'erreur)
   try {
     const filesRoutes = require('./routes/files');
@@ -249,14 +203,14 @@ try {
     const statistiquesRoutes = require('./routes/statistiques');
     const activitesRecentesRoutes = require('./routes/activites-recentes');
     const themesRoutes = require('./routes/themes');
-    
+
     // Routes Devis & Facturation & Paiements
     const devisRoutes = require('./routes/devis');
     const facturesRoutes = require('./routes/factures');
     const paiementsRoutes = require('./routes/paiements');
     const tarifsRoutes = require('./routes/tarifs');
     const openaiConfigRoutes = require('./routes/openai-config');
-    
+
     if (filesRoutes) {
       app.use('/api/files', filesRoutes);
       console.log('✅ Route files montée');
@@ -277,7 +231,7 @@ try {
       app.use('/api/themes', themesRoutes);
       console.log('✅ Route themes montée');
     }
-    
+
     // Montage des routes Devis & Facturation
     if (devisRoutes) {
       app.use('/api/devis', devisRoutes);
@@ -299,18 +253,11 @@ try {
       app.use('/api/settings/openai', openaiConfigRoutes);
       console.log('✅ Route openai-config montée');
     }
-    
-    // Route IA Intelligente
-    const aiAgentRoutes = require('./routes/aiAgent');
-    if (aiAgentRoutes) {
-      app.use('/api/ai-agent', aiAgentRoutes);
-      console.log('✅ Route ai-agent montée');
-    }
-    
+
   } catch (routeError) {
     console.warn('⚠️  Certaines routes secondaires ont des erreurs:', routeError.message);
   }
-  
+
 } catch (error) {
   console.error('Erreur chargement des routes principales:', error.message);
 }
@@ -325,6 +272,7 @@ app.get('/api', (req, res) => {
       health: '/api/health',
       auth: '/api/auth',
       dossiers: '/api/dossiers',
+      clients: '/api/clients',
       files: '/api/files',
       users: '/api/users',
       statistiques: '/api/statistiques',
@@ -345,7 +293,7 @@ app.get('/api/workflow/meta', (req, res) => {
   const statusCodes = workflowConstants.STATUTS;
   const statusLabels = {
     en_cours: 'En cours',
-    a_revoir: 'À revoir', 
+    a_revoir: 'À revoir',
     en_impression: 'En impression',
     termine: 'Terminé',
     en_livraison: 'En livraison',
@@ -380,7 +328,7 @@ app.use((req, res, next) => {
 // ================================
 app.use((err, req, res, next) => {
   console.error('Erreur serveur:', err);
-  
+
   // Erreur JWT
   if (err.name === 'UnauthorizedError') {
     return res.status(401).json({
@@ -388,7 +336,7 @@ app.use((err, req, res, next) => {
       message: err.message
     });
   }
-  
+
   // Erreur de validation
   if (err.name === 'ValidationError') {
     return res.status(400).json({
@@ -396,7 +344,7 @@ app.use((err, req, res, next) => {
       details: err.message
     });
   }
-  
+
   // Erreur générique
   res.status(err.status || 500).json({
     error: 'Erreur interne du serveur',
@@ -416,7 +364,7 @@ app.use('*', (req, res) => {
     timestamp: new Date().toISOString(),
     available_endpoints: [
       'GET /api',
-      'GET /api/health', 
+      'GET /api/health',
       'GET /api-docs',
       'POST /api/auth/login',
       'GET /api/dossiers',
@@ -428,51 +376,11 @@ app.use('*', (req, res) => {
 // ================================
 // DÉMARRAGE DU SERVEUR
 // ================================
-
-console.log('═════════════════════════════════════════════');
-console.log('🚀 [STARTUP] Début séquence de démarrage');
-console.log('═════════════════════════════════════════════');
-
-// Auto-fix du schéma AVANT démarrage (CRITIQUE)
-(async () => {
-  console.log('🔧 [STARTUP] Entrée dans IIFE async');
-  console.log('🔧 [STARTUP] DATABASE_URL:', process.env.DATABASE_URL ? 'PRÉSENT' : 'ABSENT');
-  
-  if (process.env.DATABASE_URL) {
-    try {
-      console.log('🔧 [STARTUP] Lancement auto-fix du schéma...');
-      const autoFixSchema = require('./utils/autoFixSchema');
-      const fixResult = await autoFixSchema();
-      console.log(`✅ [STARTUP] Auto-fix terminé: ${fixResult ? 'SUCCESS' : 'SKIPPED'}`);
-      
-      // Auto-initialisation de la base en production
-      if (process.env.NODE_ENV === 'production') {
-        try {
-          const { autoInitDatabase } = require('./scripts/auto-init-db');
-          await autoInitDatabase();
-        } catch (dbError) {
-          console.warn('⚠️ Auto-init DB ignoré:', dbError.message);
-        }
-      }
-    } catch (error) {
-      console.error('❌ [STARTUP] Erreur auto-fix CRITIQUE:', error.message);
-      console.error('Stack:', error.stack);
-    }
-  } else {
-    console.warn('⚠️ [STARTUP] DATABASE_URL non défini - AUTO-FIX IGNORÉ');
-  }
-  
-  // Démarrage du serveur APRÈS auto-fix
-  console.log('🚀 [STARTUP] Appel server.listen()...');
-  server.listen(PORT, () => {
-    console.log(`🚀 Serveur démarré sur le port ${PORT}`);
-    console.log(`📖 Documentation API: http://localhost:${PORT}/api-docs`);
-    console.log(`❤️ Health check: http://localhost:${PORT}/api/health`);
-    console.log(`🌍 Environnement: ${process.env.NODE_ENV || 'development'}`);
-  });
-})().catch(err => {
-  console.error('❌ [STARTUP] Erreur IIFE fatale:', err);
-  process.exit(1);
+server.listen(PORT, () => {
+  console.log(`🚀 Serveur démarré sur le port ${PORT}`);
+  console.log(`📖 Documentation API: http://localhost:${PORT}/api-docs`);
+  console.log(`❤️ Health check: http://localhost:${PORT}/api/health`);
+  console.log(`🌍 Environnement: ${process.env.NODE_ENV || 'development'}`);
 });
 
 // Gestion gracieuse de l'arrêt

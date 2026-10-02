@@ -51,4 +51,57 @@ router.put('/:key', authorizeRoles('admin'), async (req, res) => {
   }
 });
 
+// POST /api/system-config/reset-dossier-counter (admin uniquement)
+router.post('/reset-dossier-counter', authorizeRoles('admin'), async (req, res) => {
+  const client = await db.pool.connect();
+  try {
+    await client.query('BEGIN');
+    
+    // Vérifier que la séquence existe
+    const seqCheck = await client.query(`
+      SELECT sequencename FROM pg_sequences 
+      WHERE schemaname = 'public' AND sequencename LIKE '%dossiers%numero%'
+    `);
+    
+    if (seqCheck.rows.length === 0) {
+      throw new Error('Séquence de numérotation des dossiers introuvable');
+    }
+    
+    const sequenceName = seqCheck.rows[0].sequencename;
+    console.log(`🔄 Réinitialisation de la séquence: ${sequenceName}`);
+    
+    // Réinitialiser la séquence à 1 (le prochain numéro sera 1)
+    // setval(sequence, value, is_called)
+    // is_called = false signifie que la prochaine valeur sera `value`
+    await client.query(`SELECT setval($1, 1, false)`, [sequenceName]);
+    
+    // Logger l'action
+    console.log(`✅ Admin ${req.user.email} (ID: ${req.user.id}) a réinitialisé le compteur de dossiers à 0`);
+    
+    // Sauvegarder dans system_config pour historique
+    await client.query(
+      `INSERT INTO system_config (key, value, updated_at) 
+       VALUES ('last_dossier_counter_reset', $1, NOW()) 
+       ON CONFLICT (key) DO UPDATE SET value = $1, updated_at = NOW()`,
+      [new Date().toISOString()]
+    );
+    
+    await client.query('COMMIT');
+    
+    res.json({ 
+      success: true, 
+      message: 'Le compteur de dossiers a été réinitialisé. Le prochain dossier aura le numéro 1.',
+      sequence: sequenceName,
+      resetBy: req.user.email,
+      resetAt: new Date().toISOString()
+    });
+  } catch (err) {
+    await client.query('ROLLBACK');
+    console.error('❌ Erreur réinitialisation compteur:', err);
+    res.status(500).json({ error: err.message });
+  } finally {
+    client.release();
+  }
+});
+
 module.exports = router;

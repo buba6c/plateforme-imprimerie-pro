@@ -24,11 +24,16 @@ import {
   Check,
   X,
   Info,
-  HelpCircle
+  HelpCircle,
+  Sparkles,
+  Calculator
 } from 'lucide-react';
 import toast, { Toaster } from 'react-hot-toast';
 import { systemConfigService } from '../../services/api';
 import { devisTemplates, factureTemplates, defaultDocumentsSettings } from '../../utils/documentTemplates';
+import SystemResetPanel from './SystemResetPanel';
+import OpenAISettings from './OpenAISettings';
+import TarifManager from './TarifManager';
 
 const Settings = () => {
   const [loading, setLoading] = useState(true);
@@ -136,6 +141,8 @@ const Settings = () => {
     { id: 'theme', name: 'Thème', icon: Palette },
     { id: 'customization', name: 'Personnalisation', icon: Palette },
     { id: 'documents', name: 'Documents', icon: FileText },
+    { id: 'openai', name: 'OpenAI', icon: Sparkles },
+    { id: 'tarifs', name: 'Tarification', icon: Calculator },
     { id: 'security', name: 'Sécurité', icon: Shield },
     { id: 'files', name: 'Fichiers', icon: Upload },
     { id: 'notifications', name: 'Notifications', icon: Bell },
@@ -143,6 +150,7 @@ const Settings = () => {
     { id: 'workflow', name: 'Workflow', icon: GitBranch },
     { id: 'backup', name: 'Sauvegardes', icon: HardDrive },
     { id: 'performance', name: 'Performance', icon: Monitor },
+    { id: 'system-reset', name: 'Réinitialisation', icon: RotateCcw },
     { id: 'api', name: 'API', icon: Globe },
     { id: 'advanced', name: 'Avancé', icon: Server },
   ];
@@ -329,6 +337,39 @@ const Settings = () => {
       await load();
     } catch (e) {
       toast.error('Erreur lors de la sauvegarde complète');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  // Reset dossier counter to 0
+  const resetDossierCounter = async () => {
+    try {
+      setSaving(true);
+      const API_BASE = process.env.REACT_APP_API_URL || 'http://localhost:5001/api';
+      const authToken = localStorage.getItem('auth_token') || sessionStorage.getItem('auth_token');
+      
+      const response = await fetch(`${API_BASE}/system-config/reset-dossier-counter`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${authToken}`,
+          'Content-Type': 'application/json'
+        }
+      });
+      
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Erreur lors de la réinitialisation');
+      }
+      
+      const result = await response.json();
+      console.log('✅ Compteur réinitialisé:', result);
+      
+      toast.success('Le compteur de dossiers a été réinitialisé à 0. Le prochain dossier aura le numéro 1.');
+      setShowConfirmModal(false);
+    } catch (error) {
+      console.error('❌ Erreur reset compteur:', error);
+      toast.error(error.message || 'Erreur lors de la réinitialisation du compteur');
     } finally {
       setSaving(false);
     }
@@ -821,6 +862,41 @@ const Settings = () => {
                 Modifiez-les uniquement si vous savez ce que vous faites.
               </p>
             </div>
+          </div>
+        </div>
+
+        {/* Réinitialisation du compteur de dossiers */}
+        <div className="bg-white dark:bg-gray-800 border border-neutral-200 dark:border-neutral-700 rounded-lg p-6">
+          <div className="flex items-start justify-between">
+            <div className="flex-1">
+              <div className="flex items-center gap-3 mb-2">
+                <RotateCcw className="text-red-600 dark:text-red-400" size={20} />
+                <h4 className="font-semibold text-neutral-900 dark:text-neutral-100">
+                  Réinitialiser le compteur de dossiers
+                </h4>
+              </div>
+              <p className="text-sm text-neutral-600 dark:text-neutral-400">
+                Cette action réinitialisera le numéro de dossier à 0. Le prochain dossier créé aura le numéro 1.
+              </p>
+              <div className="mt-3 flex items-start gap-2 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg p-3">
+                <AlertTriangle className="text-red-600 dark:text-red-400 flex-shrink-0 mt-0.5" size={16} />
+                <p className="text-xs text-red-700 dark:text-red-300">
+                  <strong>Attention :</strong> Cette action est irréversible. Les dossiers existants conservent leurs numéros, 
+                  mais les nouveaux dossiers recommenceront à 1. Utilisez uniquement au début d&apos;une nouvelle année ou période.
+                </p>
+              </div>
+            </div>
+            <button
+              onClick={() => confirmSensitiveAction(
+                'Réinitialiser le compteur de dossiers',
+                resetDossierCounter
+              )}
+              disabled={saving}
+              className="ml-4 flex items-center gap-2 px-4 py-2 bg-red-600 hover:bg-red-700 disabled:bg-red-400 text-white rounded-lg transition-colors font-medium shadow-md hover:shadow-lg"
+            >
+              <RotateCcw size={16} />
+              Réinitialiser à 0
+            </button>
           </div>
         </div>
         
@@ -1669,6 +1745,21 @@ const Settings = () => {
               </div>
             </div>
           </SectionCard>
+        </div>
+      );
+      case 'openai': return (
+        <div className="max-w-6xl">
+          <OpenAISettings />
+        </div>
+      );
+      case 'tarifs': return (
+        <div className="max-w-6xl">
+          <TarifManager />
+        </div>
+      );
+      case 'system-reset': return (
+        <div className="max-w-6xl">
+          <SystemResetPanel />
         </div>
       );
       case 'security': return renderSecuritySection();

@@ -26,6 +26,7 @@ const Dashboard = ({ user, onNavigate = () => {} }) => {
     users: { total: 0, active: 0, recent_logins: 0 },
     dossiers: { total: 0, nouveau: 0, en_cours: 0, termines: 0 },
     plateforme: { workflow_actif: 0, machines_actives: 2, satisfaction: 95, ca_mensuel: 0 },
+    fichiers: { total: 0, images: 0, pdf: 0, taille_totale: 0 },
   });
   const [recentActivity, setRecentActivity] = useState([]);
   const [userActivities, setUserActivities] = useState([]);
@@ -41,11 +42,11 @@ const Dashboard = ({ user, onNavigate = () => {} }) => {
       setError('');
 
       // Charger les statistiques utilisateurs (admin seulement)
-      let userStats = { total: 6, active: 6, recent_logins: 4 }; // Données réelles de notre base
+      let userStats = { total: 6, active: 6, recent_logins: 4 }; // Données par défaut
       if (user.role === 'admin') {
         try {
           const usersData = await usersService.getUsers({ limit: 100 });
-          if (usersData && usersData.users) {
+          if (usersData && usersData.users && usersData.users.length > 0) {
             userStats = {
               total: usersData.users.length,
               active: usersData.users.filter(u => u.statut === 'actif' || u.status === 'active').length,
@@ -53,8 +54,7 @@ const Dashboard = ({ user, onNavigate = () => {} }) => {
             };
           }
         } catch (err) {
-          // Utiliser les données par défaut en cas d'erreur
-          console.log('Utilisation des données utilisateurs par défaut');
+          // Utiliser les données par défaut en cas d'erreur (déjà initialisées)
         }
       }
 
@@ -63,8 +63,8 @@ const Dashboard = ({ user, onNavigate = () => {} }) => {
       const plateformeStats = { 
         workflow_actif: 8, 
         machines_actives: 2, 
-        satisfaction: Math.floor(Math.random() * 10) + 90, // 90-100%
-        ca_mensuel: Math.floor(Math.random() * 30000) + 45000 // 45k-75k€
+        satisfaction: 95, // Fixe à 95%
+        ca_mensuel: 58000 // Fixe à 58k€
       };
       
       try {
@@ -227,10 +227,58 @@ const Dashboard = ({ user, onNavigate = () => {} }) => {
       ];
       setUserActivities(mockUserActivities);
 
+      // Charger les statistiques fichiers
+      let fichiersStats = { total: 0, images: 0, pdf: 0, taille_totale: 0 };
+      
+      if (user.role === 'admin') {
+        try {
+          // Importer filesService
+          const { filesService } = await import('../../services/api');
+          
+          // Utiliser les dossiers déjà chargés
+          const dossiersList = dossiersData?.dossiers || [];
+          
+          if (dossiersList.length > 0) {
+            // Charger tous les fichiers de tous les dossiers
+            let allFiles = [];
+            
+            // Utiliser Promise.allSettled pour gérer les erreurs individuelles
+            const filePromises = dossiersList.map(async (dossier) => {
+              try {
+                const filesData = await filesService.getFiles(dossier.id || dossier.folder_id);
+                return filesData.files || filesData.data || filesData || [];
+              } catch (err) {
+                return [];
+              }
+            });
+            
+            const results = await Promise.allSettled(filePromises);
+            
+            // Compiler tous les fichiers réussis
+            results.forEach(result => {
+              if (result.status === 'fulfilled' && Array.isArray(result.value)) {
+                allFiles = allFiles.concat(result.value);
+              }
+            });
+            
+            // Calculer les statistiques
+            fichiersStats = {
+              total: allFiles.length,
+              images: allFiles.filter(f => (f.mimetype || f.type || '').startsWith('image/')).length,
+              pdf: allFiles.filter(f => (f.mimetype || f.type || '') === 'application/pdf').length,
+              taille_totale: allFiles.reduce((sum, f) => sum + (f.size || f.taille || 0), 0)
+            };
+          }
+        } catch (err) {
+          // Utiliser données par défaut en cas d'erreur
+        }
+      }
+
       setStats({
         users: userStats,
         dossiers: dossierStats,
         plateforme: plateformeStats,
+        fichiers: fichiersStats,
       });
     } catch (err) {
       console.error('Erreur chargement dashboard:', err);
@@ -247,6 +295,17 @@ const Dashboard = ({ user, onNavigate = () => {} }) => {
     const interval = setInterval(loadDashboardData, 60000);
     return () => clearInterval(interval);
   }, [loadDashboardData]);
+
+  // Écouter l'événement editDossier pour ouvrir le modal en mode édition
+  useEffect(() => {
+    const handleEditDossier = (event) => {
+      console.log('📝 Admin Dashboard: Événement editDossier reçu', event.detail);
+      setShowCreateModal(true);
+    };
+
+    window.addEventListener('editDossier', handleEditDossier);
+    return () => window.removeEventListener('editDossier', handleEditDossier);
+  }, []);
 
   const getStatusColor = status => {
     switch (status) {
@@ -697,6 +756,46 @@ const Dashboard = ({ user, onNavigate = () => {} }) => {
             </div>
           </div>
         </div>
+
+        {/* Fichiers (admin seulement) */}
+        {user.role === 'admin' && (
+          <div 
+            className="group relative overflow-hidden bg-gradient-to-br from-white/90 to-white/60 backdrop-blur-xl rounded-2xl shadow-lg dark:shadow-secondary-900/25 border border-white/40 transform transition-all duration-300 hover:scale-105 cursor-pointer"
+            onClick={() => onNavigate('files')}
+          >
+            <div className="absolute inset-0 bg-gradient-to-br from-purple-500/5 to-purple-600/5 opacity-0 group-hover:opacity-100 transition-opacity duration-300"></div>
+            <div className="relative p-6">
+              <div className="flex items-center justify-between mb-3">
+                <div className="p-3 bg-gradient-to-br from-purple-500 to-purple-600 rounded-xl shadow-lg dark:shadow-secondary-900/25">
+                  <DocumentIcon className="h-6 w-6 text-white" />
+                </div>
+                <div className="text-right">
+                  <div className="w-2 h-2 bg-purple-400 rounded-full animate-pulse"></div>
+                </div>
+              </div>
+              <div>
+                <p className="text-sm font-bold text-neutral-600 dark:text-neutral-300 uppercase tracking-wide mb-2">Fichiers</p>
+                <div className="flex items-baseline">
+                  <p className="text-3xl font-black text-neutral-900 dark:text-white">{stats.fichiers.total}</p>
+                </div>
+                <div className="mt-2 flex items-center gap-2 text-xs text-neutral-500 dark:text-neutral-400">
+                  <span className="flex items-center">
+                    <span className="w-2 h-2 bg-blue-500 rounded-full mr-1"></span>
+                    {stats.fichiers.images} images
+                  </span>
+                  <span>•</span>
+                  <span className="flex items-center">
+                    <span className="w-2 h-2 bg-red-500 rounded-full mr-1"></span>
+                    {stats.fichiers.pdf} PDF
+                  </span>
+                </div>
+                <p className="text-xs text-neutral-500 dark:text-neutral-400 mt-1">
+                  {(stats.fichiers.taille_totale / (1024 * 1024)).toFixed(1)} MB total
+                </p>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Contenu principal ultra moderne */}
@@ -720,14 +819,14 @@ const Dashboard = ({ user, onNavigate = () => {} }) => {
                     >
                       <div className="flex items-center space-x-4">
                         <div
-                          className={`p-3 rounded-xl shadow-lg dark:shadow-secondary-900/25 ${activity.urgence ? 'bg-gradient-to-br from-red-500 to-red-600' : 'bg-gradient-to-br from-blue-500 to-blue-600'}`}
+                          className={`p-3 rounded-xl shadow-lg dark:shadow-secondary-900/25 ${activity.urgence && activity.status !== 'livre' ? 'bg-gradient-to-br from-red-500 to-red-600' : 'bg-gradient-to-br from-blue-500 to-blue-600'}`}
                         >
                           <FolderIcon className="h-6 w-6 text-white" />
                         </div>
                         <div>
                           <p className="text-sm font-medium text-neutral-900 dark:text-white">
                             {activity.title}
-                            {activity.urgence && (
+                            {activity.urgence && activity.status !== 'livre' && (
                               <span className="ml-2 text-danger-600 font-semibold">URGENT</span>
                             )}
                           </p>

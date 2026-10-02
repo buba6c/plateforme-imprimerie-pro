@@ -7,11 +7,11 @@ import {
   ArrowDownTrayIcon, 
   ArrowPathIcon,
   DocumentDuplicateIcon,
-  BanknotesIcon
+  BanknotesIcon,
+  SparklesIcon
 } from '@heroicons/react/24/outline';
 import axios from 'axios';
 import DevisDetailsModal from './DevisDetailsModal';
-import intelligentComponentService from '../../services/intelligentComponentService';
 
 const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:5001/api';
 
@@ -23,7 +23,7 @@ const DevisList = ({ user }) => {
   const [selectedDevis, setSelectedDevis] = useState(null);
   const [showDetailsModal, setShowDetailsModal] = useState(false);
   const [converting, setConverting] = useState({});
-  const [complianceScores, setComplianceScores] = useState({});
+  const [estimating, setEstimating] = useState({});
 
   useEffect(() => {
     fetchDevis();
@@ -40,29 +40,10 @@ const DevisList = ({ user }) => {
         params
       });
       
-      const devisList = response.data.devis || [];
-      setDevis(devisList);
-      setLoading(false); // ← Afficher la liste immédiatement!
-
-      // Charger les scores de conformité IA EN PARALLÈLE (non-bloquant)
-      const scores = {};
-      const compliancePromises = devisList.map(async (d) => {
-        try {
-          const result = await intelligentComponentService.analyzeCompliance(d);
-          scores[d.id] = result;
-        } catch (err) {
-          // Silent fail - si conformité échoue, continuer
-          scores[d.id] = { isCompliant: true, message: 'Non vérifié' };
-        }
-      });
-      
-      // Attendre tous les appels, mais sans bloquer le rendu
-      Promise.all(compliancePromises).then(() => {
-        setComplianceScores(scores);
-      });
+      setDevis(response.data.devis || []);
     } catch (error) {
-      // eslint-disable-next-line no-console
       console.error('Erreur chargement devis:', error);
+    } finally {
       setLoading(false);
     }
   };
@@ -169,6 +150,29 @@ const DevisList = ({ user }) => {
     }
   };
 
+  // Ré-estimation du prix avec OpenAI
+  const reestimatePrice = async (devisId, devisData) => {
+    if (!window.confirm('Voulez-vous recalculer l\'estimation de ce devis avec l\'IA ?')) return;
+    
+    try {
+      setEstimating(prev => ({ ...prev, [devisId]: true }));
+      const token = localStorage.getItem('auth_token');
+      
+      const response = await axios.post(`${API_URL}/devis/${devisId}/reestimate`, {}, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      
+      const { devis: updatedDevis } = response.data;
+      alert(`✅ Prix recalculé : ${updatedDevis.prix_estime?.toLocaleString('fr-FR')} FCFA\n${updatedDevis.ia_used ? '🤖 Estimation par IA' : '📊 Calcul manuel'}`);
+      fetchDevis();
+    } catch (error) {
+      console.error('Erreur ré-estimation:', error);
+      alert(`❌ ${error.response?.data?.error || 'Erreur lors de la ré-estimation'}`);
+    } finally {
+      setEstimating(prev => ({ ...prev, [devisId]: false }));
+    }
+  };
+
   const getStatutBadge = (statut) => {
     const badges = {
       brouillon: 'bg-gray-100 text-gray-800',
@@ -189,23 +193,6 @@ const DevisList = ({ user }) => {
     return (
       <span className={`px-2 py-1 text-xs font-medium rounded-full ${badges[statut]}`}>
         {labels[statut]}
-      </span>
-    );
-  };
-
-  const getComplianceBadge = (devisId) => {
-    const score = complianceScores[devisId];
-    if (!score) return null;
-    
-    const isCompliant = score.isCompliant;
-    const className = isCompliant 
-      ? 'bg-green-100 text-green-800'
-      : 'bg-yellow-100 text-yellow-800';
-    
-    return (
-      <span title={score.message} className={`px-2 py-1 text-xs font-medium rounded-full ${className} flex items-center gap-1 cursor-help`}>
-        {isCompliant ? '✓' : '⚠️'}
-        {isCompliant ? 'Conforme' : 'À vérifier'}
       </span>
     );
   };
@@ -315,12 +302,11 @@ const DevisList = ({ user }) => {
             >
               <div className="flex items-start justify-between gap-4">
                 <div className="flex-1">
-                  <div className="flex items-center gap-3 mb-3 flex-wrap">
+                  <div className="flex items-center gap-3 mb-3">
                     <h3 className="text-lg font-bold text-gray-900 dark:text-white">
                       {d.numero}
                     </h3>
                     {getStatutBadge(d.statut)}
-                    {getComplianceBadge(d.id)}
                     <span className="px-2 py-1 text-xs font-semibold bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded uppercase">
                       {d.machine_type}
                     </span>
@@ -358,6 +344,15 @@ const DevisList = ({ user }) => {
                   {/* Boutons de conversion */}
                   {d.statut !== 'converti' && (d.statut === 'valide' || user.role === 'admin') && (
                     <div className="flex flex-wrap gap-2 mt-3 pt-3 border-t border-gray-200 dark:border-gray-700">
+                      <button
+                        onClick={() => reestimatePrice(d.id, d)}
+                        disabled={estimating[d.id]}
+                        className="flex items-center gap-2 px-3 py-1.5 bg-gradient-to-r from-purple-50 to-pink-50 dark:from-purple-900/20 dark:to-pink-900/20 text-purple-700 dark:text-purple-400 border border-purple-200 dark:border-purple-700 rounded-lg hover:from-purple-100 hover:to-pink-100 dark:hover:from-purple-900/30 dark:hover:to-pink-900/30 transition-all disabled:opacity-50 text-sm font-medium shadow-sm"
+                      >
+                        <SparklesIcon className="w-4 h-4" />
+                        {estimating[d.id] ? 'Calcul en cours...' : '✨ Estimer le prix'}
+                      </button>
+                      
                       <button
                         onClick={() => convertToDossier(d.id, d)}
                         disabled={converting[d.id] === 'dossier'}

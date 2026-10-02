@@ -11,6 +11,7 @@ import {
 import axios from 'axios';
 import DevisCreationAI from './DevisCreationAI';
 import DevisPrintTemplate from './DevisPrintTemplate';
+import RealtimeEstimation from './RealtimeEstimation';
 
 const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:5001/api';
 
@@ -55,8 +56,9 @@ const DevisCreation = ({ user, onNavigate }) => {
     type_document_autre: '',
     format: '',
     format_personnalise: '',
+    nombre_pages: '',
     mode_impression: 'recto_simple',
-    nombre_exemplaires: '100',
+    nombre_exemplaires: '',
     couleur_impression: 'couleur',
     grammage: '',
     grammage_autre: '',
@@ -272,6 +274,9 @@ const DevisCreation = ({ user, onNavigate }) => {
       if (!xeroxData.format) {
         newErrors.format = 'Format requis';
       }
+      if (xeroxData.type_document === 'Brochure' && (!xeroxData.nombre_pages || parseInt(xeroxData.nombre_pages) <= 0)) {
+        newErrors.nombre_pages = 'Nombre de pages requis pour une brochure';
+      }
       if (!xeroxData.nombre_exemplaires || parseInt(xeroxData.nombre_exemplaires) <= 0) {
         newErrors.nombre_exemplaires = 'Nombre d\'exemplaires valide requis';
       }
@@ -342,10 +347,7 @@ const DevisCreation = ({ user, onNavigate }) => {
       <div className="grid md:grid-cols-3 gap-6">
         {/* Mode 1: Formulaire standard */}
         <button
-          onClick={() => {
-            setCreationMode('form');
-            setStep(2);
-          }}
+          onClick={() => setStep(2)}
           className="bg-white dark:bg-gray-800 p-8 rounded-xl border-2 border-gray-200 dark:border-gray-700 hover:border-purple-500 dark:hover:border-purple-500 transition-all group h-full"
         >
           <div className="text-center">
@@ -480,12 +482,12 @@ const DevisCreation = ({ user, onNavigate }) => {
     </div>
   );
 
-  // Rendu Step 3: Formulaire complet avec estimation à droite
+  // Rendu Step 3: Formulaire complet
   const renderStep2 = () => (
-    <div className="min-h-screen bg-gray-50 dark:bg-gray-900 py-8 px-4">
-      <div className="max-w-7xl mx-auto">
-        {/* Header */}
-        <div className="flex items-center justify-between mb-8">
+    <div className="max-w-4xl mx-auto">
+      <div className="bg-white dark:bg-gray-800 rounded-xl shadow-lg p-8">
+        {/* Header avec retour */}
+        <div className="flex items-center justify-between mb-6">
           <button
             onClick={() => setStep(1)}
             className="flex items-center gap-2 text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white"
@@ -493,189 +495,106 @@ const DevisCreation = ({ user, onNavigate }) => {
             <ArrowLeftIcon className="w-5 h-5" />
             Retour
           </button>
-          <h2 className="text-3xl font-bold text-gray-900 dark:text-white">
-            Devis {machineType === 'roland' ? '🖨️ Roland' : '📄 Xerox'}
+          <h2 className="text-2xl font-bold text-gray-900 dark:text-white">
+            Devis {machineType === 'roland' ? 'Roland' : 'Xerox'}
           </h2>
           <div className="w-20"></div>
         </div>
 
-        {/* Layout deux colonnes: Formulaire à gauche, Estimation à droite */}
-        <div className="grid lg:grid-cols-3 gap-8">
-          {/* COLONNE 1-2: FORMULAIRE */}
-          <div className="lg:col-span-2">
-            <div className="bg-white dark:bg-gray-800 rounded-xl shadow-lg p-8 space-y-8">
-              {/* Informations client */}
-              <div className="p-6 bg-gray-50 dark:bg-gray-900 rounded-lg">
-                <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">
-                  📋 Informations Client
-                </h3>
+        {/* Informations client */}
+        <div className="mb-8 p-6 bg-gray-50 dark:bg-gray-900 rounded-lg">
+          <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">
+            📋 Informations Client
+          </h3>
 
-                <div className="grid md:grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                      Nom du client *
-                    </label>
-                    <input
-                      type="text"
-                      value={clientInfo.client_nom}
-                      onChange={e => setClientInfo({ ...clientInfo, client_nom: e.target.value })}
-                      className={`w-full px-4 py-2 border ${errors.client_nom ? 'border-red-500' : 'border-gray-300 dark:border-gray-700'} rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-white`}
-                      placeholder="Nom du client"
-                      required
-                    />
-                    {errors.client_nom && (
-                      <p className="text-red-500 text-sm mt-1">{errors.client_nom}</p>
-                    )}
-                  </div>
+          <div className="grid md:grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                Nom du client *
+              </label>
+              <input
+                type="text"
+                value={clientInfo.client_nom}
+                onChange={e => setClientInfo({ ...clientInfo, client_nom: e.target.value })}
+                className={`w-full px-4 py-2 border ${errors.client_nom ? 'border-red-500' : 'border-gray-300 dark:border-gray-700'} rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-white`}
+                placeholder="Nom du client"
+                required
+              />
+              {errors.client_nom && (
+                <p className="text-red-500 text-sm mt-1">{errors.client_nom}</p>
+              )}
+            </div>
 
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                      Contact
-                    </label>
-                    <input
-                      type="text"
-                      value={clientInfo.client_contact}
-                      onChange={e => setClientInfo({ ...clientInfo, client_contact: e.target.value })}
-                      className="w-full px-4 py-2 border border-gray-300 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-white"
-                      placeholder="Téléphone ou email"
-                    />
-                  </div>
-                </div>
-
-                <div className="mt-4">
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                    Notes / Instructions
-                  </label>
-                  <textarea
-                    value={clientInfo.notes}
-                    onChange={e => setClientInfo({ ...clientInfo, notes: e.target.value })}
-                    className="w-full px-4 py-2 border border-gray-300 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-white"
-                    rows="3"
-                    placeholder="Notes ou instructions particulières..."
-                  />
-                </div>
-              </div>
-
-              {/* Formulaire spécifique */}
-              {machineType === 'roland' ? renderRolandForm() : renderXeroxForm()}
-
-              {/* Boutons d'action */}
-              <div className="flex justify-end gap-4 pt-4 border-t border-gray-200 dark:border-gray-700">
-                <button
-                  onClick={() => setStep(1)}
-                  className="px-6 py-3 border border-gray-300 dark:border-gray-700 rounded-lg text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-900"
-                  disabled={loading}
-                >
-                  Annuler
-                </button>
-                <button
-                  onClick={handleCreate}
-                  disabled={loading}
-                  className="px-6 py-3 bg-gradient-to-r from-blue-500 to-purple-600 text-white rounded-lg hover:from-blue-600 hover:to-purple-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
-                >
-                  {loading ? (
-                    <>
-                      <SparklesIcon className="w-5 h-5 animate-spin" />
-                      Création en cours...
-                    </>
-                  ) : (
-                    <>
-                      <CheckIcon className="w-5 h-5" />
-                      Créer le devis
-                    </>
-                  )}
-                </button>
-              </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                Contact
+              </label>
+              <input
+                type="text"
+                value={clientInfo.client_contact}
+                onChange={e => setClientInfo({ ...clientInfo, client_contact: e.target.value })}
+                className="w-full px-4 py-2 border border-gray-300 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-white"
+                placeholder="Téléphone ou email"
+              />
             </div>
           </div>
 
-          {/* COLONNE 3: ESTIMATION STICKY À DROITE */}
-          <div className="lg:col-span-1">
-            <div className="sticky top-8">
-              {/* Titre estimation */}
-              <h3 className="text-lg font-bold text-gray-900 dark:text-white mb-4 flex items-center gap-2">
-                <SparklesIcon className="w-6 h-6 text-amber-500" />
-                Estimation
-              </h3>
-
-              {/* Contenu estimation */}
-              <div className="space-y-4">
-                {estimationLoading && (
-                  <div className="p-6 bg-blue-50 dark:bg-blue-900/20 border-2 border-blue-200 dark:border-blue-800 rounded-lg flex items-center gap-3">
-                    <div className="animate-spin">
-                      <SparklesIcon className="w-6 h-6 text-blue-600 dark:text-blue-400" />
-                    </div>
-                    <p className="text-sm font-medium text-blue-700 dark:text-blue-200">Calcul...</p>
-                  </div>
-                )}
-                
-                {estimationError && !estimationLoading && (
-                  <div className="p-4 bg-red-50 dark:bg-red-900/20 border-2 border-red-200 dark:border-red-800 rounded-lg">
-                    <p className="text-sm text-red-700 dark:text-red-200">❌ {estimationError}</p>
-                  </div>
-                )}
-                
-                {estimationRealtime && !estimationLoading && (
-                  <div className="p-6 bg-gradient-to-br from-emerald-50 to-green-50 dark:from-emerald-900/40 dark:to-green-900/40 border-2 border-emerald-400 dark:border-emerald-600 rounded-lg shadow-lg">
-                    <div className="space-y-4">
-                      {/* Prix principal */}
-                      <div>
-                        <p className="text-xs font-semibold text-gray-600 dark:text-gray-400 uppercase tracking-wider">Prix Total</p>
-                        <p className="text-4xl font-bold text-emerald-700 dark:text-emerald-300 mt-2">
-                          {estimationRealtime.prix_estime?.toLocaleString('fr-FR')}
-                        </p>
-                        <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">FCFA</p>
-                      </div>
-
-                      {/* Infos de calcul */}
-                      <div className="pt-4 border-t border-emerald-200 dark:border-emerald-700 space-y-2">
-                        <div className="flex items-center justify-between">
-                          <span className="text-xs text-gray-600 dark:text-gray-400">⚡ Calcul</span>
-                          <span className="text-xs font-mono text-gray-700 dark:text-gray-300">{estimationRealtime.calculation_time_ms}ms</span>
-                        </div>
-                        <div className="flex items-center justify-between">
-                          <span className="text-xs text-gray-600 dark:text-gray-400">Source</span>
-                          <span className="text-xs font-semibold text-emerald-700 dark:text-emerald-400">
-                            {estimationRealtime.from_cache ? '📦 Cache' : '🔄 Live'}
-                          </span>
-                        </div>
-                      </div>
-
-                      {/* Détails si disponibles */}
-                      {estimationRealtime.details && estimationRealtime.details.base && (
-                        <div className="pt-4 border-t border-emerald-200 dark:border-emerald-700">
-                          <p className="text-xs font-semibold text-gray-700 dark:text-gray-300 mb-2">Détails</p>
-                          <div className="space-y-1 text-xs text-gray-600 dark:text-gray-400">
-                            {estimationRealtime.details.base.support && (
-                              <div className="flex justify-between">
-                                <span>{estimationRealtime.details.base.support.type}</span>
-                                <span className="font-mono">{estimationRealtime.details.base.support.prix_total?.toLocaleString()} F</span>
-                              </div>
-                            )}
-                            {estimationRealtime.details.base.dimensions && (
-                              <div className="flex justify-between">
-                                <span>{estimationRealtime.details.base.dimensions.surface_m2} m²</span>
-                              </div>
-                            )}
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                )}
-
-                {!estimationRealtime && !estimationLoading && !estimationError && (
-                  <div className="p-4 bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg text-center">
-                    <p className="text-sm text-gray-500 dark:text-gray-400">
-                      👉 Complétez le formulaire pour voir l'estimation
-                    </p>
-                  </div>
-                )}
-              </div>
-            </div>
+          <div className="mt-4">
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+              Notes / Instructions
+            </label>
+            <textarea
+              value={clientInfo.notes}
+              onChange={e => setClientInfo({ ...clientInfo, notes: e.target.value })}
+              className="w-full px-4 py-2 border border-gray-300 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-white"
+              rows="3"
+              placeholder="Notes ou instructions particulières..."
+            />
           </div>
         </div>
+
+        {/* Formulaire spécifique */}
+        {machineType === 'roland' ? renderRolandForm() : renderXeroxForm()}
+
+        {/* Boutons d'action */}
+        <div className="flex justify-end gap-4 mt-8">
+          <button
+            onClick={() => setStep(1)}
+            className="px-6 py-3 border border-gray-300 dark:border-gray-700 rounded-lg text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-900"
+            disabled={loading}
+          >
+            Annuler
+          </button>
+          <button
+            onClick={handleCreate}
+            disabled={loading}
+            className="px-6 py-3 bg-gradient-to-r from-blue-500 to-purple-600 text-white rounded-lg hover:from-blue-600 hover:to-purple-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+          >
+            {loading ? (
+              <>
+                <SparklesIcon className="w-5 h-5 animate-spin" />
+                Création en cours...
+              </>
+            ) : (
+              <>
+                <CheckIcon className="w-5 h-5" />
+                Créer le devis
+              </>
+            )}
+          </button>
+        </div>
       </div>
+
+      {/* Panneau latéral: Estimation en temps réel */}
+      {creationMode === 'form' && (
+        <div className="mt-8">
+          <RealtimeEstimation
+            estimation={estimationRealtime}
+            loading={estimationLoading}
+            error={estimationError}
+          />
+        </div>
+      )}
     </div>
   );
 
@@ -967,6 +886,29 @@ const DevisCreation = ({ user, onNavigate }) => {
             className="w-full px-4 py-2 border border-gray-300 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-white"
             placeholder="Ex: 15x21cm"
           />
+        </div>
+      )}
+
+      {/* Nombre de pages (affiché seulement pour les brochures) */}
+      {xeroxData.type_document === 'Brochure' && (
+        <div>
+          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+            Nombre de pages * <span className="text-xs text-gray-500">(Pour brochure)</span>
+          </label>
+          <input
+            type="number"
+            min="1"
+            value={xeroxData.nombre_pages}
+            onChange={e => handleXeroxChange('nombre_pages', e.target.value)}
+            className={`w-full px-4 py-2 border ${errors.nombre_pages ? 'border-red-500' : 'border-gray-300 dark:border-gray-700'} rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-white`}
+            placeholder="Ex: 16"
+          />
+          {errors.nombre_pages && (
+            <p className="text-red-500 text-sm mt-1">{errors.nombre_pages}</p>
+          )}
+          <p className="text-xs text-gray-500 mt-1">
+            Indiquez le nombre total de pages de la brochure
+          </p>
         </div>
       )}
 

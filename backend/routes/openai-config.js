@@ -37,7 +37,7 @@ router.get('/', auth, async (req, res) => {
     
     res.json({
       is_active: config.is_active,
-      has_api_key: !!config.api_key_encrypted,
+      has_api_key: !!config.api_key,
       knowledge_base_text: config.knowledge_base_text,
       knowledge_base_pdf_name: config.knowledge_base_pdf_name,
       knowledge_base_pdf_size: config.knowledge_base_pdf_size,
@@ -65,10 +65,8 @@ router.put('/', auth, async (req, res) => {
     let paramIndex = 1;
     
     if (api_key) {
-      console.log('🔐 Chiffrement de la clé API...');
-      const { encrypted, iv } = openaiService.encryptApiKey(api_key);
-      updates.push(`api_key_encrypted = $${paramIndex++}`, `api_key_iv = $${paramIndex++}`);
-      params.push(encrypted, iv);
+      updates.push(`api_key = \$${paramIndex++}`);
+      params.push(api_key);
     }
     
     if (knowledge_base_text !== undefined) {

@@ -1,0 +1,882 @@
+const express = require('express');
+const router = express.Router();
+
+const dbHelper = require('../utils/dbHelper');
+const { authenticateToken: auth } = require('../middleware/auth');
+
+// ==========================================
+// LISTE DES PAIEMENTS
+// ==========================================
+router.get('/', auth, async (req, res) => {
+  try {
+    const { statut, type, limit = 100, offset = 0, periode, client, date_debut, date_fin } = req.query;
+
+    // Construction des filtres de date
+    let dateFilterPaiements = '';
+    let dateFilterDossiers = '';
+    if (periode) {
+      switch (periode) {
+        case 'semaine':
+          dateFilterPaiements = `AND p.created_at >= NOW() - INTERVAL '7 days'`;
+          dateFilterDossiers = `AND d.created_at >= NOW() - INTERVAL '7 days'`;
+          break;
+        case 'mois':
+          dateFilterPaiements = `AND p.created_at >= NOW() - INTERVAL '30 days'`;
+          dateFilterDossiers = `AND d.created_at >= NOW() - INTERVAL '30 days'`;
+          break;
+        case 'annee':
+          dateFilterPaiements = `AND p.created_at >= NOW() - INTERVAL '365 days'`;
+          dateFilterDossiers = `AND d.created_at >= NOW() - INTERVAL '365 days'`;
+          break;
+      }
+    } else if (date_debut && date_fin) {
+      dateFilterPaiements = `AND p.created_at BETWEEN '${date_debut}' AND '${date_fin}'`;
+      dateFilterDossiers = `AND d.created_at BETWEEN '${date_debut}' AND '${date_fin}'`;
+    }
+
+    // Requête combinée : paiements existants + dossiers sans facture/paiement
+    let query = `
+      SELECT * FROM (
+        -- Paiements existants
+        SELECT 
+          p.id,
+          p.dossier_id::text,
+          p.facture_id,
+          p.user_id,
+          p.livreur_id,
+          p.montant,
+          p.mode_paiement,
+          p.mode_paiement_final,
+          p.reference_paiement,
+          p.notes as commentaire,
+          p.type,
+          p.statut,
+          p.date_approbation,
+          p.date_encaissement,
+          p.approuve_par,
+          p.notes_admin,
+          p.date_refus,
+          p.refuse_par,
+          p.raison_refus,
+          p.created_at,
+          p.updated_at,
+          d.numero as dossier_numero,
+          COALESCE(d.client, f.client_nom) as dossier_client,
+          f.numero as facture_numero,
+          f.client_nom as facture_client,
+          u.nom as user_nom,
+          l.nom as livreur_nom,
+          'existing' as source_type
+        FROM paiements p
+        LEFT JOIN dossiers d ON p.dossier_id::text = d.id::text
+        LEFT JOIN factures f ON p.facture_id = f.id
+        LEFT JOIN users u ON p.user_id = u.id
+        LEFT JOIN users l ON p.livreur_id = l.id
+        WHERE 1=1 ${dateFilterPaiements}
+        ${client ? `AND (LOWER(d.client) LIKE LOWER('%${client}%') OR LOWER(f.client_nom) LIKE LOWER('%${client}%'))` : ''}
+        
+        UNION ALL
+        
+        -- Dossiers sans facture/paiement (affichés comme paiements potentiels)
+        SELECT 
+          NULL as id,
+          d.id::text as dossier_id,
+          NULL as facture_id,
+          d.preparateur_id as user_id,
+          NULL as livreur_id,
+          d.montant_cfa as montant,
+          d.mode_paiement,
+          NULL as mode_paiement_final,
+          NULL as reference_paiement,
+          'Paiement à créer pour dossier sans facture' as commentaire,
+          'dossier' as type,
+          'a_creer' as statut,
+          NULL as date_approbation,
+          NULL as date_encaissement,
+          NULL as approuve_par,
+          NULL as commentaire_admin,
+          NULL as date_refus,
+          NULL as refuse_par,
+          NULL as raison_refus,
+          d.created_at,
+          d.updated_at,
+          d.numero as dossier_numero,
+          d.client as dossier_client,
+          NULL as facture_numero,
+          NULL as facture_client,
+          u.nom as user_nom,
+          NULL as livreur_nom,
+          'potential' as source_type
+        FROM dossiers d
+        LEFT JOIN factures f ON d.id = f.dossier_id
+        LEFT JOIN paiements p ON d.id::text = p.dossier_id::text
+        LEFT JOIN users u ON d.preparateur_id = u.id
+        WHERE f.id IS NULL 
+          AND p.id IS NULL 
+          AND d.montant_cfa > 0
+          AND d.statut NOT IN ('brouillon', 'annule')
+          ${dateFilterDossiers}
+          ${client ? `AND LOWER(d.client) LIKE LOWER('%${client}%')` : ''}
+      ) combined_results
+      WHERE 1=1
+    `;
+
+    const params = [];
+    let paramIndex = 1;
+
+    // Filtres
+    if (req.user.role === 'preparateur') {
+      query += ` AND combined_results.user_id = $${paramIndex++}`;
+      params.push(req.user.id);
+    }
+
+    if (statut) {
+      if (statut === 'a_creer') {
+        query += ` AND combined_results.statut = 'a_creer'`;
+      } else if (statut === 'en_attente') {
+        // Inclure aussi les paiements encaissés par le livreur (en attente d'approbation)
+        query += ` AND combined_results.statut IN ('en_attente', 'encaisse_livreur')`;
+      } else {
+        query += ` AND combined_results.statut = $${paramIndex++} AND combined_results.statut != 'a_creer'`;
+        params.push(statut);
+      }
+    }
+
+    if (type) {
+      query += ` AND combined_results.type = $${paramIndex++}`;
+      params.push(type);
+    }
+
+    query += ` ORDER BY combined_results.created_at DESC LIMIT $${paramIndex++} OFFSET $${paramIndex++}`;
+    params.push(parseInt(limit), parseInt(offset));
+
+    const [paiements] = await dbHelper.query(query, params);
+
+    // Stats incluant les dossiers potentiels
+    const [statsResult] = await dbHelper.query(`
+      SELECT 
+        COUNT(*) as total,
+        SUM(CASE WHEN statut = 'approuve' THEN montant ELSE 0 END) as total_approuve,
+        SUM(CASE WHEN statut IN ('en_attente', 'encaisse_livreur') THEN montant ELSE 0 END) as total_en_attente,
+        SUM(CASE WHEN statut = 'encaisse_livreur' THEN montant ELSE 0 END) as total_encaisse_livreur,
+        SUM(CASE WHEN statut = 'refuse' THEN montant ELSE 0 END) as total_refuse,
+        SUM(CASE WHEN statut = 'a_creer' THEN montant ELSE 0 END) as total_a_creer
+      FROM (
+        -- Paiements existants
+        SELECT statut, montant FROM paiements
+        ${req.user.role === 'preparateur' ? 'WHERE user_id = $1' : ''}
+        
+        UNION ALL
+        
+        -- Dossiers sans facture/paiement
+        SELECT 'a_creer' as statut, d.montant_cfa as montant
+        FROM dossiers d
+        LEFT JOIN factures f ON d.id = f.dossier_id
+        LEFT JOIN paiements p ON d.id::text = p.dossier_id::text
+        WHERE f.id IS NULL 
+          AND p.id IS NULL 
+          AND d.montant_cfa > 0
+          AND d.statut NOT IN ('brouillon', 'annule')
+          ${req.user.role === 'preparateur' ? 'AND d.preparateur_id = $1' : ''}
+      ) combined_stats
+    `, req.user.role === 'preparateur' ? [req.user.id] : []);
+
+    // Statistiques par mode de paiement
+    const [paymentModesResult] = await dbHelper.query(`
+      SELECT 
+        COALESCE(mode_paiement_final, mode_paiement, 'non_defini') as mode,
+        COUNT(*) as count,
+        SUM(montant) as total
+      FROM paiements
+      WHERE statut IN ('approuve', 'encaisse_livreur', 'en_attente')
+      ${req.user.role === 'preparateur' ? 'AND user_id = $1' : ''}
+      GROUP BY COALESCE(mode_paiement_final, mode_paiement, 'non_defini')
+    `, req.user.role === 'preparateur' ? [req.user.id] : []);
+
+    res.json({
+      paiements,
+      stats: {
+        ...statsResult[0],
+        par_mode_paiement: paymentModesResult || []
+      }
+    });
+  } catch (error) {
+    console.error('Erreur GET /paiements:', error);
+    res.status(500).json({ error: 'Erreur serveur' });
+  }
+});
+
+// ==========================================
+// APPROUVER UN PAIEMENT (admin seulement)
+// ==========================================
+router.post('/:id/approuver', auth, async (req, res) => {
+  try {
+    if (req.user.role !== 'admin') {
+      return res.status(403).json({ error: 'Accès réservé aux administrateurs' });
+    }
+
+    const { commentaire } = req.body;
+    const paiementId = req.params.id;
+
+    // Récupérer le paiement
+    const [paiement] = await dbHelper.query(
+      'SELECT * FROM paiements WHERE id = $1',
+      [paiementId]
+    );
+
+    if (paiement.length === 0) {
+      return res.status(404).json({ error: 'Paiement non trouvé' });
+    }
+
+    // Approuver
+    await dbHelper.query(
+      `UPDATE paiements 
+       SET statut = 'approuve', 
+           date_approbation = NOW(), 
+           approuve_par = $1,
+           commentaire_admin = $2
+       WHERE id = $3`,
+      [req.user.id, commentaire || null, paiementId]
+    );
+
+    // 🎯 METTRE À JOUR LES STATUTS: Facture d'abord, puis dossier associé
+    if (paiement[0].facture_id) {
+      // Approuver la facture
+      await dbHelper.query(
+        `UPDATE factures 
+         SET statut_paiement = 'paye' 
+         WHERE id = $1`,
+        [paiement[0].facture_id]
+      );
+
+      // Trouver et approuver le dossier associé à cette facture
+      const [factureInfo] = await dbHelper.query(
+        'SELECT dossier_id FROM factures WHERE id = $1',
+        [paiement[0].facture_id]
+      );
+
+      if (factureInfo.rows && factureInfo.rows.length > 0 && factureInfo.rows[0].dossier_id) {
+        await dbHelper.query(
+          `UPDATE dossiers 
+           SET statut_paiement = 'paye' 
+           WHERE id::text = $1::text`,
+          [factureInfo.rows[0].dossier_id]
+        );
+        console.log(`[Paiements] Facture #${paiement[0].facture_id} et Dossier associé mis à jour → paye`);
+      }
+    } else if (paiement[0].dossier_id) {
+      // Compatibilité: Si paiement direct sur dossier (ancien système)
+      await dbHelper.query(
+        `UPDATE dossiers 
+         SET statut_paiement = 'paye' 
+         WHERE id::text = $1::text`,
+        [paiement[0].dossier_id]
+      );
+    }
+
+    res.json({
+      message: 'Paiement approuvé avec succès',
+      paiement_id: paiementId
+    });
+  } catch (error) {
+    console.error('Erreur approbation paiement:', error);
+    res.status(500).json({ error: 'Erreur serveur' });
+  }
+});
+
+// ==========================================
+// REFUSER UN PAIEMENT (admin seulement)
+// ==========================================
+router.post('/:id/refuser', auth, async (req, res) => {
+  try {
+    if (req.user.role !== 'admin') {
+      return res.status(403).json({ error: 'Accès réservé aux administrateurs' });
+    }
+
+    const { raison } = req.body;
+    const paiementId = req.params.id;
+
+    if (!raison) {
+      return res.status(400).json({ error: 'Raison du refus requise' });
+    }
+
+    await dbHelper.query(
+      `UPDATE paiements 
+       SET statut = 'refuse', 
+           date_refus = NOW(), 
+           refuse_par = $1,
+           raison_refus = $2
+       WHERE id = $3`,
+      [req.user.id, raison, paiementId]
+    );
+
+    res.json({
+      message: 'Paiement refusé',
+      paiement_id: paiementId
+    });
+  } catch (error) {
+    console.error('Erreur refus paiement:', error);
+    res.status(500).json({ error: 'Erreur serveur' });
+  }
+});
+
+// ==========================================
+// ENREGISTRER UN NOUVEAU PAIEMENT
+// ==========================================
+router.post('/', auth, async (req, res) => {
+  try {
+    let {
+      dossier_id,
+      facture_id,
+      montant,
+      mode_paiement,
+      reference_paiement,
+      commentaire
+    } = req.body;
+
+    if (!montant || montant <= 0) {
+      return res.status(400).json({ error: 'Montant invalide' });
+    }
+
+    if (!dossier_id && !facture_id) {
+      return res.status(400).json({ error: 'Dossier ou facture requis' });
+    }
+
+    // 🎯 PRIORITÉ À FACTURE_ID: Si dossier_id fourni, chercher la facture associée
+    if (dossier_id && !facture_id) {
+      const [factureResult] = await dbHelper.query(
+        `SELECT id FROM factures WHERE dossier_id = $1 ORDER BY created_at DESC LIMIT 1`,
+        [dossier_id]
+      );
+
+      if (factureResult.rows && factureResult.rows.length > 0) {
+        facture_id = factureResult.rows[0].id;
+        console.log(`[Paiements] Facture #${facture_id} trouvée pour dossier #${dossier_id}`);
+      } else {
+        console.log(`[Paiements] Aucune facture trouvée pour dossier #${dossier_id}, paiement sur dossier`);
+      }
+    }
+
+    const [result] = await dbHelper.query(
+      `INSERT INTO paiements 
+       (dossier_id, facture_id, user_id, montant, mode_paiement, reference_paiement, notes, statut)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, 'en_attente', $8)
+       RETURNING id`,
+      [
+        dossier_id || null,
+        facture_id || null,
+        req.user.id,
+        montant,
+        mode_paiement || 'especes',
+        reference_paiement || null,
+        commentaire || null,
+        facture_id ? 'facture' : 'dossier' // Type basé sur la présence de facture_id
+      ]
+    );
+
+    const insertId = dbHelper.getInsertId(result);
+
+    res.status(201).json({
+      message: 'Paiement enregistré',
+      paiement_id: insertId,
+      facture_id: facture_id || null, // Retourner l'ID de facture pour info
+      type: facture_id ? 'facture' : 'dossier'
+    });
+  } catch (error) {
+    console.error('Erreur création paiement:', error);
+    res.status(500).json({ error: 'Erreur serveur' });
+  }
+});
+
+// ==========================================
+// RAPPELS AUTOMATIQUES POUR PAIEMENTS EN ATTENTE
+// ==========================================
+router.get('/rappels/dossiers-non-payes', auth, async (req, res) => {
+  try {
+    if (req.user.role !== 'admin' && req.user.role !== 'livreur') {
+      return res.status(403).json({ error: 'Accès non autorisé' });
+    }
+
+    const { jours = 3 } = req.query;
+
+    const [dossiers] = await dbHelper.query(
+      `SELECT 
+        d.id as folder_id, 
+        d.numero as numero_commande,
+        d.client as client_nom,
+        d.montant_cfa as prix_final,
+        d.created_at,
+        d.statut as status,
+        u.nom, u.email
+      FROM dossiers d
+      LEFT JOIN users u ON d.preparateur_id = u.id
+      WHERE d.statut_paiement != 'paye'
+        AND d.statut IN ('pret_livraison', 'en_livraison', 'livre')
+        AND d.created_at < NOW() - INTERVAL '${parseInt(jours)} days'
+      ORDER BY d.created_at DESC`,
+      []
+    );
+
+    res.json({
+      dossiers_non_payes: dossiers,
+      count: dossiers.length
+    });
+  } catch (error) {
+    console.error('Erreur rappels:', error);
+    res.status(500).json({ error: 'Erreur serveur' });
+  }
+});
+
+// ==========================================
+// LISTE DES DOSSIERS SANS PAIEMENT
+// ==========================================
+router.get('/dossiers-sans-paiement', auth, async (req, res) => {
+  try {
+    const [dossiersSansPaiement] = await dbHelper.query(`
+      SELECT 
+        d.id, 
+        d.numero, 
+        d.client, 
+        d.montant_cfa, 
+        d.mode_paiement, 
+        d.statut,
+        d.created_at,
+        u.nom as preparateur_nom
+      FROM dossiers d
+      LEFT JOIN factures f ON d.id = f.dossier_id
+      LEFT JOIN paiements p ON d.id::text = p.dossier_id::text
+      LEFT JOIN users u ON d.preparateur_id = u.id
+      WHERE f.id IS NULL 
+        AND p.id IS NULL 
+        AND d.montant_cfa > 0
+        AND d.statut NOT IN ('brouillon', 'annule')
+        ${req.user.role === 'preparateur' ? 'AND d.preparateur_id = $1' : ''}
+      ORDER BY d.created_at DESC
+    `, req.user.role === 'preparateur' ? [req.user.id] : []);
+
+    const stats = {
+      total: dossiersSansPaiement.length,
+      montant_total: dossiersSansPaiement.reduce((sum, d) => sum + parseFloat(d.montant_cfa || 0), 0)
+    };
+
+    res.json({
+      dossiers: dossiersSansPaiement,
+      stats
+    });
+
+  } catch (error) {
+    console.error('Erreur récupération dossiers sans paiement:', error);
+    res.status(500).json({ error: 'Erreur serveur' });
+  }
+});
+
+// ==========================================
+// CRÉER PAIEMENTS POUR DOSSIERS SANS DEVIS
+// ==========================================
+router.post('/auto-create-for-dossiers', auth, async (req, res) => {
+  try {
+    if (req.user.role !== 'admin') {
+      return res.status(403).json({ error: 'Accès réservé aux administrateurs' });
+    }
+
+    // Trouver tous les dossiers qui n'ont ni facture ni paiement
+    const [dossiersWithoutPaiement] = await dbHelper.query(`
+      SELECT d.id, d.numero, d.client, d.montant_cfa, d.mode_paiement, d.statut
+      FROM dossiers d
+      LEFT JOIN factures f ON d.id = f.dossier_id
+      LEFT JOIN paiements p ON d.id::text = p.dossier_id::text
+      WHERE f.id IS NULL 
+        AND p.id IS NULL 
+        AND d.montant_cfa > 0
+        AND d.statut NOT IN ('brouillon', 'annule')
+      ORDER BY d.created_at DESC
+    `);
+
+    if (dossiersWithoutPaiement.length === 0) {
+      return res.json({
+        message: 'Aucun dossier sans paiement trouvé',
+        created: 0,
+        dossiers: []
+      });
+    }
+
+    const createdPaiements = [];
+    let errorCount = 0;
+
+    for (const dossier of dossiersWithoutPaiement) {
+      try {
+        const [result] = await dbHelper.query(
+          `INSERT INTO paiements 
+           (dossier_id, user_id, montant, mode_paiement, reference_paiement, notes, statut)
+           VALUES ($1, $2, $3, $4, $5, $6, 'en_attente')
+           RETURNING id`,
+          [
+            dossier.id,
+            req.user.id,
+            dossier.montant_cfa,
+            dossier.mode_paiement || 'especes',
+            `PAY-DOS-${dossier.numero}`,
+            `Paiement créé automatiquement pour dossier sans devis - ${dossier.client}`
+          ]
+        );
+
+        const insertId = dbHelper.getInsertId(result);
+        createdPaiements.push({
+          dossier_id: dossier.id,
+          dossier_numero: dossier.numero,
+          client: dossier.client,
+          montant: dossier.montant_cfa,
+          paiement_id: insertId
+        });
+
+        console.log(`✅ Paiement automatique créé pour dossier #${dossier.id} (${dossier.numero})`);
+      } catch (error) {
+        console.error(`❌ Erreur création paiement pour dossier #${dossier.id}:`, error.message);
+        errorCount++;
+      }
+    }
+
+    res.json({
+      message: `${createdPaiements.length} paiements créés avec succès`,
+      created: createdPaiements.length,
+      errors: errorCount,
+      dossiers: createdPaiements
+    });
+
+  } catch (error) {
+    console.error('Erreur création paiements auto:', error);
+    res.status(500).json({ error: 'Erreur serveur' });
+  }
+});
+
+// ==========================================
+// CRÉER UN PAIEMENT POUR UN DOSSIER SPÉCIFIQUE
+// ==========================================
+router.post('/create-from-dossier/:dossier_id', auth, async (req, res) => {
+  try {
+    const dossierId = req.params.dossier_id;
+    const { mode_paiement, commentaire } = req.body;
+
+    // Vérifier que le dossier existe et n'a pas déjà de paiement
+    const [dossier] = await dbHelper.query(
+      'SELECT * FROM dossiers WHERE id = $1',
+      [dossierId]
+    );
+
+    if (dossier.length === 0) {
+      return res.status(404).json({ error: 'Dossier non trouvé' });
+    }
+
+    const dossierData = dossier[0];
+
+    // Vérifier qu'il n'y a pas déjà un paiement pour ce dossier
+    const [existingPaiement] = await dbHelper.query(
+      'SELECT id FROM paiements WHERE dossier_id::text = (SELECT folder_id::text FROM dossiers WHERE id = $1)',
+      [dossierId]
+    );
+
+    if (existingPaiement.length > 0) {
+      return res.status(400).json({ error: 'Un paiement existe déjà pour ce dossier' });
+    }
+
+    // Créer le paiement
+    const [result] = await dbHelper.query(
+      `INSERT INTO paiements 
+       (dossier_id, user_id, montant, mode_paiement, reference_paiement, notes, statut)
+       VALUES ((SELECT folder_id FROM dossiers WHERE id = $1), $2, $3, $4, $5, $6, 'en_attente')
+       RETURNING id`,
+      [
+        dossierId,
+        req.user.id,
+        dossierData.montant_cfa,
+        mode_paiement || dossierData.mode_paiement || 'especes',
+        `PAY-DOS-${dossierData.numero}`,
+        commentaire || `Paiement créé pour dossier ${dossierData.numero} - ${dossierData.client}`
+      ]
+    );
+
+    const insertId = dbHelper.getInsertId(result);
+
+    res.status(201).json({
+      message: 'Paiement créé avec succès',
+      paiement_id: insertId,
+      dossier_numero: dossierData.numero,
+      client: dossierData.client,
+      montant: dossierData.montant_cfa
+    });
+
+  } catch (error) {
+    console.error('Erreur création paiement depuis dossier:', error);
+    res.status(500).json({ error: 'Erreur serveur' });
+  }
+});
+
+// ==========================================
+// ENCAISSER UN PAIEMENT À LA LIVRAISON (livreur)
+// ==========================================
+router.post('/encaisser-livraison', auth, async (req, res) => {
+  try {
+    // Vérifier que l'utilisateur est un livreur
+    if (req.user.role !== 'livreur' && req.user.role !== 'admin') {
+      return res.status(403).json({ error: 'Accès réservé aux livreurs' });
+    }
+
+    const {
+      dossier_id,
+      montant,
+      mode_paiement_final,
+      reference_paiement,
+      commentaire
+    } = req.body;
+
+    // Validation des données
+    if (!dossier_id) {
+      return res.status(400).json({ error: 'ID du dossier requis' });
+    }
+
+    if (!montant || montant <= 0) {
+      return res.status(400).json({ error: 'Montant invalide' });
+    }
+
+    if (!mode_paiement_final) {
+      return res.status(400).json({ error: 'Mode de paiement requis' });
+    }
+
+    // Vérifier que le dossier existe et est en livraison
+    const [dossier] = await dbHelper.query(
+      'SELECT * FROM dossiers WHERE id = $1',
+      [dossier_id]
+    );
+
+    if (dossier.length === 0) {
+      return res.status(404).json({ error: 'Dossier non trouvé' });
+    }
+
+    const dossierData = dossier[0];
+
+    // Vérifier le statut du dossier
+    const allowedStatuses = ['en_livraison', 'livre', 'pret_livraison'];
+    if (!allowedStatuses.includes(dossierData.statut)) {
+      return res.status(400).json({
+        error: `Le dossier doit être en livraison (statut actuel: ${dossierData.statut})`
+      });
+    }
+
+    // Vérifier qu'il n'y a pas déjà un paiement encaissé pour ce dossier
+    const [existingPaiement] = await dbHelper.query(
+      'SELECT id FROM paiements WHERE dossier_id = $1 AND statut IN (\'encaisse_livreur\', \'approuve\')',
+      [dossierData.id]
+    );
+
+    if (existingPaiement.length > 0) {
+      return res.status(400).json({ error: 'Un paiement a déjà été encaissé pour ce dossier' });
+    }
+
+    // Créer le paiement
+    const [result] = await dbHelper.query(
+      `INSERT INTO paiements 
+       (dossier_id, user_id, livreur_id, montant, mode_paiement, mode_paiement_final, 
+        reference_paiement, notes, statut, date_encaissement)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'encaisse_livreur', NOW())
+       RETURNING id`,
+      [
+        dossierData.id,
+        req.user.id, // user_id = livreur
+        req.user.id, // livreur_id
+        montant,
+        dossierData.mode_paiement || 'especes',
+        mode_paiement_final,
+        reference_paiement || null,
+        commentaire || `Encaissement à la livraison par ${req.user.nom || req.user.email}`
+      ]
+    );
+
+    const insertId = dbHelper.getInsertId(result);
+
+    // Mettre à jour le statut de paiement du dossier (en attente d'approbation)
+    await dbHelper.query(
+      `UPDATE dossiers 
+       SET statut_paiement = 'encaisse', 
+           mode_paiement_final = $1,
+           updated_at = NOW()
+       WHERE id = $2`,
+      [mode_paiement_final, dossier_id]
+    );
+
+    console.log(`✅ Paiement encaissé par livreur #${req.user.id} pour dossier #${dossier_id}`);
+
+    res.status(201).json({
+      message: 'Encaissement enregistré avec succès. En attente de validation.',
+      paiement_id: insertId,
+      dossier_numero: dossierData.numero,
+      montant: montant,
+      mode_paiement: mode_paiement_final
+    });
+  } catch (error) {
+    console.error('Erreur encaissement livraison:', error);
+    res.status(500).json({ error: 'Erreur serveur', message: error.message });
+  }
+});
+
+// ==========================================
+// HISTORIQUE DES ENCAISSEMENTS DU LIVREUR
+// ==========================================
+router.get('/mes-encaissements', auth, async (req, res) => {
+  try {
+    // Vérifier que l'utilisateur est un livreur
+    if (req.user.role !== 'livreur' && req.user.role !== 'admin') {
+      return res.status(403).json({ error: 'Accès réservé aux livreurs' });
+    }
+
+    const {
+      date_debut,
+      date_fin,
+      statut,
+      mode_paiement,
+      limit = 50,
+      offset = 0
+    } = req.query;
+
+    let query = `
+      SELECT 
+        p.id,
+        p.dossier_id,
+        p.montant,
+        p.mode_paiement,
+        p.mode_paiement_final,
+        p.reference_paiement,
+        p.notes,
+        p.statut,
+        p.date_encaissement,
+        p.date_approbation,
+        p.photo_recu_path,
+        p.created_at,
+        d.numero as dossier_numero,
+        d.client as nom_client,
+        u.nom as approuve_par_nom
+      FROM paiements p
+      LEFT JOIN dossiers d ON p.dossier_id = d.id
+      LEFT JOIN users u ON p.approuve_par = u.id
+      WHERE p.livreur_id = $1
+        AND p.created_at >= NOW() - INTERVAL '24 hours'
+    `;
+
+    const params = [req.user.id];
+    let paramIndex = 2;
+
+    // Filtres optionnels
+    if (date_debut) {
+      query += ` AND p.date_encaissement >= $${paramIndex++}`;
+      params.push(date_debut);
+    }
+
+    if (date_fin) {
+      query += ` AND p.date_encaissement <= $${paramIndex++}`;
+      params.push(date_fin);
+    }
+
+    if (statut) {
+      query += ` AND p.statut = $${paramIndex++}`;
+      params.push(statut);
+    }
+
+    if (mode_paiement) {
+      query += ` AND p.mode_paiement_final = $${paramIndex++}`;
+      params.push(mode_paiement);
+    }
+
+    query += ` ORDER BY p.date_encaissement DESC LIMIT $${paramIndex++} OFFSET $${paramIndex++}`;
+    params.push(parseInt(limit), parseInt(offset));
+
+    const [encaissements] = await dbHelper.query(query, params);
+
+    // Statistiques globales - Filtrées sur les dernières 24h
+    const [stats] = await dbHelper.query(`
+      SELECT 
+        COUNT(*) as total,
+        SUM(montant) as total_montant,
+        SUM(CASE WHEN statut = 'encaisse_livreur' THEN montant ELSE 0 END) as en_attente_montant,
+        SUM(CASE WHEN statut = 'approuve' THEN montant ELSE 0 END) as approuve_montant,
+        SUM(CASE WHEN statut = 'refuse' THEN montant ELSE 0 END) as refuse_montant,
+        COUNT(CASE WHEN statut = 'encaisse_livreur' THEN 1 END) as en_attente_count,
+        COUNT(CASE WHEN statut = 'approuve' THEN 1 END) as approuve_count,
+        COUNT(CASE WHEN statut = 'refuse' THEN 1 END) as refuse_count
+      FROM paiements
+      WHERE livreur_id = $1
+        AND created_at >= NOW() - INTERVAL '24 hours'
+    `, [req.user.id]);
+
+    res.json({
+      success: true,
+      encaissements,
+      stats: stats[0] || {},
+      pagination: {
+        limit: parseInt(limit),
+        offset: parseInt(offset),
+        total: encaissements.length
+      }
+    });
+  } catch (error) {
+    console.error('Erreur récupération encaissements:', error);
+    res.status(500).json({ error: 'Erreur serveur', message: error.message });
+  }
+});
+
+// ==========================================
+// DOSSIERS À ENCAISSER POUR LE LIVREUR
+// ==========================================
+router.get('/a-encaisser', auth, async (req, res) => {
+  try {
+    // Vérifier que l'utilisateur est un livreur
+    if (req.user.role !== 'livreur' && req.user.role !== 'admin') {
+      return res.status(403).json({ error: 'Accès réservé aux livreurs' });
+    }
+
+    // Récupérer les dossiers à encaisser
+    const [dossiers] = await dbHelper.query(`
+      SELECT 
+        d.id,
+        d.numero,
+        d.client,
+        d.telephone_client,
+        d.data_formulaire,
+        d.montant_cfa,
+        d.mode_paiement,
+        d.mode_paiement_final,
+        d.statut,
+        d.statut_paiement,
+        d.urgent,
+        d.created_at,
+        d.updated_at,
+        u.nom as preparateur_nom
+      FROM dossiers d
+      LEFT JOIN users u ON d.preparateur_id = u.id
+      LEFT JOIN paiements p ON d.id = p.dossier_id
+        AND p.livreur_id = $1 
+        AND p.statut IN ('encaisse_livreur', 'approuve')
+      WHERE d.mode_paiement_final = 'a_la_livraison'
+        AND d.statut IN ('en_livraison', 'livre', 'pret_livraison')
+        AND (d.statut_paiement IS NULL OR d.statut_paiement NOT IN ('paye', 'encaisse'))
+        AND p.id IS NULL
+      ORDER BY d.created_at ASC
+    `, [req.user.id]);
+
+    // Statistiques
+    const stats = {
+      total: dossiers.length,
+      montant_total: dossiers.reduce((sum, d) => sum + parseFloat(d.montant_cfa || 0), 0),
+      urgents: dossiers.filter(d => d.urgent).length
+    };
+
+    res.json({
+      success: true,
+      dossiers,
+      stats
+    });
+  } catch (error) {
+    console.error('Erreur récupération dossiers à encaisser:', error);
+    res.status(500).json({ error: 'Erreur serveur', message: error.message });
+  }
+});
+
+module.exports = router;

@@ -552,12 +552,19 @@ const DevisDetailsModal = ({ devis, isOpen, onClose }) => {
                 <div className="flex justify-between items-center">
                   <div className="flex items-center gap-2">
                     <span className="text-lg font-semibold text-gray-900 dark:text-white">Prix estimé</span>
-                    {devis.details_prix && JSON.parse(devis.details_prix)?.ia_used && (
-                      <div className="flex items-center gap-1 text-purple-600 dark:text-purple-400">
-                        <SparklesIcon className="w-4 h-4" />
-                        <span className="text-xs">IA</span>
-                      </div>
-                    )}
+                    {devis.details_prix && (() => {
+                      try {
+                        const details = typeof devis.details_prix === 'string' ? JSON.parse(devis.details_prix) : devis.details_prix;
+                        return details?.ia_used && (
+                          <div className="flex items-center gap-1 text-purple-600 dark:text-purple-400">
+                            <SparklesIcon className="w-4 h-4" />
+                            <span className="text-xs">IA</span>
+                          </div>
+                        );
+                      } catch {
+                        return null;
+                      }
+                    })()}
                   </div>
                   <span className="text-2xl font-bold text-blue-600 dark:text-blue-400">
                     {devis.prix_final || devis.prix_estime} FCFA

@@ -15,6 +15,7 @@ import useRealtimeUpdates from '../../hooks/useRealtimeUpdates';
 import OverviewTab from './tabs/OverviewTab';
 import DossiersTab from './tabs/DossiersTab';
 import UsersTab from './tabs/UsersTab';
+import ClientsTab from './tabs/AdminClientsDatabase';
 import StatisticsTab from './tabs/StatisticsTab';
 import PaiementsTab from './tabs/PaiementsTab';
 import DevisFacturesTab from './tabs/DevisFacturesTab';
@@ -50,6 +51,12 @@ const AdminDashboardEnrichiUltraModern = ({ user, onNavigate }) => {
       icon: UsersIcon,
       badge: stats.users.active || null,
       description: 'Gestion des utilisateurs',
+    },
+    {
+      id: 'clients',
+      label: 'Clients Base',
+      icon: UsersIcon,
+      description: 'Base de données CRM intelligente',
     },
     {
       id: 'statistics',
@@ -105,7 +112,7 @@ const AdminDashboardEnrichiUltraModern = ({ user, onNavigate }) => {
   // Restaurer l'onglet actif au chargement
   useEffect(() => {
     const savedTab = localStorage.getItem('adminActiveTab');
-    const tabIds = ['overview', 'dossiers', 'users', 'statistics', 'paiements', 'devis-factures', 'configuration'];
+    const tabIds = ['overview', 'dossiers', 'users', 'clients', 'statistics', 'paiements', 'devis-factures', 'configuration'];
     if (savedTab && tabIds.includes(savedTab)) {
       setActiveTab(savedTab);
     }
@@ -157,6 +164,8 @@ const AdminDashboardEnrichiUltraModern = ({ user, onNavigate }) => {
         return <DossiersTab {...commonProps} />;
       case 'users':
         return <UsersTab {...commonProps} />;
+      case 'clients':
+        return <ClientsTab {...commonProps} />;
       case 'statistics':
         return <StatisticsTab {...commonProps} />;
       case 'paiements':

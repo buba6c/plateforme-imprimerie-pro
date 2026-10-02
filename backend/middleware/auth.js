@@ -212,8 +212,77 @@ const isAdmin = (req, res, next) => {
   next();
 };
 
+
+/**
+ * Middleware d'authentification pour téléchargements directs
+ * Accepte le token via query parameter (?token=xxx) en plus du header Authorization
+ */
+const authenticateDownload = async (req, res, next) => {
+  // DEBUG
+  console.log('🔍 authenticateDownload - req.query:', req.query);
+  console.log('🔍 authenticateDownload - req.query.token:', req.query.token);
+
+  // Essayer d'abord le header Authorization
+  let token = null;
+  const authHeader = req.headers['authorization'];
+  if (authHeader) {
+    token = authHeader.split(' ')[1];
+  }
+
+  // Si pas de token dans le header, chercher dans query params
+  if (!token && req.query.token) {
+    token = req.query.token;
+  }
+
+  console.log('🔍 authenticateDownload - token final:', token ? 'trouvé' : 'null');
+
+  if (!token) {
+    return res.status(401).json({
+      success: false,
+      message: "Token d'accès requis",
+    });
+  }
+
+  try {
+    const JWT_SECRET = process.env.JWT_SECRET || 'imprimerie_jwt_secret_key_2024_super_secure';
+    const decoded = jwt.verify(token, JWT_SECRET);
+
+    // Vérifier que l'utilisateur existe toujours en base
+    const userResult = await db.query(
+      'SELECT id, nom, email, role, is_active FROM users WHERE id = $1 AND is_active = true',
+      [decoded.id]
+    );
+
+    if (userResult.rows.length === 0) {
+      return res.status(401).json({
+        success: false,
+        message: 'Utilisateur non trouvé ou inactif',
+      });
+    }
+
+    req.user = userResult.rows[0];
+    next();
+  } catch (error) {
+    console.error('❌ Erreur authentification download:', error.message);
+
+    if (error.name === 'TokenExpiredError') {
+      return res.status(401).json({
+        success: false,
+        message: 'Token expiré',
+        code: 'TOKEN_EXPIRED',
+      });
+    }
+
+    return res.status(401).json({
+      success: false,
+      message: 'Token invalide',
+    });
+  }
+};
+
 module.exports = {
   authenticateToken,
+  authenticateDownload,
   requireRole,
   optionalAuth,
   checkDossierOwnership,

@@ -66,9 +66,6 @@ export function useDossierSync() {
         }));
         setLastUpdate(Date.now());
         break;
-      default:
-        // Ignore unknown event types
-        break;
     }
   }, []);
 
@@ -235,9 +232,6 @@ export function useDossier(idLike) {
         if (data.dossierId === dossierId) {
           setDossier(null);
         }
-        break;
-      default:
-        // Ignore unknown event types
         break;
     }
   }, [dossierId]);

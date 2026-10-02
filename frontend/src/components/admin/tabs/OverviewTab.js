@@ -24,6 +24,7 @@ const OverviewTab = ({ user, onNavigate, setStats }) => {
     success: { rate: 0, trend: 0 },
   });
   const [recentActivity, setRecentActivity] = useState([]);
+  const [topClients, setTopClients] = useState([]);
 
   useEffect(() => {
     loadOverviewData();
@@ -84,6 +85,27 @@ const OverviewTab = ({ user, onNavigate, setStats }) => {
       }));
       setRecentActivity(recent);
 
+      // Fetch Top Clients
+      try {
+        const token = localStorage.getItem('auth_token');
+        const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:5001/api';
+        const topRes = await fetch(`${API_URL}/clients/top?limit=5`, {
+          headers: { Authorization: `Bearer ${token}` }
+        });
+        const topJson = await topRes.json();
+        if (topJson.success) {
+          setTopClients(topJson.data);
+          
+          // Mettre à jour le CA mensuel avec de vraies données (somme des tops si possible, ou via stats)
+          const totalCA = topJson.data.reduce((acc, c) => acc + parseInt(c.ca_genere || 0), 0);
+          if (totalCA > 0) {
+            setKpis(prev => ({ ...prev, ca: { mensuel: totalCA, trend: prev.ca.trend } }));
+          }
+        }
+      } catch (e) {
+        console.error('Erreur prefill top clients', e);
+      }
+
     } catch (error) {
       console.error('Erreur chargement overview:', error);
     } finally {
@@ -143,10 +165,11 @@ const OverviewTab = ({ user, onNavigate, setStats }) => {
     {
       id: 'ca',
       icon: CurrencyDollarIcon,
-      label: 'CA Mensuel',
-      value: `${(kpis.ca.mensuel / 1000).toFixed(1)}k €`,
+      label: 'CA Généré',
+      value: `${(kpis.ca.mensuel / 1000).toFixed(1)}k F`,
       trend: kpis.ca.trend,
       color: 'green',
+      onClick: () => onNavigate && onNavigate('clients'),
     },
     {
       id: 'success',
@@ -254,58 +277,118 @@ const OverviewTab = ({ user, onNavigate, setStats }) => {
         </LoadingButton>
       </div>
 
-      {/* Activité récente */}
-      <div className="bg-white dark:bg-gray-800 rounded-xl p-6 shadow-sm border border-gray-200 dark:border-gray-700">
-        <div className="flex items-center justify-between mb-4">
-          <h2 className="text-lg font-semibold text-gray-900 dark:text-white">
-            Activité récente
-          </h2>
-          <button
-            onClick={loadOverviewData}
-            className="text-sm text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300"
-          >
-            Actualiser
-          </button>
+      {/* Grid pour Activité Récente et Top Clients */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        {/* Activité récente */}
+        <div className="bg-white dark:bg-gray-800 rounded-xl p-6 shadow-sm border border-gray-200 dark:border-gray-700">
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-lg font-semibold text-gray-900 dark:text-white">
+              Activité récente
+            </h2>
+            <button
+              onClick={loadOverviewData}
+              className="text-sm text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300"
+            >
+              Actualiser
+            </button>
+          </div>
+
+          <div className="space-y-3">
+            {recentActivity.length === 0 ? (
+              <p className="text-center text-gray-500 dark:text-gray-400 py-8">
+                Aucune activité récente
+              </p>
+            ) : (
+              recentActivity.map((activity, index) => (
+                <motion.div
+                  key={activity.id}
+                  initial={{ opacity: 0, x: -20 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  transition={{ delay: index * 0.05 }}
+                  className="flex items-center justify-between p-3 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+                >
+                  <div className="flex items-center gap-3 flex-1">
+                    <div className="w-10 h-10 rounded-full bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center text-white text-sm font-semibold">
+                      {activity.title.charAt(0)}
+                    </div>
+                    <div className="flex-1">
+                      <p className="text-sm font-medium text-gray-900 dark:text-white">
+                        {activity.title}
+                      </p>
+                      <p className="text-xs text-gray-500 dark:text-gray-400">
+                        {activity.description}
+                      </p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <span className={`px-2 py-1 rounded-full text-xs font-medium ${getStatusColor(activity.status)}`}>
+                      {activity.status}
+                    </span>
+                    <span className="text-xs text-gray-400 dark:text-gray-500 whitespace-nowrap">
+                      {activity.time}
+                    </span>
+                  </div>
+                </motion.div>
+              ))
+            )}
+          </div>
         </div>
 
-        <div className="space-y-3">
-          {recentActivity.length === 0 ? (
-            <p className="text-center text-gray-500 dark:text-gray-400 py-8">
-              Aucune activité récente
-            </p>
-          ) : (
-            recentActivity.map((activity, index) => (
-              <motion.div
-                key={activity.id}
-                initial={{ opacity: 0, x: -20 }}
-                animate={{ opacity: 1, x: 0 }}
-                transition={{ delay: index * 0.05 }}
-                className="flex items-center justify-between p-3 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
-              >
-                <div className="flex items-center gap-3 flex-1">
-                  <div className="w-10 h-10 rounded-full bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center text-white text-sm font-semibold">
-                    {activity.title.charAt(0)}
+        {/* Top Clients */}
+        <div className="bg-white dark:bg-gray-800 rounded-xl p-6 shadow-sm border border-gray-200 dark:border-gray-700">
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-lg font-semibold text-gray-900 dark:text-white flex items-center gap-2">
+              <CurrencyDollarIcon className="w-5 h-5 text-green-500" />
+              Meilleurs Clients (CA)
+            </h2>
+            <button
+              onClick={() => onNavigate && onNavigate('clients')}
+              className="text-sm text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300"
+            >
+              Voir tout
+            </button>
+          </div>
+
+          <div className="space-y-3">
+            {topClients.length === 0 ? (
+              <p className="text-center text-gray-500 dark:text-gray-400 py-8">
+                Aucun client enregistré
+              </p>
+            ) : (
+              topClients.map((client, index) => (
+                <motion.div
+                  key={index}
+                  initial={{ opacity: 0, x: 20 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  transition={{ delay: index * 0.05 }}
+                  className="flex items-center justify-between p-3 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors cursor-pointer"
+                  onClick={() => {
+                    localStorage.setItem('dossiers_search_filter', client.nom);
+                    onNavigate && onNavigate('dossiers');
+                  }}
+                >
+                  <div className="flex items-center gap-3 flex-1">
+                    <div className="w-10 h-10 rounded-full bg-gradient-to-br from-green-500 to-emerald-600 flex items-center justify-center text-white text-sm font-semibold">
+                      {client.nom.charAt(0).toUpperCase()}
+                    </div>
+                    <div className="flex-1">
+                      <p className="text-sm font-medium text-gray-900 dark:text-white">
+                        {client.nom}
+                      </p>
+                      <p className="text-xs text-gray-500 dark:text-gray-400">
+                        {client.total_dossiers} Dossiers créés
+                      </p>
+                    </div>
                   </div>
-                  <div className="flex-1">
-                    <p className="text-sm font-medium text-gray-900 dark:text-white">
-                      {activity.title}
-                    </p>
-                    <p className="text-xs text-gray-500 dark:text-gray-400">
-                      {activity.description}
-                    </p>
+                  <div className="flex items-center gap-3">
+                    <span className="font-bold text-gray-900 dark:text-gray-100">
+                      {parseInt(client.ca_genere).toLocaleString('fr-FR')} F
+                    </span>
                   </div>
-                </div>
-                <div className="flex items-center gap-3">
-                  <span className={`px-2 py-1 rounded-full text-xs font-medium ${getStatusColor(activity.status)}`}>
-                    {activity.status}
-                  </span>
-                  <span className="text-xs text-gray-400 dark:text-gray-500 whitespace-nowrap">
-                    {activity.time}
-                  </span>
-                </div>
-              </motion.div>
-            ))
-          )}
+                </motion.div>
+              ))
+            )}
+          </div>
         </div>
       </div>
     </div>

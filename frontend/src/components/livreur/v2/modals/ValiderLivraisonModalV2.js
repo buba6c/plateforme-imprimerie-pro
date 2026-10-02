@@ -3,7 +3,7 @@
  * Interface professionnelle pour valider une livraison avec paiement et preuve
  */
 
-import React, { memo, useState } from 'react';
+import React, { memo, useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
   XMarkIcon, 
@@ -21,10 +21,32 @@ const ValiderLivraisonModalV2 = memo(({
 }) => {
   // États du formulaire
   const [modePaiement, setModePaiement] = useState('especes');
-  const [montantEncaisse, setMontantEncaisse] = useState(dossier?.amount || 0);
+  const [montantEncaisse, setMontantEncaisse] = useState(dossier?.amount || dossier?.montant || dossier?.montant_cfa || 0);
   const [photoPreuve, setPhotoPreuve] = useState(null);
   const [commentaires, setCommentaires] = useState('');
   const [signatureRecue, setSignatureRecue] = useState(false);
+
+  // 🎯 Auto-remplir le montant quand le dossier change
+  useEffect(() => {
+    console.log('🔍 [ValiderLivraison] useEffect triggered');
+    console.log('🔍 [ValiderLivraison] dossier:', dossier);
+    console.log('🔍 [ValiderLivraison] dossier.amount:', dossier?.amount);
+    console.log('🔍 [ValiderLivraison] dossier.montant:', dossier?.montant);
+    console.log('🔍 [ValiderLivraison] dossier.montant_cfa:', dossier?.montant_cfa);
+    
+    if (dossier?.amount) {
+      console.log('✅ [ValiderLivraison] Setting montantEncaisse to:', dossier.amount);
+      setMontantEncaisse(dossier.amount);
+    } else if (dossier?.montant) {
+      console.log('✅ [ValiderLivraison] Setting montantEncaisse to montant:', dossier.montant);
+      setMontantEncaisse(dossier.montant);
+    } else if (dossier?.montant_cfa) {
+      console.log('✅ [ValiderLivraison] Setting montantEncaisse to montant_cfa:', dossier.montant_cfa);
+      setMontantEncaisse(dossier.montant_cfa);
+    } else {
+      console.log('⚠️ [ValiderLivraison] No amount field found in dossier');
+    }
+  }, [dossier?.amount, dossier?.montant, dossier?.montant_cfa]);
 
   if (!isOpen || !dossier) return null;
 

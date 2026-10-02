@@ -47,9 +47,10 @@ const LivreurDossiers = ({ user }) => {
 // Normalisation des statuts de livraison
   const normalizeDeliveryStatus = (statut) => {
     if (!statut) return '';
-    const val = String(statut).toLowerCase();
-    // IMPORTANT: Vérifier 'termine' en priorité et le mapper vers 'imprime' pour afficher les boutons d'action
-    if (val === 'termine' || val === 'terminated' || val === 'finished') return 'imprime';
+    const val = String(statut).toLowerCase().replace(/\s/g, '_');
+    // Normalisation simple sans transformation de statut
+    // 'termine' reste 'termine' (ne plus le mapper vers 'imprime')
+    if (val === 'termine' || val === 'terminated' || val === 'finished') return 'termine';
     if (val.includes('imprim')) return 'imprime';
     if (val.includes('pret') && val.includes('livraison')) return 'pret_livraison';
     if (val.includes('livraison') && !val.includes('pret')) return 'en_livraison';
@@ -57,7 +58,7 @@ const LivreurDossiers = ({ user }) => {
     if (val.includes('retour') || val.includes('return')) return 'retour';
     if (val.includes('echec') || val.includes('failed')) return 'echec_livraison';
     if (val.includes('reporte') || val.includes('postponed')) return 'reporte';
-    return val.replace(/\s/g, '_');
+    return val;
   };
 
   // Calcul des zones de livraison
@@ -264,6 +265,20 @@ const fetchDossiers = useCallback(async () => {
           
           <div className="flex items-center gap-2 mt-2">
             <ZoneBadge zone={dossier.deliveryZone} />
+            {/* Badge de statut de paiement pour dossiers livrés */}
+            {dossier.deliveryStatus === 'livre' && dossier.statut_paiement && (
+              <span className={`inline-flex items-center gap-1 px-2 py-1 text-xs font-semibold rounded-full ${
+                dossier.statut_paiement === 'paye' || dossier.statut_paiement === 'encaisse'
+                  ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400'
+                  : dossier.statut_paiement === 'acompte'
+                  ? 'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400'
+                  : 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400 animate-pulse'
+              }`}>
+                {dossier.statut_paiement === 'paye' || dossier.statut_paiement === 'encaisse' ? '✅ Payé' : 
+                 dossier.statut_paiement === 'acompte' ? '💰 Acompte' : 
+                 '💳 Non payé'}
+              </span>
+            )}
             {dossier.commentaire && (
               <span className="text-xs text-neutral-500 dark:text-gray-400 bg-neutral-100 dark:bg-neutral-700 px-2 py-1 rounded-full max-w-32 truncate" title={dossier.commentaire}>
                 📝 {dossier.commentaire}

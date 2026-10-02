@@ -80,7 +80,7 @@ export const ThemeProvider = ({ children }) => {
       mounted = false;
       media.removeEventListener?.('change', handle);
     };
-  }, [theme]);
+  }, []);
 
   useEffect(() => {
     const res = computeResolved(theme);

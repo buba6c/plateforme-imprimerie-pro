@@ -342,6 +342,135 @@ const emitStatsUpdated = stats => {
   console.log('📢 Événement stats:updated émis');
 };
 
+
+/**
+ * Émet un événement quand une section est ajoutée
+ * @param {number} folderId - ID du dossier
+ * @param {object} section - Nouvelle section ajoutée
+ * @param {number} sectionIndex - Index de la section dans le tableau
+ */
+const emitSectionAdded = (folderId, section, sectionIndex) => {
+  if (!io) return;
+
+  const eventData = {
+    folderId,
+    section,
+    sectionIndex,
+    timestamp: new Date().toISOString(),
+  };
+
+  io.to(`dossier:${folderId}`).emit('dossier:section:added', eventData);
+  io.to('all_dossiers').emit('dossier:section:added', eventData);
+
+  console.log(`📑 Section ajoutée au dossier ${folderId} (index: ${sectionIndex})`);
+};
+
+/**
+ * Émet un événement quand une section est mise à jour
+ * @param {number} folderId - ID du dossier
+ * @param {object} section - Section mise à jour
+ * @param {number} sectionIndex - Index de la section
+ */
+const emitSectionUpdated = (folderId, section, sectionIndex) => {
+  if (!io) return;
+
+  const eventData = {
+    folderId,
+    section,
+    sectionIndex,
+    timestamp: new Date().toISOString(),
+  };
+
+  io.to(`dossier:${folderId}`).emit('dossier:section:updated', eventData);
+  io.to('all_dossiers').emit('dossier:section:updated', eventData);
+
+  console.log(`📝 Section ${sectionIndex} mise à jour dans le dossier ${folderId}`);
+};
+
+/**
+ * Émet un événement quand une section est supprimée
+ * @param {number} folderId - ID du dossier
+ * @param {number} sectionIndex - Index de la section supprimée
+ */
+const emitSectionRemoved = (folderId, sectionIndex) => {
+  if (!io) return;
+
+  const eventData = {
+    folderId,
+    sectionIndex,
+    timestamp: new Date().toISOString(),
+  };
+
+  io.to(`dossier:${folderId}`).emit('dossier:section:removed', eventData);
+  io.to('all_dossiers').emit('dossier:section:removed', eventData);
+
+  console.log(`🗑️  Section ${sectionIndex} supprimée du dossier ${folderId}`);
+};
+
+/**
+ * Émet un événement quand un support est ajouté (Roland)
+ * @param {number} folderId - ID du dossier
+ * @param {object} support - Nouveau support ajouté
+ * @param {number} supportIndex - Index du support
+ */
+const emitSupportAdded = (folderId, support, supportIndex) => {
+  if (!io) return;
+
+  const eventData = {
+    folderId,
+    support,
+    supportIndex,
+    timestamp: new Date().toISOString(),
+  };
+
+  io.to(`dossier:${folderId}`).emit('dossier:support:added', eventData);
+  io.to('all_dossiers').emit('dossier:support:added', eventData);
+
+  console.log(`🖨️  Support ajouté au dossier ${folderId} (index: ${supportIndex})`);
+};
+
+/**
+ * Émet un événement quand un support est mis à jour
+ * @param {number} folderId - ID du dossier
+ * @param {object} support - Support mis à jour
+ * @param {number} supportIndex - Index du support
+ */
+const emitSupportUpdated = (folderId, support, supportIndex) => {
+  if (!io) return;
+
+  const eventData = {
+    folderId,
+    support,
+    supportIndex,
+    timestamp: new Date().toISOString(),
+  };
+
+  io.to(`dossier:${folderId}`).emit('dossier:support:updated', eventData);
+  io.to('all_dossiers').emit('dossier:support:updated', eventData);
+
+  console.log(`📝 Support ${supportIndex} mis à jour dans le dossier ${folderId}`);
+};
+
+/**
+ * Émet un événement quand un support est supprimé
+ * @param {number} folderId - ID du dossier
+ * @param {number} supportIndex - Index du support supprimé
+ */
+const emitSupportRemoved = (folderId, supportIndex) => {
+  if (!io) return;
+
+  const eventData = {
+    folderId,
+    supportIndex,
+    timestamp: new Date().toISOString(),
+  };
+
+  io.to(`dossier:${folderId}`).emit('dossier:support:removed', eventData);
+  io.to('all_dossiers').emit('dossier:support:removed', eventData);
+
+  console.log(`🗑️  Support ${supportIndex} supprimé du dossier ${folderId}`);
+};
+
 module.exports = {
   initSocketIO,
   getIO,
@@ -364,5 +493,13 @@ module.exports = {
   emitNotification,
   
   // Statistiques
+  
+  // Événements sections/supports
+  emitSectionAdded,
+  emitSectionUpdated,
+  emitSectionRemoved,
+  emitSupportAdded,
+  emitSupportUpdated,
+  emitSupportRemoved,
   emitStatsUpdated,
 };

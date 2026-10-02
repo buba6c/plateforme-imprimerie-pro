@@ -10,6 +10,7 @@ import {
   ExclamationCircleIcon,
   FolderIcon
 } from '@heroicons/react/24/outline';
+import api from '../../services/api';
 
 const FileUpload = ({ 
   isOpen, 
@@ -135,12 +136,13 @@ const FileUpload = ({
       ));
 
       const formData = new FormData();
-      formData.append('file', file);
+      formData.append('files', file); 
       formData.append('path', currentPath);
 
-      const response = await fetch('/api/upload', {
-        method: 'POST',
-        body: formData,
+      const response = await api.post('/files/upload', formData, {
+        headers: {
+          'Content-Type': 'multipart/form-data',
+        },
         onUploadProgress: (progressEvent) => {
           const progress = Math.round((progressEvent.loaded * 100) / progressEvent.total);
           setUploadProgress(prev => ({
@@ -153,7 +155,7 @@ const FileUpload = ({
         }
       });
 
-      if (response.ok) {
+      if (response && response.data) {
         setFiles(prev => prev.map(f => 
           f.id === id ? { ...f, status: 'success' } : f
         ));
@@ -166,7 +168,7 @@ const FileUpload = ({
         f.id === id ? { 
           ...f, 
           status: 'error',
-          error: error.message 
+          error: error.response?.data?.message || error.message 
         } : f
       ));
       return false;

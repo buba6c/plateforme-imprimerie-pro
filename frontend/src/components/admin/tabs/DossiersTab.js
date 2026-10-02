@@ -18,6 +18,7 @@ const DossiersTab = ({ user, onNavigate }) => {
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
   const [filterStatus, setFilterStatus] = useState('all');
+  const [machineFilter, setMachineFilter] = useState('all');
   const [actionLoading, setActionLoading] = useState({});
 
   const normalizeStatus = (statut) => {
@@ -76,6 +77,13 @@ const DossiersTab = ({ user, onNavigate }) => {
 
   useEffect(() => {
     loadDossiers();
+    
+    // Vérifier si on vient de l'onglet Clients avec un filtre pré-défini
+    const prefillSearch = localStorage.getItem('dossiers_search_filter');
+    if (prefillSearch) {
+      setSearchTerm(prefillSearch);
+      localStorage.removeItem('dossiers_search_filter');
+    }
   }, [loadDossiers]);
 
   // Filtrage et recherche
@@ -86,7 +94,10 @@ const DossiersTab = ({ user, onNavigate }) => {
     
     const matchesStatus = filterStatus === 'all' || d.status === filterStatus;
     
-    return matchesSearch && matchesStatus;
+    const machine = (d.machine || d.type_formulaire || d.type || '').toLowerCase();
+    const matchesMachine = machineFilter === 'all' || machine.includes(machineFilter);
+    
+    return matchesSearch && matchesStatus && matchesMachine;
   });
 
   // Grouper par statut
@@ -157,11 +168,43 @@ const DossiersTab = ({ user, onNavigate }) => {
           </div>
         </div>
 
-        {/* Stats */}
-        <div className="mt-4 flex gap-4 text-sm text-gray-600 dark:text-gray-400">
-          <span>Total: <strong>{filteredDossiers.length}</strong></span>
-          <span>•</span>
-          <span>Actifs: <strong>{dossiers.filter(d => !['livre', 'termine'].includes(d.status)).length}</strong></span>
+                {/* KPIs et Filtres de Machine */}
+        <div className="mt-6 flex flex-col md:flex-row gap-6">
+          <div className="flex-1 grid grid-cols-2 md:grid-cols-4 gap-4">
+             <div className="bg-gray-50 dark:bg-gray-900/50 p-4 rounded-xl border border-gray-100 dark:border-gray-700">
+                <p className="text-gray-500 text-xs font-bold uppercase mb-1">Total</p>
+                <p className="text-2xl font-bold text-gray-900 dark:text-white">{filteredDossiers.length}</p>
+             </div>
+             <div className="bg-blue-50 dark:bg-blue-900/30 p-4 rounded-xl border border-blue-100 dark:border-blue-800">
+                <p className="text-blue-500 text-xs font-bold uppercase mb-1">Préparation</p>
+                <p className="text-2xl font-bold text-blue-900 dark:text-blue-100">{groupedDossiers.nouveau.length + groupedDossiers.en_cours.length}</p>
+             </div>
+             <div className="bg-indigo-50 dark:bg-indigo-900/30 p-4 rounded-xl border border-indigo-100 dark:border-indigo-800">
+                <p className="text-indigo-500 text-xs font-bold uppercase mb-1">Impression</p>
+                <p className="text-2xl font-bold text-indigo-900 dark:text-indigo-100">{groupedDossiers.en_impression.length}</p>
+             </div>
+             <div className="bg-green-50 dark:bg-green-900/30 p-4 rounded-xl border border-green-100 dark:border-green-800">
+                <p className="text-green-500 text-xs font-bold uppercase mb-1">À livrer</p>
+                <p className="text-2xl font-bold text-green-900 dark:text-green-100">{groupedDossiers.pret_livraison.length}</p>
+             </div>
+          </div>
+          
+          <div className="flex items-center justify-center p-1 bg-gray-100 dark:bg-gray-900 rounded-lg p-2 h-fit border border-gray-200 dark:border-gray-700">
+             <div className="flex gap-1 bg-gray-200/50 dark:bg-gray-800 p-1 rounded-md">
+                <button 
+                  onClick={() => setMachineFilter('all')} 
+                  className={`px-4 py-2 text-sm font-bold rounded-md transition-all ${machineFilter === 'all' ? 'bg-white dark:bg-gray-700 text-gray-900 dark:text-white shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
+                >Toutes</button>
+                <button 
+                  onClick={() => setMachineFilter('roland')} 
+                  className={`px-4 py-2 text-sm font-bold rounded-md transition-all ${machineFilter === 'roland' ? 'bg-indigo-50 dark:bg-indigo-900/50 text-indigo-700 dark:text-indigo-300 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
+                >Roland</button>
+                <button 
+                  onClick={() => setMachineFilter('xerox')} 
+                  className={`px-4 py-2 text-sm font-bold rounded-md transition-all ${machineFilter === 'xerox' ? 'bg-orange-50 dark:bg-orange-900/50 text-orange-700 dark:text-orange-300 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
+                >Xerox</button>
+             </div>
+          </div>
         </div>
       </div>
 

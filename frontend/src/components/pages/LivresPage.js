@@ -68,8 +68,14 @@ const LivresPage = () => {
   const loadDossiers = async () => {
     try {
       setLoading(true);
-      const response = await api.get('/dossiers?status=livre');
-      setDossiers(response.data.dossiers || []);
+      const response = await api.get('/dossiers');
+      const allDossiers = response.data.dossiers || [];
+      // Filtrer pour "Livrés": UNIQUEMENT livre
+      const filteredByStatus = allDossiers.filter(d => {
+        const status = (d.status || d.statut || '').toLowerCase().replace(/\s/g, '_');
+        return status === 'livre';
+      });
+      setDossiers(filteredByStatus);
     } catch (error) {
       // Erreur silencieuse
       setDossiers([]);
@@ -217,7 +223,9 @@ const LivresPage = () => {
                 actions={
                   <div className="flex items-center gap-2 text-sm text-emerald-600 dark:text-emerald-400">
                     <CalendarIcon className="h-4 w-4" />
-                    {dossier.date_livraison ? 
+                    {dossier.date_livraison_reelle ? 
+                      new Date(dossier.date_livraison_reelle).toLocaleDateString('fr-FR') : 
+                      dossier.date_livraison ? 
                       new Date(dossier.date_livraison).toLocaleDateString('fr-FR') : 
                       'Date non renseignée'
                     }

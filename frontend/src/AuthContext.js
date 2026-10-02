@@ -1,0 +1,142 @@
+import React, { createContext, useState, useContext, useEffect, useMemo } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { authService } from "./apiAdapter";
+import PropTypes from 'prop-types';
+
+const AuthContext = createContext(null);
+
+export const AuthProvider = ({ children }) => {
+  const [user, setUser] = useState(null);
+  const [token, setToken] = useState(localStorage.getItem('auth_token'));
+  const [loading, setLoading] = useState(true);
+  const navigate = useNavigate();
+
+  useEffect(() => {
+    const storedUser = localStorage.getItem('user');
+    const storedToken = localStorage.getItem('auth_token');
+
+    if (storedUser && storedToken) {
+      try {
+        const parsedUser = JSON.parse(storedUser);
+        setUser(parsedUser);
+        setToken(storedToken);
+        // Stocker le token dans axios (header par défaut) si nécessaire
+        try {
+          if (storedToken) {
+            // Le realAuthService dans apiAdapter gère déjà les requêtes authentifiées via localStorage/JWT côté backend
+            // Donc ici on s'assure juste qu'il existe bien
+          }
+        } catch (e) {
+          console.warn('Impossible de configurer le header auth:', e);
+        }
+      } catch (error) {
+        console.error('Erreur parsing utilisateur:', error);
+        logout();
+      }
+    }
+    setLoading(false);
+  }, []);
+
+  const login = async (email, password) => {
+    try {
+      const normalizedEmail = (email || '').trim();
+      console.log('🔑 Tentative de connexion:', normalizedEmail);
+      
+      const response = await authService.login(normalizedEmail, password);
+      console.log('📡 Réponse authService:', response);
+      
+      // Le service peut retourner différents formats (mock vs réel)
+      const token = response.token || response.accessToken || response.jwt;
+      const userData = response.user || response.utilisateur || response.data?.user;
+      
+      // Si le service retourne un échec explicite avec un code d'erreur
+      if (response.success === false || (response.error && !token)) {
+        console.error('❌ Échec de connexion:', {
+          error: response.error,
+          code: response.code,
+          status: response.status
+        });
+        return { 
+          success: false, 
+          error: response.error || 'Erreur de connexion',
+          code: response.code || 'UNKNOWN_ERROR'
+        };
+      }
+      
+      if (token && userData) {
+        localStorage.setItem('auth_token', token);
+        localStorage.setItem('user', JSON.stringify(userData));
+        setUser(userData);
+        setToken(token);
+        console.log('✅ Connexion réussie, redirection...');
+        navigate('/');
+        return { success: true };
+      }
+      
+      console.error('❌ Token ou userData manquant:', { token: !!token, userData: !!userData });
+      return { 
+        success: false, 
+        error: response.error || 'Login échoué - données incomplètes',
+        code: 'INCOMPLETE_DATA'
+      };
+    } catch (error) {
+      // Gestion des erreurs inattendues (erreurs réseau, etc.)
+      console.error('❌ Erreur de login inattendue:', {
+        error,
+        message: error?.message,
+        code: error?.code
+      });
+      
+      let message = 'Erreur de connexion inattendue';
+      let code = 'UNKNOWN_ERROR';
+      
+      if (error?.code === 'ECONNREFUSED' || error?.message?.includes('ECONNREFUSED')) {
+        message = 'Serveur non accessible - vérifiez que le backend est démarré';
+        code = 'SERVER_UNREACHABLE';
+      } else if (error?.message?.includes('Failed to fetch') || error?.message?.includes('NetworkError')) {
+        message = 'Erreur réseau - vérifiez votre connexion internet';
+        code = 'NETWORK_ERROR';
+      } else if (error?.message) {
+        message = error.message;
+        code = error.code || 'UNKNOWN_ERROR';
+      }
+      
+      return { success: false, error: message, code };
+    }
+  };
+
+  const logout = () => {
+    localStorage.removeItem('auth_token');
+    localStorage.removeItem('user');
+    setUser(null);
+    setToken(null);
+    // Pas besoin de retirer un header custom ici car nous utilisons les services adaptatifs
+    navigate('/login');
+  };
+
+  const authContextValue = useMemo(
+    () => ({
+      user,
+      token,
+      login,
+      logout,
+      isAuthenticated: !!user && !!token,
+      loading,
+    }),
+    [user, token, loading]
+  );
+
+  return <AuthContext.Provider value={authContextValue}>{children}</AuthContext.Provider>;
+};
+
+AuthProvider.propTypes = {
+  children: PropTypes.node.isRequired,
+};
+
+export const useAuth = () => {
+  const context = useContext(AuthContext);
+  if (!context) {
+    throw new Error("useAuth doit être utilisé au sein d'un AuthProvider");
+  }
+  return context;
+};

@@ -6,10 +6,8 @@ const openaiService = require('../services/openaiService');
 const pdfService = require('../services/pdfService');
 const conversionService = require('../services/conversionService');
 const realtimeEstimationService = require('../services/realtimeEstimationService');
-const intelligentAgentService = require('../services/intelligentAgentService');
-const db = require('../config/database');
+const sectionsEstimationService = require('../services/sectionsEstimationService');
 const { v4: uuidv4 } = require('uuid');
-const aiAgentService = intelligentAgentService;
 
 // ==========================================
 // ESTIMATION EN TEMPS RÉEL (sans auth pour performance)
@@ -95,73 +93,69 @@ router.post('/analyze-description', auth, async (req, res) => {
         message: 'Le nom du client est requis' 
       });
     }
-
-    // Charger les tarifs disponibles pour le contexte
-    const tarifXerox = await db.query('SELECT id, CONCAT(format, \' \', couleur) as description, prix_par_page as prix_unitaire FROM tarifs_xerox LIMIT 10');
-    const tarifRoland = await db.query('SELECT id, CONCAT(taille, \' \', couleur) as description, prix_unitaire FROM tarifs_roland LIMIT 10');
-    const finitions = await db.query('SELECT id, nom, prix_unitaire FROM finitions LIMIT 10');
-
-    const tarifContext = `
-Tarifs Xerox disponibles:
-${tarifXerox.rows.map((t, i) => `${i+1}. ${t.description}: ${t.prix_unitaire} XOF`).join('\n')}
-
-Tarifs Roland disponibles:
-${tarifRoland.rows.map((t, i) => `${i+1}. ${t.description}: ${t.prix_unitaire} XOF`).join('\n')}
-
-Finitions disponibles:
-${finitions.rows.map((f, i) => `${i+1}. ${f.nom}: ${f.prix_unitaire} XOF`).join('\n')}
-`;
     
-    // Utiliser le service d'IA intelligent pour l'analyse complète
-    const aiAnalysis = await aiAgentService.reflectiveAnalysis(
-      description,
-      {}
-    );
+    // Utiliser l'IA pour analyser la description
+    const prompt = `
+Tu es un expert en services d'impression. Analyse la description suivante et propose une estimation détaillée.
 
-    // Transformer la réponse IA en structure devis
-    let analysisResult = {
-      product_type: 'Produit personnalisé',
-      machine_recommended: 'xerox',
-      details: description,
-      items: [],
-      total_ht: 0,
-      notes: `Confiance: ${aiAnalysis.confidence_score || 0}%`,
-      ai_confidence: aiAnalysis.confidence_score || 0,
-      ai_analysis: aiAnalysis
-    };
+Description du client: "${description}"
 
-    // Extraire les informations de la première recommandation
-    if (aiAnalysis.proposals && aiAnalysis.proposals.length > 0) {
-      const primaryProposal = aiAnalysis.proposals[0];
-      
-      analysisResult.product_type = primaryProposal.machine === 'roland' ? 'Grand format (Roland)' : 'Document standard (Xerox)';
-      analysisResult.machine_recommended = primaryProposal.machine || 'xerox';
-      
-      // Créer un article à partir de la recommandation
-      analysisResult.items.push({
-        description: `${analysisResult.product_type} - ${description}`,
-        quantity: 1,
-        unit_price: primaryProposal.estimated_price || primaryProposal.price || 5000,
-        notes: primaryProposal.reasoning || 'Estimation basée sur l\'IA intelligente'
-      });
-      
-      analysisResult.total_ht = analysisResult.items[0].unit_price;
-    } else {
-      // Fallback: créer un article par défaut
-      analysisResult.items.push({
-        description: `Service d'impression - ${description}`,
-        quantity: 1,
-        unit_price: 5000,
-        notes: 'À estimer avec le formulaire détaillé'
-      });
-      analysisResult.total_ht = 5000;
+Basé sur cette description, fournir une réponse JSON VALIDE avec cette structure exacte:
+{
+  "product_type": "Type de produit identifié (ex: Flyers, Kakemono, etc)",
+  "machine_recommended": "roland ou xerox",
+  "details": "Résumé des détails extraits",
+  "items": [
+    {
+      "description": "Description de l'article (ex: 1000 flyers A5)",
+      "quantity": 1000,
+      "unit_price": 0.50,
+      "notes": "Notes optionnelles"
     }
+  ],
+  "total_ht": 500,
+  "notes": "Notes supplémentaires ou recommandations"
+}
 
-    // Loguer l'analyse
-    await db.query(
-      'INSERT INTO ai_analysis_log (user_id, user_input, ai_output, confidence_score) VALUES ($1, $2, $3, $4)',
-      [req.user.id, description, JSON.stringify(analysisResult), analysisResult.ai_confidence]
-    ).catch(err => console.warn('⚠️  Logging error (non-critical):', err.message));
+IMPORTANT: Retourne UNIQUEMENT du JSON valide, sans texte supplémentaire.
+`;
+
+    const response = await openaiService.analyzeWithGPT(prompt);
+    
+    // Parser la réponse JSON
+    let analysisResult;
+    
+    // Si la réponse est déjà un objet, l'utiliser directement
+    if (typeof response === 'object' && response !== null) {
+      analysisResult = response;
+    } else if (typeof response === 'string') {
+      // Si c'est une chaîne, essayer de la parser
+      try {
+        analysisResult = JSON.parse(response);
+      } catch (parseError) {
+        // Si erreur, essayer d'extraire le JSON du texte
+        const jsonMatch = response.match(/\{[\s\S]*\}/);
+        if (jsonMatch) {
+          analysisResult = JSON.parse(jsonMatch[0]);
+        } else {
+          throw new Error('Impossible de parser la réponse IA');
+        }
+      }
+    } else {
+      throw new Error('Format de réponse IA invalide');
+    }
+    
+    // Valider la structure
+    if (!analysisResult.items || !Array.isArray(analysisResult.items)) {
+      analysisResult.items = [];
+    }
+    
+    // Calculer le total si absent
+    if (!analysisResult.total_ht || analysisResult.total_ht === 0) {
+      analysisResult.total_ht = (analysisResult.items || []).reduce((sum, item) => {
+        return sum + ((item.quantity || 0) * (item.unit_price || 0));
+      }, 0);
+    }
     
     res.json(analysisResult);
     
@@ -224,17 +218,40 @@ router.post('/', auth, async (req, res) => {
     );
     console.log(`📊 ${tarifs.length} tarifs trouvés pour ${machine_type}`);
     
-    // Faire l'estimation avec OpenAI
-    console.log('🤖 Démarrage estimation OpenAI...');
-    const config = await openaiService.getOpenAIConfig();
+    
+    // ✅ NOUVEAU: Parser les données
     const parsedData = typeof data_json === 'string' ? JSON.parse(data_json) : data_json;
     
-    const estimation = await openaiService.estimateQuote(
-      parsedData,
-      machine_type,
-      tarifs,
-      config?.knowledge_base_text
-    );
+    let estimation;
+    
+    // ✅ NOUVEAU: Détection des sections/supports multiples
+    if (parsedData.sections && Array.isArray(parsedData.sections) && parsedData.sections.length > 0) {
+      // MODE SECTIONS MULTIPLES (Xerox)
+      console.log(`📑 Estimation avec ${parsedData.sections.length} sections (Xerox)`);
+      estimation = await sectionsEstimationService.estimateWithSections(parsedData.sections, tarifs);
+      estimation.ia_used = false;
+      estimation.model = 'sections_calculator';
+      estimation.explanation = `Calcul basé sur ${parsedData.sections.length} section(s) distincte(s)`;
+      
+    } else if (parsedData.supports && Array.isArray(parsedData.supports) && parsedData.supports.length > 0) {
+      // MODE SUPPORTS MULTIPLES (Roland)
+      console.log(`🖨️  Estimation avec ${parsedData.supports.length} supports (Roland)`);
+      estimation = await sectionsEstimationService.estimateWithSupports(parsedData.supports, tarifs);
+      estimation.ia_used = false;
+      estimation.model = 'supports_calculator';
+      estimation.explanation = `Calcul basé sur ${parsedData.supports.length} support(s) distinct(s)`;
+      
+    } else {
+      // MODE LEGACY: Estimation OpenAI classique
+      console.log('🤖 Démarrage estimation OpenAI (mode legacy)...');
+      const config = await openaiService.getOpenAIConfig();
+      estimation = await openaiService.estimateQuote(
+        parsedData,
+        machine_type,
+        tarifs,
+        config?.knowledge_base_text
+      );
+    }
     
     console.log(`💰 Estimation terminée: ${estimation.prix_estime} FCFA (IA: ${estimation.ia_used ? 'OUI' : 'NON'})`);
     
@@ -448,12 +465,22 @@ router.post('/:id/convert-to-facture', auth, async (req, res) => {
     const montantHT = montantTTC / 1.18;
     const montantTVA = montantTTC - montantHT;
     
+    // Générer le numéro de facture
+    const year = new Date().getFullYear();
+    const [countResult] = await dbHelper.query(
+      `SELECT COUNT(*) as count FROM factures WHERE numero LIKE $1`,
+      [`FAC-${year}-%`]
+    );
+    const nextNum = (parseInt(countResult[0].count) || 0) + 1;
+    const numeroFacture = `FAC-${year}-${String(nextNum).padStart(6, '0')}`;
+    
     const [result] = await dbHelper.query(
       `INSERT INTO factures 
-       (devis_id, user_id, montant_ht, montant_tva, montant_ttc, client_nom, client_contact, mode_paiement, statut_paiement)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+       (numero, devis_id, user_id, montant_ht, montant_tva, montant_ttc, client_nom, client_contact, mode_paiement, statut_paiement)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
        RETURNING id`,
       [
+        numeroFacture,
         devisId,
         devis[0].user_id || req.user.id,
         montantHT.toFixed(2),
@@ -468,6 +495,25 @@ router.post('/:id/convert-to-facture', auth, async (req, res) => {
     
     const insertId = dbHelper.getInsertId(result);
     
+    // 🔥 CRÉER AUTOMATIQUEMENT UN PAIEMENT EN ATTENTE POUR CETTE FACTURE
+    try {
+      await dbHelper.query(
+        `INSERT INTO paiements (facture_id, montant, mode_paiement, statut, reference_paiement, notes, user_id, date_paiement)
+         VALUES ($1, $2, 'especes', 'en_attente', $3, $4, $5, CURRENT_DATE)`,
+        [
+          insertId,
+          montantTTC.toFixed(2),
+          `PAY-${numeroFacture}`,
+          'Paiement en attente d\'approbation',
+          devis[0].user_id || req.user.id
+        ]
+      );
+      console.log(`✅ Paiement automatique créé pour facture #${insertId} (depuis devis #${devisId})`);
+    } catch (paiementError) {
+      console.error('⚠️ Erreur création paiement auto:', paiementError.message);
+      // Ne pas bloquer la création de facture si le paiement échoue
+    }
+    
     // Marquer le devis comme converti
     await dbHelper.query(
       `UPDATE devis SET statut = 'converti', updated_at = NOW() WHERE id = $1`,
@@ -475,11 +521,11 @@ router.post('/:id/convert-to-facture', auth, async (req, res) => {
     );
     
     // Récupérer la facture créée
-    const [facture] = await dbHelper.query('SELECT * FROM v_factures_complet WHERE id = $1', [insertId]);
+    const factures = await dbHelper.query('SELECT * FROM v_factures_complet WHERE id = $1', [insertId]);
     
     res.status(201).json({ 
       message: 'Facture générée avec succès',
-      facture: facture[0]
+      facture: factures[0]
     });
     
   } catch (error) {
@@ -497,6 +543,97 @@ router.get('/:id/pdf', auth, async (req, res) => {
     res.download(pdfPath, `${devis[0].numero}.pdf`);
   } catch (error) {
     res.status(500).json({ error: 'Erreur serveur' });
+  }
+});
+
+// Route de ré-estimation du prix avec OpenAI
+router.post('/:id/reestimate', auth, async (req, res) => {
+  try {
+    const devisId = parseInt(req.params.id);
+    
+    if (isNaN(devisId)) {
+      return res.status(400).json({ error: 'ID de devis invalide' });
+    }
+    
+    console.log(`🔄 Ré-estimation du devis #${devisId}`);
+    
+    // Récupérer le devis
+    const [devis] = await dbHelper.query('SELECT * FROM devis WHERE id = $1', [devisId]);
+    
+    if (devis.length === 0) {
+      return res.status(404).json({ error: 'Devis non trouvé' });
+    }
+    
+    const devisData = devis[0];
+    
+    // Vérifier permissions
+    if (req.user.role === 'preparateur' && devisData.user_id !== req.user.id) {
+      return res.status(403).json({ error: 'Accès refusé' });
+    }
+    
+    // Récupérer les tarifs
+    const [tarifs] = await dbHelper.query(
+      'SELECT * FROM tarifs_config WHERE (type_machine = $1 OR type_machine = $2) AND actif = TRUE',
+      [devisData.machine_type, 'global']
+    );
+    console.log(`📊 ${tarifs.length} tarifs trouvés pour ${devisData.machine_type}`);
+    
+    // Récupérer la config OpenAI
+    const config = await openaiService.getOpenAIConfig();
+    const parsedData = typeof devisData.data_json === 'string' 
+      ? JSON.parse(devisData.data_json) 
+      : devisData.data_json;
+    
+    // Faire la nouvelle estimation avec OpenAI
+    console.log('🤖 Nouvelle estimation OpenAI...');
+    const estimation = await openaiService.estimateQuote(
+      parsedData,
+      devisData.machine_type,
+      tarifs,
+      config?.knowledge_base_text
+    );
+    
+    console.log(`💰 Nouvelle estimation: ${estimation.prix_estime} FCFA (IA: ${estimation.ia_used ? 'OUI' : 'NON'})`);
+    
+    // Mettre à jour le devis
+    await dbHelper.query(
+      `UPDATE devis 
+       SET prix_estime = $1, 
+           prix_final = $2, 
+           details_prix = $3,
+           updated_at = NOW()
+       WHERE id = $4`,
+      [
+        estimation.prix_estime, 
+        estimation.prix_estime, 
+        JSON.stringify({
+          ...estimation.details, 
+          ia_used: estimation.ia_used, 
+          model: estimation.model,
+          reestimated_at: new Date().toISOString()
+        }),
+        devisId
+      ]
+    );
+    
+    // Récupérer le devis mis à jour
+    const [updatedDevis] = await dbHelper.query(
+      'SELECT * FROM v_devis_complet WHERE id = $1',
+      [devisId]
+    );
+    
+    res.json({ 
+      devis: updatedDevis[0],
+      estimation: {
+        prix_estime: estimation.prix_estime,
+        ia_used: estimation.ia_used,
+        model: estimation.model
+      }
+    });
+    
+  } catch (error) {
+    console.error('❌ Erreur ré-estimation devis:', error);
+    res.status(500).json({ error: error.message || 'Erreur lors de la ré-estimation' });
   }
 });
 

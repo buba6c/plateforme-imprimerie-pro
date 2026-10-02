@@ -28,7 +28,10 @@ const testBackendAvailability = async () => {
     return false;
   }
   try {
-    await axios.get((process.env.REACT_APP_API_URL || '/api') + '/health', {
+    const apiUrl = process.env.NODE_ENV === 'production' 
+      ? '/api' 
+      : (process.env.REACT_APP_API_URL || '/api');
+    await axios.get(apiUrl + '/health', {
       timeout: 2000,
     });
     backendAvailable = true;
@@ -359,6 +362,26 @@ export const dossiersService = {
         .filter(Boolean)
         .join(' | ');
       return await mockDossiersService.changeStatus(id, 'livre', comment || null);
+    }
+  },
+
+  repousserLivraison: async (id, payload) => {
+    if (backendAvailable) {
+      try {
+        return await realDossiersService.repousserLivraison(id, payload);
+      } catch (error) {
+        if (typeof FORCE_REAL !== 'undefined' && FORCE_REAL) {
+          throw error.response?.data || error;
+        }
+        const status = error?.response?.status;
+        if (status && status >= 400 && status < 500) {
+          throw error.response?.data || error;
+        }
+        // Pas de fallback mock pour cette fonction spécifique
+        throw error;
+      }
+    } else {
+      throw new Error('Fonctionnalité non disponible en mode mock');
     }
   },
 

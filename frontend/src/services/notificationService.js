@@ -322,9 +322,51 @@ class NotificationService {
   }
 
   playNotificationSound(notification) {
-    // Sons désactivés pour éviter les erreurs 404
-    // Le navigateur émettra son propre son de notification si activé
-    return;
+    try {
+      // Créer un son de notification simple avec Web Audio API
+      const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+
+      // Différents sons selon le type de notification
+      const frequencies = {
+        'success': [523.25, 659.25, 783.99], // Do, Mi, Sol (accord majeur)
+        'warning': [440, 554.37], // La, Do# (intervalle)
+        'error': [392, 329.63], // Sol, Mi (intervalle descendant)
+        'info': [523.25, 659.25], // Do, Mi
+        'default': [523.25, 659.25] // Do, Mi
+      };
+
+      const notificationType = notification.type || 'default';
+      const freqs = frequencies[notificationType] || frequencies.default;
+
+      // Jouer les notes successivement
+      freqs.forEach((freq, index) => {
+        const oscillator = audioContext.createOscillator();
+        const gainNode = audioContext.createGain();
+
+        oscillator.connect(gainNode);
+        gainNode.connect(audioContext.destination);
+
+        oscillator.frequency.value = freq;
+        oscillator.type = 'sine';
+
+        // Volume et timing
+        const startTime = audioContext.currentTime + (index * 0.1);
+        gainNode.gain.setValueAtTime(0, startTime);
+        gainNode.gain.linearRampToValueAtTime(0.1, startTime + 0.02);
+        gainNode.gain.exponentialRampToValueAtTime(0.01, startTime + 0.15);
+
+        oscillator.start(startTime);
+        oscillator.stop(startTime + 0.15);
+      });
+
+      console.log(`🔊 Son notification joué: ${notificationType}`);
+    } catch (error) {
+      console.warn('⚠️ Erreur lecture son notification:', error);
+      // Fallback: tenter d'utiliser un beep système
+      if (typeof window !== 'undefined' && window.navigator && window.navigator.vibrate) {
+        window.navigator.vibrate(200); // Vibration sur mobile
+      }
+    }
   }
 
   // ================================

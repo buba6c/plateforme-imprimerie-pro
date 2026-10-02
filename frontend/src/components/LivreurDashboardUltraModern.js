@@ -12,10 +12,15 @@ import {
   PhoneIcon,
   UserIcon,
   CreditCardIcon,
+  CalendarIcon,
 } from '@heroicons/react/24/outline';
 import { dossiersService } from '../services/apiAdapter';
 import DossierDetails from './dossiers/DossierDetails';
+import EncaissementModal from './livreur/EncaissementModal';
+import RepousserLivraisonModal from './dossiers/RepousserLivraisonModal';
+import LivreurPaiements from './livreur/LivreurPaiements';
 import notificationService from '../services/notificationService';
+import livraisonNotificationService from '../services/livraisonNotificationService';
 import { getStatusColor, getStatusLabel } from '../utils/statusColors';
 import PropTypes from 'prop-types';
 import useRealtimeUpdates from '../hooks/useRealtimeUpdates';
@@ -26,19 +31,54 @@ const LivreurDashboardUltraModern = ({ user }) => {
   const [loading, setLoading] = useState(true);
   const [selectedDossier, setSelectedDossier] = useState(null);
   const [showDetailsModal, setShowDetailsModal] = useState(false);
+  const [showEncaissementModal, setShowEncaissementModal] = useState(false);
+  const [showRepousserModal, setShowRepousserModal] = useState(false);
+  const [dossierToEncaisser, setDossierToEncaisser] = useState(null);
+  const [dossierToRepousser, setDossierToRepousser] = useState(null);
   const [refreshing, setRefreshing] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const [sortBy, setSortBy] = useState('date');
+  const [activeTab, setActiveTab] = useState('livraisons'); // 'livraisons' ou 'paiements'
 
-  // Normalisation des statuts
+    // Normalisation des statuts
   const normalizeStatus = (statut) => {
-    if (!statut) return '';
-    const val = String(statut).toLowerCase().trim().replace(/\s+/g, '_');
-    if (val.includes('imprime')) return 'imprime';
-    if (val.includes('pret') && val.includes('livraison')) return 'pret_livraison';
-    if (val.includes('en_livraison')) return 'en_livraison';
-    if (val.includes('livre')) return 'livre';
-    return val;
+    if (!statut) return 'nouveau';
+    const statutLower = statut.toLowerCase().trim();
+    const statusMap = {
+      'nouveau': 'nouveau',
+      'devis': 'devis',
+      'valide': 'valide',
+      'production': 'production',
+      'production en cours': 'production',
+      'imprime': 'imprime',
+      'imprimé': 'imprime',
+      'pret_livraison': 'pret_livraison',
+      'prêt à livrer': 'pret_livraison',
+      'pret a livrer': 'pret_livraison',
+      'en_livraison': 'en_livraison',
+      'en livraison': 'en_livraison',
+      'livre': 'livre',
+      'livré': 'livre',
+      'annule': 'annule',
+      'annulé': 'annule'
+    };
+    return statusMap[statutLower] || statutLower.replace(/\s+/g, '_');
+  };
+
+  // Fonction pour obtenir la route selon le statut du dossier
+  const getRouteForDossier = (dossier) => {
+    const statut = normalizeStatus(dossier.statut);
+    switch (statut) {
+      case 'imprime':
+      case 'pret_livraison':
+        return '/a-livrer';
+      case 'en_livraison':
+        return '/en-livraison';
+      case 'livre':
+        return '/livres';
+      default:
+        return '/a-livrer';
+    }
   };
 
   // Mise à jour en temps réel
@@ -111,6 +151,87 @@ const LivreurDashboardUltraModern = ({ user }) => {
     return () => clearInterval(interval);
   }, [loadDossiers]);
 
+  // Démarrage du service de notification des livraisons
+  useEffect(() => {
+    // Démarrer la vérification des livraisons programmées
+    livraisonNotificationService.startChecking(
+      async () => {
+        // Récupérer les dossiers pour vérification
+        return dossiers;
+      },
+      5 // Vérifier toutes les 5 minutes
+    );
+
+    // Écouter l'événement pour ouvrir un dossier depuis une notification
+    const handleOpenDossier = (event) => {
+      const { dossierId } = event.detail;
+      const dossier = dossiers.find(d => d.id === dossierId);
+      if (dossier) {
+        setSelectedDossier(dossier);
+        setShowDetailsModal(true);
+      }
+    };
+
+    window.addEventListener('openDossierFromNotification', handleOpenDossier);
+
+    // Cleanup
+    return () => {
+      livraisonNotificationService.stopChecking();
+      window.removeEventListener('openDossierFromNotification', handleOpenDossier);
+    };
+  }, [dossiers]);
+
+  // Gestion de l'encaissement
+  const handleEncaisser = (dossier) => {
+    setDossierToEncaisser(dossier);
+    setShowEncaissementModal(true);
+  };
+
+  const handleEncaissementSuccess = () => {
+    setShowEncaissementModal(false);
+    setDossierToEncaisser(null);
+    loadDossiers(true);
+  };
+
+  const handleEncaissementClose = () => {
+    setShowEncaissementModal(false);
+    setDossierToEncaisser(null);
+  };
+
+  // Gestion du report de livraison
+  const handleRepousserLivraison = (dossier) => {
+    setDossierToRepousser(dossier);
+    setShowRepousserModal(true);
+  };
+
+  const handleRepousserSuccess = async (dossierId, nouvelleDateLivraison, raison) => {
+    try {
+      // Utiliser l'endpoint spécifique pour reporter la livraison
+      await dossiersService.repousserLivraison(dossierId, {
+        date_livraison_prevue: nouvelleDateLivraison,
+        commentaire_report: raison
+      });
+
+      notificationService.success('Date de livraison reportée avec succès');
+      
+      // Recharger les dossiers
+      await loadDossiers(true);
+      
+      // Réinitialiser les notifications pour ce dossier
+      livraisonNotificationService.resetNotifications();
+      
+    } catch (error) {
+      console.error('Erreur lors du report de la livraison:', error);
+      notificationService.error('Erreur lors du report de la livraison');
+      throw error;
+    }
+  };
+
+  const handleRepousserClose = () => {
+    setShowRepousserModal(false);
+    setDossierToRepousser(null);
+  };
+
   // Calcul des statistiques
   const stats = {
     total: dossiers.length,
@@ -137,6 +258,29 @@ const LivreurDashboardUltraModern = ({ user }) => {
       });
     } catch (_) {
       return 'Erreur de date';
+    }
+  };
+
+  // Vérifier si un dossier a une livraison vraiment programmée
+  const isLivraisonProgrammee = (dossier) => {
+    if (!dossier.date_livraison_prevue) return false;
+    if (dossier.date_livraison_prevue === '') return false;
+    if (dossier.date_livraison_prevue === null) return false;
+    
+    // Vérifier que c'est une date valide
+    try {
+      const date = new Date(dossier.date_livraison_prevue);
+      const isValid = !isNaN(date.getTime());
+      
+      // Log pour debug
+      if (dossier.date_livraison_prevue && !isValid) {
+        console.warn(`⚠️ Date invalide pour dossier ${dossier.id}:`, dossier.date_livraison_prevue);
+      }
+      
+      return isValid;
+    } catch (error) {
+      console.error(`❌ Erreur validation date pour dossier ${dossier.id}:`, error);
+      return false;
     }
   };
 
@@ -169,21 +313,23 @@ const LivreurDashboardUltraModern = ({ user }) => {
       return;
     }
     try {
-      await dossiersService.updateDossierStatus(dossier.id, 'en_livraison');
+      await dossiersService.changeStatus(dossier.id, 'en_livraison', 'Livraison démarrée');
       notificationService.success('Livraison démarrée');
-      loadDossiers();
+      loadDossiers(true);
     } catch (error) {
+      console.error('Erreur lors du démarrage de la livraison:', error);
       notificationService.error('Erreur lors du démarrage de la livraison');
     }
   };
 
   const handleMarquerLivre = async (dossier) => {
     try {
-      await dossiersService.updateDossierStatus(dossier.id, 'livre');
+      await dossiersService.changeStatus(dossier.id, 'livre', 'Livraison effectuée');
       notificationService.success('Marqué comme livré');
-      loadDossiers();
+      loadDossiers(true);
     } catch (error) {
-      notificationService.error('Erreur lors de la mise à jour');
+      console.error('Erreur lors de la mise à jour:', error);
+      notificationService.error('Erreur lors de la mise à jour du statut');
     }
   };
 
@@ -209,8 +355,8 @@ const LivreurDashboardUltraModern = ({ user }) => {
 
   // Composant DeliveryCard responsive
   const DeliveryCard = ({ dossier, actions }) => {
-    const hasAddress = dossier.adresse_livraison && dossier.adresse_livraison.trim() !== '';
-    const hasPhone = dossier.telephone_contact && dossier.telephone_contact.trim() !== '';
+    const hasPhone = (dossier.telephone_client || dossier.telephone || dossier.displayTelephone || '').trim() !== '';
+    const hasAddress = (dossier.adresse_livraison || dossier.adresse || '').trim() !== '';
 
     // Système de couleurs unifié pour le statut
     const statusColors = getStatusColor(dossier.statut);
@@ -243,12 +389,21 @@ const LivreurDashboardUltraModern = ({ user }) => {
           {/* En-tête avec numéro de commande et statut */}
           <div className="flex items-start justify-between mb-3">
             <div className="flex-1 min-w-0">
-              <h3 className="text-lg font-bold text-gray-900 dark:text-gray-100 truncate">
-                {dossier.nom_client || dossier.numero || `Dossier #${dossier.id}`}
-              </h3>
+              {/* Numéro de commande */}
+              {dossier.numero ? (
+                <h3 className="text-lg font-bold text-gray-900 dark:text-gray-100 truncate">
+                  {dossier.numero}
+                </h3>
+              ) : (
+                <h3 className="text-lg font-bold text-amber-600 dark:text-amber-400 truncate">
+                  ⚠️ Numéro manquant
+                </h3>
+              )}
+              
+              {/* Client */}
               <div className="flex items-center mt-1 text-sm text-gray-600 dark:text-gray-400">
                 <UserIcon className="h-4 w-4 mr-1.5 flex-shrink-0" />
-                <span className="truncate">{dossier.preparateur_name || 'Non assigné'}</span>
+                <span className="truncate">{dossier.nom_client || dossier.client || dossier.preparateur_name || 'Non renseigné'}</span>
               </div>
             </div>
             
@@ -260,6 +415,42 @@ const LivreurDashboardUltraModern = ({ user }) => {
 
           {/* Informations détaillées */}
           <div className="space-y-2 mb-4">
+            {/* Badge statut de paiement */}
+            {(() => {
+              const isPaye = dossier.statut_paiement === 'paye' || dossier.statut_paiement === 'encaisse';
+              const isPartiel = dossier.statut_paiement === 'partiel';
+              
+              if (isPaye) {
+                return (
+                  <div className="flex items-center gap-1.5 px-2.5 py-1 bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400 rounded-md text-xs font-semibold border border-green-300 dark:border-green-700">
+                    <CreditCardIcon className="h-4 w-4" />
+                    <span>✓ Payé {dossier.montant_cfa ? `- ${new Intl.NumberFormat('fr-FR').format(dossier.montant_cfa)} FCFA` : ''}</span>
+                  </div>
+                );
+              } else if (isPartiel) {
+                return (
+                  <div className="flex items-center gap-1.5 px-2.5 py-1 bg-yellow-100 dark:bg-yellow-900/30 text-yellow-700 dark:text-yellow-400 rounded-md text-xs font-semibold border border-yellow-300 dark:border-yellow-700">
+                    <CreditCardIcon className="h-4 w-4" />
+                    <span>Paiement partiel</span>
+                  </div>
+                );
+              } else if (dossier.mode_paiement_final === 'a_la_livraison') {
+                return (
+                  <div className="flex items-center gap-1.5 px-2.5 py-1 bg-orange-100 dark:bg-orange-900/30 text-orange-700 dark:text-orange-400 rounded-md text-xs font-semibold border border-orange-300 dark:border-orange-700">
+                    <CreditCardIcon className="h-4 w-4" />
+                    <span>À encaisser: {dossier.montant_cfa ? new Intl.NumberFormat('fr-FR').format(dossier.montant_cfa) : '0'} FCFA</span>
+                  </div>
+                );
+              } else {
+                return (
+                  <div className="flex items-center gap-1.5 px-2.5 py-1 bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400 rounded-md text-xs font-semibold border border-red-300 dark:border-red-700">
+                    <CreditCardIcon className="h-4 w-4" />
+                    <span>Non payé {dossier.montant_cfa ? `- ${new Intl.NumberFormat('fr-FR').format(dossier.montant_cfa)} FCFA` : ''}</span>
+                  </div>
+                );
+              }
+            })()}
+            
             {/* Type de machine si disponible */}
             {machineConfig && (
               <div className="flex items-center">
@@ -270,29 +461,15 @@ const LivreurDashboardUltraModern = ({ user }) => {
               </div>
             )}
             
-            {/* Adresse de livraison */}
-            <div className="flex items-start text-sm">
-              <MapPinIcon className="h-4 w-4 mr-2 text-gray-400 flex-shrink-0 mt-0.5" />
-              {hasAddress ? (
-                <span className="text-gray-700 dark:text-gray-300">
-                  {dossier.adresse_livraison}
-                </span>
-              ) : (
-                <span className="text-amber-600 dark:text-amber-400 font-medium">
-                  ⚠️ Adresse manquante
-                </span>
-              )}
-            </div>
-            
             {/* Téléphone */}
             <div className="flex items-center text-sm">
               <PhoneIcon className="h-4 w-4 mr-2 text-gray-400 flex-shrink-0" />
               {hasPhone ? (
                 <a
-                  href={`tel:${dossier.telephone_contact}`}
+                  href={`tel:${dossier.telephone_client || dossier.telephone || dossier.displayTelephone}`}
                   className="text-blue-600 dark:text-blue-400 hover:underline"
                 >
-                  {dossier.telephone_contact}
+                  {dossier.telephone_client || dossier.telephone || dossier.displayTelephone}
                 </a>
               ) : (
                 <span className="text-amber-600 dark:text-amber-400 font-medium">
@@ -312,10 +489,47 @@ const LivreurDashboardUltraModern = ({ user }) => {
               </div>
             )}
             
-            {/* Date de création */}
+            {/* Date (livraison réelle ou création) */}
             <div className="flex items-center text-sm text-gray-600 dark:text-gray-400">
               <ClockIcon className="h-4 w-4 mr-2 text-gray-400 flex-shrink-0" />
-              <span>{formatDate(dossier.date_creation || dossier.created_at)}</span>
+              {(() => {
+                // Debug pour dossiers livrés
+                if (dossier.statut === 'livre') {
+                  console.log('🔍 Dossier livré - Données date:', {
+                    numero: dossier.numero,
+                    statut: dossier.statut,
+                    date_livraison_reelle: dossier.date_livraison_reelle,
+                    date_livraison: dossier.date_livraison,
+                    date_livraison_prevue: dossier.date_livraison_prevue,
+                    created_at: dossier.created_at,
+                    date_creation: dossier.date_creation,
+                    updated_at: dossier.updated_at
+                  });
+                }
+                
+                // Dossier livré : afficher la date de livraison réelle
+                if (dossier.statut === 'livre') {
+                  const dateLivraison = dossier.date_livraison_reelle || dossier.date_livraison || dossier.updated_at;
+                  if (dateLivraison) {
+                    return <span className="font-medium">Livré le: {formatDate(dateLivraison)}</span>;
+                  } else {
+                    return <span className="text-amber-600 dark:text-amber-400">⚠️ Date de livraison non renseignée</span>;
+                  }
+                }
+                
+                // Dossier en livraison : afficher la date prévue
+                if (dossier.statut === 'en_livraison' && dossier.date_livraison_prevue) {
+                  return <span className="font-medium">Livraison prévue: {formatDate(dossier.date_livraison_prevue)}</span>;
+                }
+                
+                // Autres cas : afficher la date de création
+                const dateCreation = dossier.date_creation || dossier.created_at;
+                if (dateCreation) {
+                  return <span>Créé le: {formatDate(dateCreation)}</span>;
+                } else {
+                  return <span className="text-gray-400">Date inconnue</span>;
+                }
+              })()}
             </div>
 
             {/* Nombre de fichiers */}
@@ -328,15 +542,7 @@ const LivreurDashboardUltraModern = ({ user }) => {
           </div>
 
           {/* Actions */}
-          <div className="grid grid-cols-2 gap-2">
-            <button
-              onClick={() => handleViewDetails(dossier)}
-              className="flex items-center justify-center gap-2 px-4 py-2 rounded-lg font-medium text-sm bg-blue-600 hover:bg-blue-700 text-white transition-colors duration-200 shadow-sm hover:shadow"
-            >
-              <EyeIcon className="h-4 w-4" />
-              <span>Détails</span>
-            </button>
-            
+          <div className="flex justify-center">
             {actions}
           </div>
         </div>
@@ -421,8 +627,46 @@ const LivreurDashboardUltraModern = ({ user }) => {
           />
         </div>
 
-        {/* Filtres */}
-        <div className="bg-white dark:bg-gray-800 rounded-xl sm:rounded-2xl shadow-lg dark:shadow-2xl dark:shadow-black/30 p-4 sm:p-6 mb-6 sm:mb-8 border border-gray-200 dark:border-gray-700">
+        {/* Onglets Navigation */}
+        <div className="bg-white dark:bg-gray-800 rounded-xl sm:rounded-2xl shadow-lg dark:shadow-2xl dark:shadow-black/30 p-2 mb-6 sm:mb-8 border border-gray-200 dark:border-gray-700">
+          <div className="flex gap-2">
+            <button
+              onClick={() => setActiveTab('livraisons')}
+              className={`flex-1 flex items-center justify-center gap-2 px-4 sm:px-6 py-3 sm:py-4 rounded-lg sm:rounded-xl font-bold text-sm sm:text-base transition-all duration-200 ${
+                activeTab === 'livraisons'
+                  ? 'bg-gradient-to-r from-amber-500 to-orange-600 text-white shadow-lg'
+                  : 'text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700'
+              }`}
+            >
+              <TruckIcon className="h-5 w-5" />
+              <span>Mes Livraisons</span>
+              <span className={`px-2 py-0.5 rounded-full text-xs font-bold ${
+                activeTab === 'livraisons' 
+                  ? 'bg-white/20 text-white' 
+                  : 'bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300'
+              }`}>
+                {stats.total}
+              </span>
+            </button>
+            <button
+              onClick={() => setActiveTab('paiements')}
+              className={`flex-1 flex items-center justify-center gap-2 px-4 sm:px-6 py-3 sm:py-4 rounded-lg sm:rounded-xl font-bold text-sm sm:text-base transition-all duration-200 ${
+                activeTab === 'paiements'
+                  ? 'bg-gradient-to-r from-emerald-500 to-teal-600 text-white shadow-lg'
+                  : 'text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700'
+              }`}
+            >
+              <CreditCardIcon className="h-5 w-5" />
+              <span>Mes Paiements</span>
+            </button>
+          </div>
+        </div>
+
+        {/* Contenu selon l'onglet actif */}
+        {activeTab === 'livraisons' ? (
+          <>
+            {/* Filtres */}
+            <div className="bg-white dark:bg-gray-800 rounded-xl sm:rounded-2xl shadow-lg dark:shadow-2xl dark:shadow-black/30 p-4 sm:p-6 mb-6 sm:mb-8 border border-gray-200 dark:border-gray-700">
           <div className="flex flex-col lg:flex-row gap-4">
             <div className="flex-1">
               <div className="relative">
@@ -470,12 +714,11 @@ const LivreurDashboardUltraModern = ({ user }) => {
                       dossier={dossier}
                       actions={
                         <button
-                          onClick={() => handleDemarrerLivraison(dossier)}
-                          disabled={!dossier.adresse_livraison}
-                          className="flex items-center justify-center gap-2 px-4 py-2 rounded-lg font-medium text-sm bg-green-600 hover:bg-green-700 text-white transition-colors duration-200 shadow-sm hover:shadow disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-green-600"
+                          onClick={() => navigate(getRouteForDossier(dossier))}
+                          className="flex items-center justify-center gap-2 px-4 py-2 rounded-lg font-medium text-sm bg-blue-600 hover:bg-blue-700 text-white transition-colors duration-200 shadow-sm hover:shadow"
                         >
-                          <TruckIcon className="h-4 w-4" />
-                          Livrer
+                          <EyeIcon className="h-4 w-4" />
+                          Voir
                         </button>
                       }
                     />
@@ -518,11 +761,11 @@ const LivreurDashboardUltraModern = ({ user }) => {
                       dossier={dossier}
                       actions={
                         <button
-                          onClick={() => handleMarquerLivre(dossier)}
-                          className="flex items-center justify-center gap-2 px-4 py-2 rounded-lg font-medium text-sm bg-purple-600 hover:bg-purple-700 text-white transition-colors duration-200 shadow-sm hover:shadow"
+                          onClick={() => navigate(getRouteForDossier(dossier))}
+                          className="flex items-center justify-center gap-2 px-4 py-2 rounded-lg font-medium text-sm bg-blue-600 hover:bg-blue-700 text-white transition-colors duration-200 shadow-sm hover:shadow"
                         >
-                          <CheckCircleIcon className="h-4 w-4" />
-                          Terminé
+                          <EyeIcon className="h-4 w-4" />
+                          Voir
                         </button>
                       }
                     />
@@ -563,7 +806,15 @@ const LivreurDashboardUltraModern = ({ user }) => {
                     <DeliveryCard
                       key={dossier.id}
                       dossier={dossier}
-                      actions={null}
+                      actions={
+                        <button
+                          onClick={() => navigate(getRouteForDossier(dossier))}
+                          className="flex items-center justify-center gap-2 px-4 py-2 rounded-lg font-medium text-sm bg-blue-600 hover:bg-blue-700 text-white transition-colors duration-200 shadow-sm hover:shadow"
+                        >
+                          <EyeIcon className="h-4 w-4" />
+                          Voir
+                        </button>
+                      }
                     />
                   ))}
                 </div>
@@ -582,6 +833,11 @@ const LivreurDashboardUltraModern = ({ user }) => {
             </div>
           </div>
         )}
+          </>
+        ) : (
+          /* Onglet Paiements */
+          <LivreurPaiements user={user} />
+        )}
       </div>
 
       {/* Modal détails */}
@@ -595,6 +851,26 @@ const LivreurDashboardUltraModern = ({ user }) => {
             setSelectedDossier(null);
           }}
           onUpdate={loadDossiers}
+        />
+      )}
+
+      {/* Modal encaissement */}
+      {showEncaissementModal && dossierToEncaisser && (
+        <EncaissementModal
+          isOpen={showEncaissementModal}
+          dossier={dossierToEncaisser}
+          onClose={handleEncaissementClose}
+          onSuccess={handleEncaissementSuccess}
+        />
+      )}
+
+      {/* Modal repousser livraison */}
+      {showRepousserModal && dossierToRepousser && (
+        <RepousserLivraisonModal
+          isOpen={showRepousserModal}
+          dossier={dossierToRepousser}
+          onClose={handleRepousserClose}
+          onRepousser={handleRepousserSuccess}
         />
       )}
     </div>

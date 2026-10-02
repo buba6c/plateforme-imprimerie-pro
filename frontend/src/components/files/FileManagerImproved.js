@@ -34,7 +34,7 @@ const FileManagerImproved = ({
   const dossierId = DossierIdResolver.resolve(dossier);
   const { files, loading, error, lastUpdate, refresh } = useFiles(dossier);
   const { downloadFile, downloading } = useFileDownload();
-  const { formatFileSize } = useFileStats(files);
+  const { formatFileSize, getTypeIcon } = useFileStats(files);
 
   // Informations sur le dossier
   const dossierDisplay = dossier?.numero_commande || dossier?.nom || dossierId;

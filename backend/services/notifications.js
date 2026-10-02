@@ -191,35 +191,73 @@ class NotificationService {
     );
   }
 
+  // Convertir un statut en label lisible
+  getStatutLabel(status) {
+    if (!status) return 'Inconnu';
+    
+    // Mapping des statuts snake_case et français
+    const statusLabels = {
+      'nouveau': 'Nouveau',
+      'en_cours': 'En cours',
+      'en_preparation': 'En préparation',
+      'a_revoir': 'À revoir',
+      'pret_impression': 'Prêt impression',
+      'en_impression': 'En impression',
+      'imprime': 'Imprimé',
+      'pret_livraison': 'Prêt livraison',
+      'en_livraison': 'En livraison',
+      'livre': 'Livré',
+      'termine': 'Terminé',
+      'Nouveau': 'Nouveau',
+      'En cours': 'En cours',
+      'En préparation': 'En préparation',
+      'À revoir': 'À revoir',
+      'Prêt impression': 'Prêt impression',
+      'En impression': 'En impression',
+      'Imprimé': 'Imprimé',
+      'Prêt livraison': 'Prêt livraison',
+      'En livraison': 'En livraison',
+      'Livré': 'Livré',
+      'Terminé': 'Terminé'
+    };
+    
+    return statusLabels[status] || status;
+  }
   // Changement de statut dossier
   notifyStatusChange(dossier, oldStatus, newStatus, changedBy, comment = null) {
     const notification = {
       id: this.generateNotificationId(),
-      type: 'statut_change',
+      type: 'status_change',
       title: 'Statut dossier modifié',
       message: `Dossier ${dossier.numero_commande} : ${this.getStatutLabel(oldStatus)} → ${this.getStatutLabel(newStatus)}`,
       data: { dossier, oldStatut: oldStatus, newStatut: newStatus, changedBy, comment },
       timestamp: new Date(),
-      urgent: newStatus === 'À revoir',
+      urgent: newStatus === 'a_revoir',
     };
 
     // Logique de notification selon le nouveau statut
     switch (newStatus) {
-      case 'À revoir':
-        // Notifier le préparateur qui a créé le dossier
-        this.sendToUser(dossier.created_by, 'notification', notification);
+      case 'pret_impression':
+        // Quand le préparateur valide → Notifier les imprimeurs
+        if (dossier.machine === 'Roland') {
+          this.sendToRole('imprimeur_roland', 'notification', notification);
+        } else if (dossier.machine === 'Xerox') {
+          this.sendToRole('imprimeur_xerox', 'notification', notification);
+        }
         this.sendToRole('admin', 'notification', notification);
-        // Événement métier pour le frontend
-        this.io.emit('dossier_status_changed', {
-          dossier,
-          oldStatus,
-          newStatus,
-          changedBy,
-          comment,
-        });
+        this.io.emit('dossier_status_changed', { dossier, oldStatus, newStatus, changedBy, comment });
+        console.log(`🔔 Notification envoyée aux imprimeurs: dossier ${dossier.numero_commande} prêt pour impression`);
         break;
 
-      case 'En impression':
+      case 'a_revoir':
+        // Quand l'imprimeur renvoie à revoir → Notifier le préparateur créateur
+        this.sendToUser(dossier.created_by, 'notification', notification);
+        this.sendToRole('admin', 'notification', notification);
+        this.io.emit('dossier_status_changed', { dossier, oldStatus, newStatus, changedBy, comment });
+        console.log(`🔔 Notification envoyée au préparateur: dossier ${dossier.numero_commande} à revoir`);
+        break;
+
+      case 'en_impression':
         // Notifier les imprimeurs concernés et admins
         if (dossier.machine === 'Roland') {
           this.sendToRole('imprimeur_roland', 'notification', notification);
@@ -227,71 +265,39 @@ class NotificationService {
           this.sendToRole('imprimeur_xerox', 'notification', notification);
         }
         this.sendToRole('admin', 'notification', notification);
-        this.io.emit('dossier_statut_changed', {
-          dossier,
-          oldStatut: oldStatus,
-          newStatut: newStatus,
-          changedBy,
-          comment,
-        });
+        this.io.emit('dossier_status_changed', { dossier, oldStatus, newStatus, changedBy, comment });
         break;
 
-      case 'Imprimé':
-      case 'Prêt livraison':
+      case 'imprime':
+      case 'pret_livraison':
         // Dès que l'impression est terminée ou prêt livraison, notifier les livreurs
         this.sendToRole('livreur', 'notification', notification);
         this.sendToRole('admin', 'notification', notification);
-        this.io.emit('dossier_status_changed', {
-          dossier,
-          oldStatus,
-          newStatus,
-          changedBy,
-          comment,
-        });
+        this.io.emit('dossier_status_changed', { dossier, oldStatus, newStatus, changedBy, comment });
         break;
 
-      case 'Terminé':
+      case 'termine':
         // Notifier les livreurs et admins
         this.sendToRole('livreur', 'notification', notification);
         this.sendToRole('admin', 'notification', notification);
-        this.io.emit('dossier_status_changed', {
-          dossier,
-          oldStatus,
-          newStatus,
-          changedBy,
-          comment,
-        });
+        this.io.emit('dossier_status_changed', { dossier, oldStatus, newStatus, changedBy, comment });
         break;
 
-      case 'Livré':
+      case 'livre':
         // Notifier tous les rôles et le créateur
         this.sendToUser(dossier.created_by, 'notification', notification);
         this.sendToRole('admin', 'notification', notification);
-        this.io.emit('dossier_status_changed', {
-          dossier,
-          oldStatus,
-          newStatus,
-          changedBy,
-          comment,
-        });
+        this.io.emit('dossier_status_changed', { dossier, oldStatus, newStatus, changedBy, comment });
         break;
 
       default:
         // Pour tous les autres statuts, notifier les admins
         this.sendToRole('admin', 'notification', notification);
-        this.io.emit('dossier_status_changed', {
-          dossier,
-          oldStatus,
-          newStatus,
-          changedBy,
-          comment,
-        });
+        this.io.emit('dossier_status_changed', { dossier, oldStatus, newStatus, changedBy, comment });
         break;
     }
 
-    console.log(
-      `📝 Notification changement statut envoyée: ${dossier.numero_commande} (${oldStatus} → ${newStatus})`
-    );
+    console.log(`📝 Notification changement statut envoyée: ${dossier.numero_commande} (${oldStatus} → ${newStatus})`);
   }
 
   // Nouveau fichier uploadé

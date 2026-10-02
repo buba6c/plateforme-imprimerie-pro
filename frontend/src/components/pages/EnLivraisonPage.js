@@ -10,8 +10,11 @@ import SuccessAnimation from '../transitions/SuccessAnimation';
 import { SkeletonGrid } from '../transitions/SkeletonCard';
 import LoadingButton from '../transitions/LoadingButton';
 import useRealtimeUpdates from '../../hooks/useRealtimeUpdates';
+import { getAvailableActions } from '../../workflow-adapter/workflowActions';
+import { useAuth } from '../../context/AuthContext';
 
 const EnLivraisonPage = () => {
+  const { user } = useAuth(); // Récupérer l'utilisateur connecté
   const [dossiers, setDossiers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
@@ -69,8 +72,14 @@ const EnLivraisonPage = () => {
   const loadDossiers = async () => {
     try {
       setLoading(true);
-      const response = await api.get('/dossiers?status=en_livraison');
-      setDossiers(response.data.dossiers || []);
+      const response = await api.get('/dossiers');
+      const allDossiers = response.data.dossiers || [];
+      // Filtrer pour "En Livraison": UNIQUEMENT en_livraison
+      const filteredByStatus = allDossiers.filter(d => {
+        const status = (d.status || d.statut || '').toLowerCase().replace(/\s/g, '_');
+        return status === 'en_livraison';
+      });
+      setDossiers(filteredByStatus);
     } catch (error) {
       // Erreur silencieuse
       setDossiers([]);
@@ -87,13 +96,33 @@ const EnLivraisonPage = () => {
   const handleConfirmLivraison = async (data) => {
     try {
       setLoadingAction(true);
-      await api.put(`/dossiers/${dossierEnCours.id}`, {
-        status: 'livre',
-        date_livraison: data.date_livraison,
-        mode_paiement: data.mode_paiement,
-        montant_cfa: data.montant_cfa,
-        commentaire: data.commentaire
+      
+      // 1. Changer le statut du dossier (endpoint autorisé pour livreur)
+      await api.patch(`/dossiers/${dossierEnCours.id}/status`, {
+        status: 'livre',  // Format snake_case attendu par l'endpoint PATCH
+        comment: data.commentaire
       });
+      
+      // 2. Si montant renseigné, créer le paiement (sauf si déjà encaissé)
+      if (data.montant_cfa && parseFloat(data.montant_cfa) > 0) {
+        try {
+          await api.post('/paiements/encaisser-livraison', {
+            dossier_id: dossierEnCours.id,
+            montant: parseFloat(data.montant_cfa),
+            mode_paiement_final: data.mode_paiement || 'especes',
+            commentaire: data.commentaire || 'Encaissement à la livraison'
+          });
+        } catch (paiementError) {
+          // Si le paiement existe déjà, ce n'est pas grave
+          if (paiementError.response?.status === 400 && 
+              paiementError.response?.data?.error?.includes('déjà été encaissé')) {
+            console.log('ℹ️ Paiement déjà existant pour ce dossier');
+          } else {
+            // Autre erreur, la propager
+            throw paiementError;
+          }
+        }
+      }
       
       setShowValiderModal(false);
       setDossierEnCours(null);
@@ -105,10 +134,61 @@ const EnLivraisonPage = () => {
       // Le dossier sera retiré automatiquement via Socket.IO
       // await loadDossiers();
     } catch (error) {
-      alert('Erreur lors de la validation');
+      console.error('Erreur validation livraison:', error);
+      const errorMsg = error.response?.data?.error || 
+                       error.response?.data?.message || 
+                       error.message || 
+                       'Erreur inconnue';
+      alert('Erreur lors de la validation: ' + errorMsg);
     } finally {
       setLoadingAction(false);
     }
+  };
+
+  // 🔄 FONCTION UNIFIÉE : Génère les boutons d'action synchronisés avec DossierDetails
+  const renderActionButtons = (dossier) => {
+    if (!user) return null;
+    
+    const actions = getAvailableActions(user.role, dossier.statut || dossier.status, dossier);
+    
+    // Mapper les actions workflow vers les handlers locaux
+    const actionHandlers = {
+      'Marquer comme livré': () => handleValiderLivraison(dossier),
+      'Livrer directement': () => handleValiderLivraison(dossier), // Même action
+    };
+    
+    // Configuration des boutons (icônes et styles)
+    const buttonConfig = {
+      'Marquer comme livré': { icon: CheckCircleIcon, variant: 'success', label: 'Valider livraison' },
+      'Livrer directement': { icon: CheckCircleIcon, variant: 'success', label: 'Valider livraison' },
+    };
+    
+    return (
+      <div className="flex flex-col gap-2">
+        {actions.map((action, idx) => {
+          const handler = actionHandlers[action.label];
+          const config = buttonConfig[action.label] || { icon: CheckCircleIcon, variant: 'success', label: action.label };
+          
+          if (!handler) {
+            console.warn(`⚠️ Aucun handler trouvé pour l'action: ${action.label}`);
+            return null;
+          }
+          
+          return (
+            <LoadingButton
+              key={idx}
+              onClick={handler}
+              variant={config.variant}
+              size="md"
+              icon={config.icon}
+              className="w-full"
+            >
+              {config.label}
+            </LoadingButton>
+          );
+        })}
+      </div>
+    );
   };
 
   // Filtrage
@@ -229,15 +309,7 @@ const EnLivraisonPage = () => {
                 key={dossier.id}
                 dossier={dossier}
                 onOpenDetails={openDetails}
-                actions={
-                  <button
-                    onClick={() => handleValiderLivraison(dossier)}
-                    className="flex items-center justify-center gap-2 px-4 py-2 rounded-lg font-medium text-sm bg-emerald-600 hover:bg-emerald-700 text-white transition-colors duration-200 shadow-sm hover:shadow"
-                  >
-                    <CheckCircleIcon className="h-4 w-4" />
-                    Valider livraison
-                  </button>
-                }
+                actions={renderActionButtons(dossier)}
               />
             ))}
           </div>

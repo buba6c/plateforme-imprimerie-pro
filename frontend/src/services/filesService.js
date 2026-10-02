@@ -6,7 +6,89 @@ import { filesSyncService } from './filesSyncService';
 // Service pour la gestion des fichiers (API réelle)
 export const realFilesService = {
   // Upload de fichiers pour un dossier
-  uploadFiles: async (dossierLike, files) => {
+  // Upload de fichiers en mode chunked (pour gros fichiers > 10MB)
+  uploadChunked: async (dossierLike, file, onProgress) => {
+    const dossierId = DossierIdResolver.resolve(dossierLike) || dossierLike;
+    try {
+      const token = localStorage.getItem("auth_token") || localStorage.getItem("token");
+      if (!token) {
+        throw new Error("Token d'authentification manquant");
+      }
+
+      console.log("� Upload chunked:", file.name, `(${Math.round(file.size / 1024 / 1024)}MB)`);
+
+      const chunkSize = 5 * 1024 * 1024; // 5 MB par chunk
+      const totalChunks = Math.ceil(file.size / chunkSize);
+      const uploadId = `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+
+      let uploadedBytes = 0;
+
+      for (let chunkIndex = 0; chunkIndex < totalChunks; chunkIndex++) {
+        const start = chunkIndex * chunkSize;
+        const end = Math.min(start + chunkSize, file.size);
+        const chunk = file.slice(start, end);
+
+        const formData = new FormData();
+        formData.append('chunk', chunk);
+        formData.append('uploadId', uploadId);
+        formData.append('chunkIndex', chunkIndex.toString());
+        formData.append('totalChunks', totalChunks.toString());
+        formData.append('filename', file.name);
+        formData.append('dossierId', dossierId);
+        formData.append('mimetype', file.type);
+
+        console.log(`📤 Envoi chunk ${chunkIndex + 1}/${totalChunks}`);
+
+        const response = await api.post('/files/upload-chunk', formData, {
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'multipart/form-data'
+          },
+          timeout: 120000, // 2 minutes par chunk
+        });
+
+        uploadedBytes += chunk.size;
+
+        if (onProgress) {
+          const percent = Math.round((uploadedBytes * 100) / file.size);
+          const speed = chunkSize / 5; // Estimation: 5MB en ~1s
+
+          onProgress({
+            percent,
+            loaded: uploadedBytes,
+            total: file.size,
+            speed,
+            mode: "chunked"
+          });
+        }
+
+        console.log(`✅ Chunk ${chunkIndex + 1}/${totalChunks} envoyé`);
+        console.log('🔍 Response data:', response.data);
+
+        // Si c'est le dernier chunk et qu'il est complet
+        if (response.data.complete) {
+          console.log("🎉 Upload chunked terminé !");
+          return {
+            message: "Fichier uploadé avec succès",
+            files: [response.data.file]
+          };
+        }
+      }
+
+      console.error("❌ Boucle terminée sans complete=true");
+      throw new Error("Upload incomplet");
+
+    } catch (error) {
+      console.error("❌ Erreur uploadChunked:", error);
+      console.error("❌ Error stack:", error.stack);
+      // Ne pas utiliser errorHandler qui peut déclencher des notifications
+      // Relancer l'erreur directement pour que uploadFilesAuto gère le fallback
+      throw error;
+    }
+  },
+
+
+  uploadFiles: async (dossierLike, files, onProgress) => {
     const dossierId = DossierIdResolver.resolve(dossierLike) || dossierLike;
     try {
       const formData = new FormData();
@@ -15,15 +97,22 @@ export const realFilesService = {
       });
       const response = await api.post(`/files/upload/${dossierId}`, formData, {
         headers: { 'Content-Type': 'multipart/form-data' },
+        timeout: 600000, // 10 minutes timeout
         onUploadProgress: e => {
           const percentCompleted = Math.round((e.loaded * 100) / e.total);
-          if (percentCompleted % 10 === 0) console.log(`Upload ${percentCompleted}%`);
+          if (percentCompleted % 10 === 0) console.log(`📤 Upload ${percentCompleted}%`);
+          // Appeler le callback de progression si fourni
+          if (onProgress && typeof onProgress === 'function') {
+            onProgress(percentCompleted);
+          }
         },
       });
       return response.data;
     } catch (error) {
-      const processedError = errorHandler.handleError(error);
-      throw processedError;
+      // Ne pas utiliser errorHandler qui déclenche des notifications automatiques
+      // Laisser le composant appelant gérer l'affichage d'erreur
+      console.error('❌ Erreur upload classique:', error);
+      throw error;
     }
   },
 
@@ -34,8 +123,9 @@ export const realFilesService = {
       const response = await api.get('/files', { params: { dossier_id: dossierId } });
       return response.data;
     } catch (error) {
-      const processedError = errorHandler.handleError(error);
-      throw processedError;
+      // Ne pas utiliser errorHandler qui déclenche des notifications automatiques
+      console.error('❌ Erreur getFiles:', error);
+      throw error;
     }
   },
 
@@ -53,58 +143,40 @@ export const realFilesService = {
   // Télécharger un fichier
   downloadFile: async fileId => {
     try {
-      const response = await api.get(`/files/download/${fileId}`, {
-        responseType: 'blob', // Important pour les fichiers binaires
-      });
+      console.log('📥 Téléchargement direct fichier:', fileId);
 
-      // Extraire le nom du fichier et le type MIME des headers
-      // Note: Axios normalise les headers en minuscules
-      const contentDisposition = response.headers['content-disposition'] || response.headers['Content-Disposition'];
-      const contentType = response.headers['content-type'] || response.headers['Content-Type'] || 'application/octet-stream';
-      let filename = `download_${fileId}`;
+      // Étape 1 : Demander un token de téléchargement temporaire
+      const tokenResponse = await api.post(`/files/download/${fileId}/token`);
+      const { token } = tokenResponse.data;
 
-      console.log('📥 Téléchargement fichier:', fileId);
-      console.log('Content-Disposition:', contentDisposition);
-      console.log('Content-Type:', contentType);
+      console.log('🔑 Token temporaire obtenu');
 
-      if (contentDisposition) {
-        // Regex améliorée pour capturer le nom de fichier encodé UTF-8
-        // Format: filename*=UTF-8''encoded_name
-        const utf8Match = contentDisposition.match(/filename\*=UTF-8''([^;\n]+)/);
-        if (utf8Match && utf8Match[1]) {
-          filename = decodeURIComponent(utf8Match[1]);
-          console.log('✅ Nom de fichier extrait (UTF-8):', filename);
-        } else {
-          // Fallback pour format standard: filename="name" ou filename=name
-          const filenameMatch = contentDisposition.match(/filename="?([^"\n;]+)"?/);
-          if (filenameMatch && filenameMatch[1]) {
-            filename = filenameMatch[1].trim();
-            console.log('✅ Nom de fichier extrait (standard):', filename);
-          } else {
-            console.warn('⚠️ Impossible d\'extraire le nom de fichier, utilisation du fallback');
-          }
-        }
-      }
+      // Étape 2 : Construire l'URL de téléchargement direct
+      const baseURL = api.defaults.baseURL || '/api';
+      // Construire l'URL complète (absolue)
+      const downloadUrl = `${window.location.origin}${baseURL}/files/download/${fileId}/direct?token=${token}`;
 
-      // Créer un Blob avec le type MIME correct
-      const blob = new Blob([response.data], { type: contentType });
-      const downloadUrl = window.URL.createObjectURL(blob);
+      console.log('🔗 URL téléchargement direct:', downloadUrl);
 
-      // Créer et déclencher le téléchargement
+      // Étape 3 : Déclencher le téléchargement natif du navigateur
+      // Le navigateur va télécharger directement sans passer par JavaScript
       const link = document.createElement('a');
       link.href = downloadUrl;
-      link.download = filename;
+      link.style.display = 'none';
       document.body.appendChild(link);
       link.click();
-      document.body.removeChild(link);
 
-      // Nettoyer l'URL
-      window.URL.revokeObjectURL(downloadUrl);
+      // Nettoyer après un court délai
+      setTimeout(() => {
+        document.body.removeChild(link);
+      }, 100);
 
-      return { success: true, filename };
+      console.log('✅ Téléchargement démarré');
+      return { success: true };
+
     } catch (error) {
-      const err = error?.response?.data?.error || 'Erreur téléchargement fichier';
-      throw new Error(err);
+      console.error('❌ Erreur téléchargement:', error);
+      throw error; // Laisser le composant gérer l'affichage d'erreur
     }
   },
 
@@ -420,9 +492,10 @@ export const filesService = {
 
   async checkBackendAvailability() {
     try {
-      const response = await fetch(
-        `${process.env.REACT_APP_API_URL || 'http://localhost:5001/api'}/health`
-      );
+      const apiUrl = process.env.NODE_ENV === 'production' 
+        ? '/api' 
+        : (process.env.REACT_APP_API_URL || 'http://localhost:5001/api');
+      const response = await fetch(`${apiUrl}/health`);
       this.backendAvailable = response.ok;
     } catch {
       this.backendAvailable = false;
@@ -431,19 +504,19 @@ export const filesService = {
   },
 
   // Upload de fichiers - force l'utilisation du service réel fonctionnel
-  uploadFiles: async (dossierLike, files) => {
+  uploadFiles: async (dossierLike, files, onProgress) => {
     const dossierId = DossierIdResolver.resolve(dossierLike) || dossierLike;
     console.log('📤 Upload fichiers pour dossier:', dossierId);
-    
+
     // Vérifier la disponibilité du backend
     if (filesService.backendAvailable === null) {
       await filesService.checkBackendAvailability();
     }
-    
+
     if (filesService.backendAvailable) {
       try {
         // Utiliser directement le service réel qui fonctionne
-        const result = await realFilesService.uploadFiles(dossierId, files);
+        const result = await realFilesService.uploadFiles(dossierId, files, onProgress);
         console.log('✅ Upload réussi via realFilesService:', result);
         return result;
       } catch (error) {
@@ -451,7 +524,7 @@ export const filesService = {
         return await mockFilesService.uploadFiles(dossierId, files);
       }
     }
-    
+
     console.log('⚠️ Backend indisponible, utilisation du mock service');
     return await mockFilesService.uploadFiles(dossierId, files);
   },
@@ -460,11 +533,11 @@ export const filesService = {
   getFiles: async dossierLike => {
     const dossierId = DossierIdResolver.resolve(dossierLike) || dossierLike;
     console.log('📋 Récupération fichiers pour dossier:', dossierId);
-    
+
     if (filesService.backendAvailable === null) {
       await filesService.checkBackendAvailability();
     }
-    
+
     if (filesService.backendAvailable) {
       try {
         const result = await realFilesService.getFiles(dossierId);
@@ -475,7 +548,7 @@ export const filesService = {
         return await mockFilesService.getFiles(dossierId);
       }
     }
-    
+
     console.log('⚠️ Backend indisponible, utilisation du mock service');
     return await mockFilesService.getFiles(dossierId);
   },
@@ -564,6 +637,61 @@ export const filesService = {
       return await mockFilesService.markForReprint(fileId);
     }
   },
+};
+
+export const uploadFilesAuto = async (dossierLike, files, onProgress) => {
+  const dossierId = DossierIdResolver.resolve(dossierLike) || dossierLike;
+  const filesArray = Array.from(files);
+
+  console.log(`📤 Upload Auto: ${filesArray.length} fichier(s)`);
+
+  // Vérifier backend
+  if (filesService.backendAvailable === null) {
+    await filesService.checkBackendAvailability();
+  }
+
+  if (!filesService.backendAvailable) {
+    console.log('⚠️ Backend indisponible, utilisation du mock');
+    return await mockFilesService.uploadFiles(dossierId, filesArray);
+  }
+
+  try {
+    const smallFiles = [];
+    const largeFiles = [];
+
+    // Séparer les fichiers: > 10MB -> Chunked, <= 10MB -> Classique
+    for (const f of filesArray) {
+      if (f.size > 10 * 1024 * 1024) {
+        largeFiles.push(f);
+      } else {
+        smallFiles.push(f);
+      }
+    }
+
+    const promises = [];
+
+    // Upload des petits fichiers en un seul lot
+    if (smallFiles.length > 0) {
+      const totalSizeMB = Math.round(smallFiles.reduce((sum, f) => sum + f.size, 0) / 1024 / 1024);
+      console.log(`📤 ${smallFiles.length} fichier(s) ${totalSizeMB}MB → Mode CLASSIQUE`);
+      promises.push(realFilesService.uploadFiles(dossierId, smallFiles, onProgress));
+    }
+
+    // Upload individuel chunked pour les gros fichiers
+    for (const f of largeFiles) {
+      const sizeMB = Math.round(f.size / 1024 / 1024);
+      console.log(`📦 Fichier ${f.name} (${sizeMB}MB) > 10MB → Mode CHUNKED`);
+      promises.push(realFilesService.uploadChunked(dossierId, f, onProgress));
+    }
+
+    const results = await Promise.all(promises);
+    return results.length > 0 ? results[0] : null;
+
+  } catch (error) {
+    console.error('❌ Erreur upload auto:', error);
+    // Fallback vers mock en cas d'erreur
+    return await mockFilesService.uploadFiles(dossierId, filesArray);
+  }
 };
 
 export default filesService;

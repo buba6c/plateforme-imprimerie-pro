@@ -37,10 +37,10 @@ class StatistiquesService {
           THEN EXTRACT(EPOCH FROM (date_livraison - created_at))/3600 
         END) as temps_moyen_traitement_heures,
         COUNT(CASE WHEN created_at >= CURRENT_DATE THEN 1 END) as nouveaux_aujourd_hui,
-        COALESCE(SUM(CASE WHEN statut = 'livre' THEN COALESCE(prix_total, 0) END), 0) as chiffre_affaires,
+        COALESCE(SUM(CASE WHEN statut = 'livre' THEN COALESCE(montant_cfa, 0) END), 0) as chiffre_affaires,
         AVG(CASE 
           WHEN statut = 'livre' AND date_livraison IS NOT NULL 
-          THEN EXTRACT(EPOCH FROM (date_livraison - date_demande_livraison))/86400 
+          THEN EXTRACT(EPOCH FROM (date_livraison::timestamp - date_reception::timestamp))/86400 
         END) as delai_moyen_livraison
       FROM dossiers 
       WHERE ${dateCondition}
@@ -115,24 +115,23 @@ class StatistiquesService {
     const query = `
       SELECT 
         u.nom,
-        u.prenom,
         u.role,
         COUNT(DISTINCT dh.dossier_id) as dossiers_traites,
         AVG(
           CASE 
-            WHEN dh.nouveau_statut = 'livre' 
-            THEN EXTRACT(EPOCH FROM (dh.created_at - d.created_at))/3600 
+            WHEN dh.new_status = 'livre' 
+            THEN EXTRACT(EPOCH FROM (dh.changed_at - d.created_at))/3600 
           END
         ) as temps_moyen_traitement,
-        COUNT(CASE WHEN dh.nouveau_statut = 'a_revoir' THEN 1 END) as dossiers_a_revoir,
-        COUNT(CASE WHEN dh.nouveau_statut = 'livre' THEN 1 END) as dossiers_termines
-      FROM utilisateurs u
-      LEFT JOIN dossier_history dh ON u.id = dh.utilisateur_id
+        COUNT(CASE WHEN dh.new_status = 'a_revoir' THEN 1 END) as dossiers_a_revoir,
+        COUNT(CASE WHEN dh.new_status = 'livre' THEN 1 END) as dossiers_termines
+      FROM users u
+      LEFT JOIN dossier_status_history dh ON u.id = dh.changed_by
       LEFT JOIN dossiers d ON dh.dossier_id = d.id
-      WHERE u.actif = true 
-        AND dh.created_at IS NOT NULL 
-        AND ${dateCondition.replace('created_at', 'dh.created_at')}
-      GROUP BY u.id, u.nom, u.prenom, u.role
+      WHERE u.is_active = true 
+        AND dh.changed_at IS NOT NULL 
+        AND ${dateCondition.replace('created_at', 'dh.changed_at')}
+      GROUP BY u.id, u.nom, u.role
       HAVING COUNT(DISTINCT dh.dossier_id) > 0
       ORDER BY dossiers_traites DESC
     `;
@@ -188,7 +187,7 @@ class StatistiquesService {
         0 as total_urgents
       FROM dossiers
       WHERE ${dateCondition}
-      GROUP BY ${groupBy}
+      GROUP BY 1
       ORDER BY periode ASC
     `;
 
@@ -312,8 +311,8 @@ class StatistiquesService {
     try {
       const query = `
         SELECT COUNT(*) as count
-        FROM utilisateurs 
-        WHERE actif = true 
+        FROM users 
+        WHERE is_active = true
           AND last_login >= NOW() - INTERVAL '30 days'
       `;
       
@@ -335,12 +334,12 @@ class StatistiquesService {
 
       const query = `
         WITH current_period AS (
-          SELECT COALESCE(SUM(prix_total), 0) as ca_current
+          SELECT COALESCE(SUM(montant_cfa), 0) as ca_current
           FROM dossiers 
           WHERE statut = 'livre' AND ${currentCondition}
         ),
         previous_period AS (
-          SELECT COALESCE(SUM(prix_total), 0) as ca_previous
+          SELECT COALESCE(SUM(montant_cfa), 0) as ca_previous
           FROM dossiers 
           WHERE statut = 'livre' AND ${previousCondition}
         )
@@ -400,9 +399,8 @@ class StatistiquesService {
         SELECT 
           role,
           COUNT(*) as total,
-          COUNT(CASE WHEN actif = true THEN 1 END) as actifs,
-          COUNT(CASE WHEN last_login >= NOW() - INTERVAL '7 days' THEN 1 END) as actifs_semaine
-        FROM utilisateurs 
+          COUNT(CASE WHEN is_active = true THEN 1 END) as actifs
+        FROM users 
         GROUP BY role
       `;
 
@@ -411,7 +409,8 @@ class StatistiquesService {
       const stats = {
         admins: 0,
         preparateurs: 0,
-        clients: 0,
+        imprimeurs: 0,
+        livreurs: 0,
         inactifs: 0,
       };
 
@@ -419,14 +418,15 @@ class StatistiquesService {
         const role = row.role.toLowerCase();
         if (role === 'admin') stats.admins = parseInt(row.actifs);
         else if (role === 'preparateur') stats.preparateurs = parseInt(row.actifs);
-        else if (role === 'client') stats.clients = parseInt(row.actifs);
+        else if (role.startsWith('imprimeur')) stats.imprimeurs += parseInt(row.actifs);
+        else if (role === 'livreur') stats.livreurs = parseInt(row.actifs);
         stats.inactifs += parseInt(row.total) - parseInt(row.actifs);
       });
 
       return stats;
     } catch (error) {
       console.error('Erreur statistiques utilisateurs:', error);
-      return { admins: 0, preparateurs: 0, clients: 0, inactifs: 0 };
+      return { admins: 0, preparateurs: 0, imprimeurs: 0, livreurs: 0, inactifs: 0 };
     }
   }
 
@@ -450,17 +450,13 @@ class StatistiquesService {
       const query = `
         SELECT 
           ${dateFormat} as periode,
-          COALESCE(SUM(CASE WHEN statut = 'livre' THEN prix_total END), 0) as chiffre_affaires,
+          COALESCE(SUM(CASE WHEN statut = 'livre' THEN montant_cfa END), 0) as chiffre_affaires,
           COUNT(CASE WHEN statut = 'livre' THEN 1 END) as dossiers_livres,
-          AVG(CASE WHEN statut = 'livre' THEN prix_total END) as ticket_moyen,
-          -- Simulation d'objectifs (à adapter selon vos besoins)
-          CASE 
-            WHEN EXTRACT(DOW FROM created_at) IN (0,6) THEN 5000  -- Weekend
-            ELSE 8000  -- Semaine
-          END as objectif
+          AVG(CASE WHEN statut = 'livre' THEN montant_cfa END) as ticket_moyen,
+          8000 as objectif
         FROM dossiers
         WHERE ${dateCondition}
-        GROUP BY ${groupBy}
+        GROUP BY 1
         ORDER BY periode ASC
       `;
 
@@ -501,8 +497,8 @@ class StatistiquesService {
         // Calcul de l'activité réelle basée sur les dossiers
         const query = `
           SELECT COUNT(*) as activite
-          FROM dossier_history 
-          WHERE created_at BETWEEN $1 AND $2
+          FROM dossier_status_history 
+          WHERE changed_at BETWEEN $1 AND $2
         `;
         
         const startHour = new Date(heure);

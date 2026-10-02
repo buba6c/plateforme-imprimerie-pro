@@ -5,11 +5,11 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { dossiersService } from '../../../../services/apiAdapter';
-import { 
+import {
   enrichDossierData,
   calculateDeliveryStats,
   filterDossiers,
-  sortDossiers 
+  sortDossiers
 } from '../utils/livreurUtils';
 import { DELIVERY_STATUS } from '../utils/livreurConstants';
 
@@ -30,11 +30,11 @@ const useLivreurData = () => {
     try {
       setLoading(true);
       setError(null);
-      
+
       const response = await dossiersService.getDossiers();
-      
+
       // Filtrer les dossiers de livraison
-      const livraison = response.filter(d => 
+      const livraison = response.filter(d =>
         [
           DELIVERY_STATUS.PRET_LIVRAISON,
           DELIVERY_STATUS.EN_LIVRAISON,
@@ -44,7 +44,7 @@ const useLivreurData = () => {
           'livre'
         ].includes(d.statut || d.status)
       );
-      
+
       setDossiers(livraison);
     } catch (err) {
       console.error('Erreur chargement dossiers:', err);
@@ -73,7 +73,8 @@ const useLivreurData = () => {
   // Statistiques
   const stats = calculateDeliveryStats(dossiers);
 
-  // Dossiers par section
+  // Dossiers par section - basé uniquement sur le statut
+  // La programmation ajoute juste un badge et une date, sans changer de section
   const dossiersALivrer = dossiers
     .filter(d => d.statut === DELIVERY_STATUS.PRET_LIVRAISON)
     .map(enrichDossierData);

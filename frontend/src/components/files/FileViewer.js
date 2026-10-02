@@ -3,6 +3,7 @@ import { Document, Page, pdfjs } from 'react-pdf';
 import { TransformWrapper, TransformComponent } from 'react-zoom-pan-pinch';
 import { useHotkeys } from 'react-hotkeys-hook';
 import { saveAs } from 'file-saver';
+import { getAuthToken } from '../../authUtils';
 import 'react-pdf/dist/Page/AnnotationLayer.css';
 import 'react-pdf/dist/Page/TextLayer.css';
 
@@ -20,7 +21,11 @@ const FileViewer = ({ file, isOpen, onClose }) => {
   const [fileUrl, setFileUrl] = useState(null);
 
   // Déterminer le type de fichier
-  const getFileType = (mimeType, filename) => {
+  const getFileType = (file) => {
+    // Normaliser le mimetype depuis différentes sources
+    const mimeType = file?.mimetype || file?.type_mime || file?.type || '';
+    const filename = file?.nom_original || file?.nom || file?.filename || file?.original_filename || '';
+    
     if (mimeType?.includes('pdf')) return 'pdf';
     if (mimeType?.includes('image/')) return 'image';
     if (mimeType?.includes('text/')) return 'text';
@@ -38,28 +43,34 @@ const FileViewer = ({ file, isOpen, onClose }) => {
     return 'unknown';
   };
 
-  const fileType = getFileType(file?.mimetype || file?.type, file?.nom || file?.filename);
+  const fileType = getFileType(file);
 
   // Charger le fichier
   useEffect(() => {
-    if (!isOpen || !file) return;
+    if (!isOpen || !file || !file.id) return;
 
     const loadFile = async () => {
       setLoading(true);
       setError(null);
 
       try {
-        // Récupérer le fichier depuis l'API
-        const token = localStorage.getItem('auth_token') || localStorage.getItem('auth_token');
+        // Récupérer le token d'authentification
+        const token = getAuthToken();
+        if (!token) {
+          throw new Error('Vous devez être connecté pour voir les fichiers');
+        }
 
-        const response = await fetch(`http://localhost:5001/api/files/preview/${file.id}`, {
+        const API_URL = process.env.REACT_APP_API_URL || '/api';
+
+        const response = await fetch(`${API_URL}/files/preview/${file.id}`, {
           headers: {
             Authorization: `Bearer ${token}`,
           },
         });
 
         if (!response.ok) {
-          throw new Error(`Erreur ${response.status}: ${await response.text()}`);
+          const errorText = await response.text();
+          throw new Error(`Erreur ${response.status}: ${errorText}`);
         }
 
         const blob = await response.blob();
@@ -83,7 +94,7 @@ const FileViewer = ({ file, isOpen, onClose }) => {
         URL.revokeObjectURL(fileUrl);
       }
     };
-  }, [isOpen, file]);
+  }, [isOpen, file?.id]); // ⚠️ IMPORTANT: Ne dépendre que de l'ID pour éviter les recharges
 
   // Raccourcis clavier
   useHotkeys('escape', onClose, { enabled: isOpen });
@@ -124,7 +135,8 @@ const FileViewer = ({ file, isOpen, onClose }) => {
   // Téléchargement
   const downloadFile = () => {
     if (fileBlob) {
-      saveAs(fileBlob, file.nom || file.filename || 'fichier');
+      const filename = file?.nom_original || file?.nom || file?.filename || file?.original_filename || 'fichier';
+      saveAs(fileBlob, filename);
     }
   };
 
@@ -148,7 +160,7 @@ const FileViewer = ({ file, isOpen, onClose }) => {
       <div className="bg-neutral-900 text-white p-4 flex items-center justify-between">
         <div className="flex items-center space-x-4">
           <h3 className="text-lg font-semibold truncate max-w-md">
-            {file?.nom || file?.filename || 'Fichier'}
+            {file?.nom_original || file?.nom || file?.filename || file?.original_filename || 'Fichier'}
           </h3>
           <span className="text-sm text-neutral-400">
             {fileType.toUpperCase()} • {Math.round((fileBlob?.size || 0) / 1024)} KB

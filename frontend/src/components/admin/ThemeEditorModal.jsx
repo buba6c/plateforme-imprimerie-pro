@@ -50,7 +50,7 @@ const ThemeEditorModal = ({ isOpen, onClose, theme, onSave, isCreating = false }
         colors: formData.colors
       });
     }
-  }, [theme, isCreating, formData.colors]);
+  }, [theme, isCreating]);
 
   const handleColorChange = (colorKey, value) => {
     setFormData({

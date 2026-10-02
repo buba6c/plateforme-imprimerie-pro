@@ -2,6 +2,7 @@ import axios from 'axios';
 
 // HTTP client with auto-logout on 401
 const API_BASE_URL = (() => {
+  if (process.env.NODE_ENV === 'production') return '/api';
   const env = process.env.REACT_APP_API_URL;
   if (env && env.trim()) return env.startsWith('/') ? env : env;
   // Utiliser le proxy configuré dans package.json au lieu de l'URL absolue
