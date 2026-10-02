@@ -1,6 +1,6 @@
 // Fiche dossier, commune à tous les rôles (l'API ne renvoie que ce que le rôle peut voir).
 
-import { useMemo, useState } from 'react';
+import { lazy, Suspense, useMemo, useState } from 'react';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { CalendarClock, FileDown, Pencil, ShieldAlert, Trash2, UserCog, Zap, ZapOff } from 'lucide-react';
@@ -21,10 +21,12 @@ import { AffecterDialog, ForcerStatutDialog, MenuActions, ReporterDialog, Suppri
 import { Historique } from '../../features/dossiers-ui/Historique';
 import { SpecsLecture } from '../../features/dossiers-ui/SpecsLecture';
 import { ListeFichiers } from '../../features/fichiers/ListeFichiers';
-import { Televersement } from '../../features/fichiers/Televersement';
 import { useLibelles, useParamsPrix, useTarifs } from '../../features/specs/useTarifs';
 import { Alert, Button, Card, Count, EmptyState, LoadingRows, MachineChip, StatusBadge, UrgentTag, useToast } from '../../ui';
 import '../../features/dossiers-ui/dossiers-ui.css';
+
+// Chargé seulement pour ceux qui déposent des fichiers (tus-js-client).
+const Televersement = lazy(() => import('../../features/fichiers/Televersement').then((m) => ({ default: m.Televersement })));
 
 type Dossier = DossierDetail & { client_email?: string | null; devis_id?: number | null };
 type Dialogue = 'forcer' | 'affecter' | 'reporter' | 'supprimer' | null;
@@ -211,7 +213,11 @@ export default function FicheDossier() {
                 ) : !d.peut_deposer_fichiers ? (
                   <p className="ev-muted" style={{ margin: 0 }}>Aucun fichier d’impression.</p>
                 ) : null}
-                {d.peut_deposer_fichiers && <Televersement dossierId={d.id} />}
+                {d.peut_deposer_fichiers && (
+                  <Suspense fallback={<div className="ev-dropzone fi-dropzone" aria-busy="true" />}>
+                    <Televersement dossierId={d.id} />
+                  </Suspense>
+                )}
                 {d.peut_deposer_fichiers && d.fichiers.length === 0 && d.actions.includes('valider') && (
                   <p className="ev-help" style={{ margin: 0 }}>Le dossier ne peut pas être validé sans au moins un fichier.</p>
                 )}
