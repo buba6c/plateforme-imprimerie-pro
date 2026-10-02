@@ -1,0 +1,2 @@
+# Le .gitignore racine ignore tout dossier "uploads/" : on ré-inclut l'arborescence factice de test.
+!uploads/

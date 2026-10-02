@@ -1,0 +1,81 @@
+/* File d'impression (imprimeurs Roland et Xerox). Couleurs : variables de la charte uniquement. */
+
+.atelier-head-actions { display: flex; align-items: center; gap: var(--space-3); flex-wrap: wrap; }
+.atelier-maj { font-size: 12px; color: var(--text-muted); }
+
+.atelier-compteurs { display: flex; flex-wrap: wrap; gap: var(--space-2) var(--space-5); margin: 6px 0 0; padding: 0; list-style: none; color: var(--text-muted); }
+.atelier-compteurs li { display: inline-flex; align-items: baseline; gap: 6px; }
+.atelier-compteurs strong { font-family: var(--font-mono); font-variant-numeric: tabular-nums; font-weight: 600; font-size: 15px; color: var(--ink); }
+.atelier-compteurs .atelier-compteurs__urgent { color: var(--text); }
+
+/* Plateau : trois colonnes sur grand écran. */
+.atelier-board { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+@media (max-width: 1100px) and (min-width: 761px) {
+  .atelier-board { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+.atelier-col-titre { margin: 0; display: inline-flex; align-items: center; gap: var(--space-2); font-size: 15px; font-weight: 600; color: var(--text); }
+.atelier-col-titre::before { content: ""; width: 8px; height: 8px; border-radius: 50%; border: 1.5px solid var(--text-muted); }
+.ev-column[data-colonne="encours"] .atelier-col-titre::before { background: var(--accent); border-color: var(--accent); }
+.ev-column[data-colonne="imprime"] .atelier-col-titre::before { background: var(--st-ship-solid); border-color: var(--st-ship-solid); }
+.ev-column[data-colonne="pret"] .atelier-col-titre::before { border-color: var(--info-ink); }
+
+.atelier-vide { border: 1.5px dashed var(--line); border-radius: var(--radius-lg); }
+.atelier-vide .ev-empty { padding: var(--space-8) var(--space-5); }
+.atelier-vide .ev-empty strong { font-size: 15px; }
+
+/* Dossier arrivé pendant que la page est ouverte. */
+.atelier-item { position: relative; border-radius: var(--radius-lg); }
+.atelier-item[data-nouveau="true"] > .ev-job {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent), var(--shadow-card);
+  animation: atelier-arrivee 1.4s ease-out 2;
+}
+.atelier-nouveau {
+  position: absolute; top: -10px; right: var(--space-4); z-index: 1;
+  background: var(--accent); color: var(--on-accent); box-shadow: var(--shadow-card);
+}
+@keyframes atelier-arrivee {
+  0% { box-shadow: 0 0 0 1px var(--accent), 0 0 0 8px var(--accent-soft); }
+  100% { box-shadow: 0 0 0 1px var(--accent), 0 0 0 0 var(--accent-soft); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .atelier-item[data-nouveau="true"] > .ev-job { animation: none; }
+}
+
+/* Onglets à la place des colonnes sur téléphone. */
+.atelier-onglets { display: none; }
+@media (max-width: 760px) {
+  .atelier-onglets {
+    display: block; position: sticky; top: var(--topbar); z-index: 5;
+    margin: 0 calc(-1 * var(--space-4)); padding: 0 var(--space-4);
+    background: var(--canvas);
+  }
+  .atelier-onglets .ev-tab { flex: 1 1 0; justify-content: center; padding: 12px var(--space-2); font-size: 14px; }
+  .atelier-board { grid-template-columns: minmax(0, 1fr); }
+  .atelier-board .ev-column[data-actif="false"] { display: none; }
+  .atelier-board .ev-column__head { display: none; }
+  /* Gros boutons d'action sur téléphone. */
+  .atelier-board .ev-job__foot .ev-btn { height: var(--control-lg); padding: 0 var(--space-5); font-size: 15px; }
+  .atelier-board .ev-job__foot .ev-btn-group { width: 100%; }
+  .atelier-board .ev-job__foot .ev-btn-group .ev-btn { flex: 1 1 auto; }
+}
+
+/* Bande « Renvoyés en révision ». */
+.atelier-revisions .ev-card__head { padding: var(--space-3) var(--space-5); }
+.atelier-revisions__liste { list-style: none; margin: 0; padding: 0; }
+.atelier-rev {
+  display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: baseline; gap: 2px var(--space-3);
+  padding: var(--space-3) var(--space-5); border-bottom: 1px solid var(--line);
+  color: var(--text); text-decoration: none;
+}
+.atelier-revisions__liste li:last-child .atelier-rev { border-bottom: 0; }
+.atelier-rev:hover { background: var(--surface-sunken); }
+.atelier-rev:focus-visible { outline: 2px solid transparent; box-shadow: inset var(--focus-ring); }
+.atelier-rev__client { font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.atelier-rev__quand { font-size: 12px; color: var(--text-muted); white-space: nowrap; }
+.atelier-rev__motif { grid-column: 2 / -1; font-size: 13px; color: var(--text-muted); overflow-wrap: anywhere; }
+@media (max-width: 560px) {
+  .atelier-rev { grid-template-columns: minmax(0, 1fr) auto; }
+  .atelier-rev__client { grid-column: 1 / -1; grid-row: 2; }
+  .atelier-rev__motif { grid-column: 1 / -1; }
+}
