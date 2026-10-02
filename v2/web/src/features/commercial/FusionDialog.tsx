@@ -47,15 +47,15 @@ export function FusionDialog({ client, onClose, onDone }: { client: ClientDetail
       footer={
         etape === 1 ? (
           <>
-            <Button onClick={onClose}>Annuler</Button>
-            <Button variant="primary" disabled={!autre} onClick={() => setEtape(2)}>
+            <Button key="annuler" onClick={onClose}>Annuler</Button>
+            <Button key="continuer" variant="primary" disabled={!autre} onClick={() => setEtape(2)}>
               Continuer
             </Button>
           </>
         ) : (
           <>
-            <Button onClick={() => setEtape(1)}>Retour</Button>
-            <Button variant="danger" busy={mutation.isPending} onClick={fusionner}>
+            <Button key="retour" onClick={() => setEtape(1)}>Retour</Button>
+            <Button key="fusionner" variant="danger" busy={mutation.isPending} onClick={fusionner}>
               Fusionner les fiches
             </Button>
           </>

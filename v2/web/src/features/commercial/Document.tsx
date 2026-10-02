@@ -67,7 +67,7 @@ export function LignesDocument({ lignes, vide }: { lignes: LigneDocument[]; vide
               <span className="cm-lines__designation">{l.designation}</span>
               {l.detail && <span className="cm-lines__detail">{l.detail}</span>}
               {l.quantite !== null && (
-                <span className="cm-lines__detail cm-col-etroit ev-mono">
+                <span className="cm-lines__detail cm-col-etroit cm-tabulaire">
                   {formatQuantite(l.quantite)} {uniteCourte(l.unite, l.quantite)}
                   {l.prix_unitaire !== null && ` × ${formatFCFA(l.prix_unitaire)}`}
                 </span>

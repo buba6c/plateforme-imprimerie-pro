@@ -188,7 +188,7 @@ export default function ListeFactures() {
                 <span className="ev-kpi__value" style={{ fontSize: 22, lineHeight: '28px' }}>
                   {formatFCFA(liste.data?.somme_ttc ?? null)}
                 </span>
-                <span className="ev-kpi__meta">{pluriel(liste.data?.total ?? 0, 'facture')}, hors annulées pour le total</span>
+                <span className="ev-kpi__meta">Hors factures annulées · {pluriel(liste.data?.total ?? 0, 'facture')} dans la liste</span>
               </div>
               {items.map((f) => (
                 <CarteFacture key={f.id} f={f} />

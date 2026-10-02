@@ -7,7 +7,7 @@ import { ApiError, messageErreur } from '../../lib/api';
 import { Alert, Button, Card, Dialog, EmptyState, PageHeader, PaymentBadge, Skeleton, TextareaField, useToast } from '../../ui';
 import { BlocDocument, FactureStatutBadge, LignesDocument, Totaux, type LigneTotal } from '../../features/commercial/Document';
 import { formatJour, lignesFacture } from '../../features/commercial/format';
-import { useAnnulerFacture, useFacture, useParametres } from '../../features/commercial/hooks';
+import { useAnnulerFacture, useFacture, useListeFactures, useParametres } from '../../features/commercial/hooks';
 import type { Entreprise, FactureDetail } from '../../features/commercial/types';
 import '../../features/commercial/commercial.css';
 
@@ -55,6 +55,8 @@ function Fiche({ f }: { f: FactureDetail }) {
   const [annulation, setAnnulation] = useState(false);
   const annulee = f.statut === 'annulee';
   const pdf = `/api/factures/${f.id}/pdf`;
+  const enVigueur = useListeFactures({ dossier_id: f.dossier_id, statut: 'emise', limit: 1 }, { enabled: annulee });
+  const remplacante = annulee ? enVigueur.data?.items.find((x) => x.id !== f.id) : undefined;
 
   const totaux: LigneTotal[] =
     f.tva_taux > 0
@@ -119,8 +121,18 @@ function Fiche({ f }: { f: FactureDetail }) {
           {annulee && (
             <Alert tone="error">
               <strong>Facture annulée</strong> le {formatDateHeure(f.annulee_at)}
-              {f.annulee_par_nom ? ` par ${f.annulee_par_nom}` : ''}.{f.motif_annulation ? ` Motif : ${f.motif_annulation}.` : ''} Ce document n’est plus valable ; le
-              numéro {f.numero} reste attribué et ne sera jamais réutilisé.
+              {f.annulee_par_nom ? ` par ${f.annulee_par_nom}` : ''}.{f.motif_annulation ? ` Motif : ${f.motif_annulation.replace(/[\s.]+$/, '')}.` : ''} Ce document n’est plus
+              valable ; le numéro {f.numero} reste attribué et ne sera jamais réutilisé.
+              {remplacante && (
+                <>
+                  {' '}
+                  Facture en vigueur pour ce dossier :{' '}
+                  <Link className="ev-link ev-ref" to={`/factures/${remplacante.id}`}>
+                    {remplacante.numero}
+                  </Link>
+                  .
+                </>
+              )}
             </Alert>
           )}
           {montantChange && (
@@ -129,7 +141,7 @@ function Fiche({ f }: { f: FactureDetail }) {
               {admin ? ' Annulez la facture puis émettez-en une nouvelle depuis le dossier pour facturer le bon montant.' : ' Signalez-le à l’administrateur : seule une nouvelle facture peut corriger le montant.'}
             </Alert>
           )}
-          {admin && coordonneesManquantes && (
+          {admin && !annulee && coordonneesManquantes && (
             <Alert tone="info">
               Les coordonnées de l’entreprise (adresse, téléphone, NINEA) ne sont pas renseignées : elles n’apparaissent pas sur les factures.{' '}
               <Link className="ev-link" to="/admin/parametres">
@@ -162,7 +174,11 @@ function Fiche({ f }: { f: FactureDetail }) {
               <BlocDocument titre="Facturé à">
                 <strong>{f.client_nom}</strong>
                 {f.client_adresse && <span>{f.client_adresse}</span>}
-                {f.client_telephone && <span className="ev-ref">Tél. {f.client_telephone}</span>}
+                {f.client_telephone && (
+                  <span>
+                    Tél. <span className="ev-ref">{f.client_telephone}</span>
+                  </span>
+                )}
                 {f.client_id && (
                   <Link className="ev-link" style={{ fontSize: 13, marginTop: 4 }} to={`/clients/${f.client_id}`}>
                     Voir la fiche client

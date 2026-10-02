@@ -95,7 +95,7 @@ export default function ListeDevis() {
                       setParams(new URLSearchParams(), { replace: true });
                     }}
                   >
-                    Effacer les filtres
+                    {q ? 'Effacer les filtres' : 'Voir tous les devis'}
                   </Button>
                 }
               >

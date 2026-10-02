@@ -106,7 +106,7 @@ function Fiche({ c }: { c: ClientDetail }) {
         </Alert>
       )}
 
-      <div className="ev-kpis">
+      <div className="ev-kpis cm-kpis">
         <Kpi label="Dossiers" value={formatEntier(t.nb_dossiers)} meta="Hors dossiers supprimés" />
         <Kpi label="Total des commandes" value={formatEntier(t.total_commandes)} unit="FCFA" meta="Montants des dossiers" />
         <Kpi label="Total payé" value={formatEntier(t.total_paye)} unit="FCFA" meta="Paiements validés" />
@@ -119,123 +119,143 @@ function Fiche({ c }: { c: ClientDetail }) {
         />
       </div>
 
-      <div className="grid-main">
-        <div className="stack-lg">
-          <Card title="Dossiers" actions={t.nb_dossiers > c.dossiers.length ? <span className="ev-muted" style={{ fontSize: 13 }}>Les {c.dossiers.length} plus récents sur {formatEntier(t.nb_dossiers)}</span> : undefined} flush>
-            {c.dossiers.length === 0 ? (
-              <EmptyState
-                title="Aucun dossier pour ce client"
-                icon={<FolderOpen aria-hidden="true" />}
-                action={
-                  !fusionnee && (
-                    <Link className="ev-btn ev-btn--sm ev-btn--primary" to={`/dossiers/nouveau?client_id=${c.id}`}>
-                      <FolderPlus aria-hidden="true" />
-                      Nouveau dossier pour ce client
-                    </Link>
-                  )
-                }
-              >
-                Les dossiers créés pour ce client apparaîtront ici, avec leur montant et leur situation de paiement.
-              </EmptyState>
-            ) : (
-              <>
-                <div className="cm-large" style={{ overflowX: 'auto' }}>
-                  <TableDossiers dossiers={c.dossiers} onOpen={(id) => navigate(`/dossiers/${id}`)} />
-                </div>
-                <div className="cm-etroit" style={{ padding: 'var(--space-2) var(--space-4)' }}>
-                  {c.dossiers.map((d) => (
-                    <LigneDossierMobile key={d.id} d={d} />
-                  ))}
-                </div>
-              </>
-            )}
-          </Card>
-
-          {!fusionnee && (
-            <Card title="Factures" flush>
-              {factures.isLoading ? (
-                <div style={{ padding: 'var(--space-4)' }}>
-                  <LoadingRows rows={2} />
-                </div>
-              ) : factures.isError ? (
-                <div style={{ padding: 'var(--space-4)' }}>
-                  <Alert tone="error">Les factures n'ont pas pu être chargées : {messageErreur(factures.error)}</Alert>
-                </div>
-              ) : !factures.data?.items.length ? (
-                <p className="ev-muted" style={{ margin: 0, padding: 'var(--space-5) var(--space-6)' }}>
-                  Aucune facture émise pour ce client.
-                </p>
+      <Card title="Coordonnées">
+        <dl className="cm-coord">
+          <div>
+            <dt>Téléphone</dt>
+            <dd>
+              {c.telephone ? (
+                <a className="ev-link ev-ref" href={`tel:${c.telephone.replace(/[^+0-9]/g, '')}`}>
+                  {c.telephone}
+                </a>
               ) : (
-                <div style={{ overflowX: 'auto' }}>
-                  <table className="ev-table ev-table--clickable">
-                    <thead>
-                      <tr>
-                        <th scope="col">Numéro</th>
-                        <th scope="col">Date</th>
-                        <th scope="col">Dossier</th>
-                        <th scope="col" style={{ textAlign: 'right' }}>
-                          Total TTC
-                        </th>
-                        <th scope="col">Statut</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {factures.data.items.map((f) => (
-                        <tr key={f.id} onClick={() => navigate(`/factures/${f.id}`)}>
-                          <td className="nowrap">
-                            <Link className="ev-ref cm-lien-ref" to={`/factures/${f.id}`} onClick={(e) => e.stopPropagation()}>
-                              {f.numero}
-                            </Link>
-                          </td>
-                          <td className="ev-ref nowrap">{formatJour(f.date_emission)}</td>
-                          <td className="ev-ref nowrap">{f.dossier_numero ?? '—'}</td>
-                          <td className="ev-cell-num">
-                            <span className={f.statut === 'annulee' ? 'cm-annulee' : undefined}>{formatFCFA(f.total_ttc)}</span>
-                          </td>
-                          <td>
-                            <FactureStatutBadge statut={f.statut} />
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
+                '—'
               )}
-            </Card>
-          )}
-        </div>
+            </dd>
+          </div>
+          <div>
+            <dt>E-mail</dt>
+            <dd>
+              {c.email ? (
+                <a className="ev-link" href={`mailto:${c.email}`}>
+                  {c.email}
+                </a>
+              ) : (
+                '—'
+              )}
+            </dd>
+          </div>
+          <div>
+            <dt>Adresse</dt>
+            <dd>{c.adresse ?? '—'}</dd>
+          </div>
+          <div>
+            <dt>Notes</dt>
+            <dd className="cm-texte">{c.notes ?? '—'}</dd>
+          </div>
+        </dl>
+      </Card>
 
-        <aside className="stack">
-          <Card title="Coordonnées">
-            <dl className="cm-kv">
-              <dt>Téléphone</dt>
-              <dd>
-                {c.telephone ? (
-                  <a className="ev-link ev-ref" href={`tel:${c.telephone.replace(/[^+0-9]/g, '')}`}>
-                    {c.telephone}
-                  </a>
-                ) : (
-                  '—'
-                )}
-              </dd>
-              <dt>E-mail</dt>
-              <dd>
-                {c.email ? (
-                  <a className="ev-link" href={`mailto:${c.email}`}>
-                    {c.email}
-                  </a>
-                ) : (
-                  '—'
-                )}
-              </dd>
-              <dt>Adresse</dt>
-              <dd>{c.adresse ?? '—'}</dd>
-              <dt>Notes</dt>
-              <dd className="cm-texte">{c.notes ?? '—'}</dd>
-            </dl>
-          </Card>
-        </aside>
-      </div>
+      <Card title="Dossiers" actions={t.nb_dossiers > c.dossiers.length ? <span className="ev-muted" style={{ fontSize: 13 }}>Les {c.dossiers.length} plus récents sur {formatEntier(t.nb_dossiers)}</span> : undefined} flush>
+        {c.dossiers.length === 0 ? (
+          <EmptyState
+            title="Aucun dossier pour ce client"
+            icon={<FolderOpen aria-hidden="true" />}
+            action={
+              !fusionnee && (
+                <Link className="ev-btn ev-btn--sm ev-btn--primary" to={`/dossiers/nouveau?client_id=${c.id}`}>
+                  <FolderPlus aria-hidden="true" />
+                  Nouveau dossier pour ce client
+                </Link>
+              )
+            }
+          >
+            Les dossiers créés pour ce client apparaîtront ici, avec leur montant et leur situation de paiement.
+          </EmptyState>
+        ) : (
+          <>
+            <div className="cm-large" style={{ overflowX: 'auto' }}>
+              <TableDossiers dossiers={c.dossiers} onOpen={(id) => navigate(`/dossiers/${id}`)} />
+            </div>
+            <div className="cm-etroit" style={{ padding: 'var(--space-2) var(--space-4)' }}>
+              {c.dossiers.map((d) => (
+                <LigneDossierMobile key={d.id} d={d} />
+              ))}
+            </div>
+          </>
+        )}
+      </Card>
+
+      {!fusionnee && (
+        <Card title="Factures" flush>
+          {factures.isLoading ? (
+            <div style={{ padding: 'var(--space-4)' }}>
+              <LoadingRows rows={2} />
+            </div>
+          ) : factures.isError ? (
+            <div style={{ padding: 'var(--space-4)' }}>
+              <Alert tone="error">Les factures n'ont pas pu être chargées : {messageErreur(factures.error)}</Alert>
+            </div>
+          ) : !factures.data?.items.length ? (
+            <p className="ev-muted" style={{ margin: 0, padding: 'var(--space-5) var(--space-6)' }}>
+              Aucune facture émise pour ce client.
+            </p>
+          ) : (
+            <>
+            <div className="cm-large" style={{ overflowX: 'auto' }}>
+              <table className="ev-table ev-table--clickable">
+                <thead>
+                  <tr>
+                    <th scope="col">Numéro</th>
+                    <th scope="col">Date</th>
+                    <th scope="col">Dossier</th>
+                    <th scope="col" style={{ textAlign: 'right' }}>
+                      Total TTC
+                    </th>
+                    <th scope="col">Statut</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {factures.data.items.map((f) => (
+                    <tr key={f.id} onClick={() => navigate(`/factures/${f.id}`)}>
+                      <td className="nowrap">
+                        <Link className="ev-ref cm-lien-ref" to={`/factures/${f.id}`} onClick={(e) => e.stopPropagation()}>
+                          {f.numero}
+                        </Link>
+                      </td>
+                      <td className="ev-ref nowrap">{formatJour(f.date_emission)}</td>
+                      <td className="ev-ref nowrap">{f.dossier_numero ?? '—'}</td>
+                      <td className="ev-cell-num">
+                        <span className={f.statut === 'annulee' ? 'cm-annulee' : undefined}>{formatFCFA(f.total_ttc)}</span>
+                      </td>
+                      <td>
+                        <FactureStatutBadge statut={f.statut} />
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <div className="cm-etroit" style={{ padding: 'var(--space-2) var(--space-4)' }}>
+              {factures.data.items.map((f) => (
+                <Link key={f.id} to={`/factures/${f.id}`} className="cm-carte cm-ligne-mobile">
+                  <div className="cm-carte__ligne">
+                    <Ref>{f.numero}</Ref>
+                    <FactureStatutBadge statut={f.statut} />
+                  </div>
+                  <div className="cm-carte__ligne">
+                    <span className="ev-muted" style={{ fontSize: 13 }}>
+                      {formatJour(f.date_emission)} · dossier {f.dossier_numero ?? '—'}
+                    </span>
+                    <span className={`ev-num${f.statut === 'annulee' ? ' cm-annulee' : ''}`}>{formatFCFA(f.total_ttc)}</span>
+                  </div>
+                </Link>
+              ))}
+            </div>
+            </>
+          )}
+        </Card>
+      )}
 
       {dialogue === 'modifier' && (
         <ClientDialog
@@ -300,7 +320,11 @@ function TableDossiers({ dossiers, onOpen }: { dossiers: DossierClient[]; onOpen
               <td className="ev-cell-num">{formatFCFA(d.montant)}</td>
               <td>
                 <PaymentBadge situation={situation} />
-                {situation === 'partiel' && d.montant !== null && <span className="ev-cell-sub ev-ref">reste {formatFCFA(Math.max(0, d.montant - d.deja_paye))}</span>}
+                {situation === 'partiel' && d.montant !== null && (
+                  <span className="ev-cell-sub">
+                    Reste <span className="ev-mono">{formatFCFA(Math.max(0, d.montant - d.deja_paye))}</span>
+                  </span>
+                )}
               </td>
               <td className="ev-ref nowrap">{formatDate(d.created_at)}</td>
             </tr>
@@ -314,7 +338,7 @@ function TableDossiers({ dossiers, onOpen }: { dossiers: DossierClient[]; onOpen
 function LigneDossierMobile({ d }: { d: DossierClient }) {
   const situation = situationPaiement(d.montant, d.deja_paye);
   return (
-    <Link to={`/dossiers/${d.id}`} className="cm-carte" style={{ display: 'grid', gap: 6, padding: 'var(--space-3) 0', borderBottom: '1px solid var(--line)' }}>
+    <Link to={`/dossiers/${d.id}`} className="cm-carte cm-ligne-mobile">
       <div className="row">
         <Ref>{d.numero}</Ref>
         <MachineChip machine={d.machine} />

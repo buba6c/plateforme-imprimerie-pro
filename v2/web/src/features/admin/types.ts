@@ -136,17 +136,18 @@ export interface DossierSupprime {
   numero: string;
   client_nom: string;
   statut: Statut;
-  machine?: Machine;
-  montant?: number | null;
+  machine: Machine;
+  montant: number | null;
   deleted_at: string;
   deleted_by_nom: string | null;
-  motif_suppression?: string | null;
+  motif: string | null;
+  nb_paiements: number;
 }
 
 export interface Sante {
   version: string;
-  base: { ok: boolean; message?: string; latence_ms?: number };
-  stockage: { chemin: string; libre_octets: number | null; total_octets?: number | null };
-  derniere_sauvegarde: { ok: boolean; created_at: string; taille: number | null; message: string | null; fichier?: string | null } | null;
-  migrations: unknown;
+  base: { ok: boolean; latence_ms?: number; erreur?: string };
+  stockage: { chemin: string; libre_octets: number | null; total_octets: number | null; erreur?: string };
+  derniere_sauvegarde: { ok: boolean; created_at: string; taille: number | null; message: string | null; fichier: string | null } | null;
+  migrations: { a_jour: boolean | null; en_attente?: string[]; erreur?: string };
 }

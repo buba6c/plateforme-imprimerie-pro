@@ -80,11 +80,9 @@ export class IndexDisque {
     return this.parNom.get(nom.normalize('NFC')) ?? [];
   }
 
-  /** Chemin relatif à sa racine (pour le rapport). */
+  /** Chemin réel complet (pour le rapport : plusieurs racines peuvent s'appeler « uploads »). */
   relatif(cle: string): string {
-    const e = this.fichiers.get(cle);
-    if (!e) return cle;
-    return path.join(path.basename(e.racine), path.relative(e.racine, e.reel));
+    return this.fichiers.get(cle)?.reel ?? cle;
   }
 
   orphelins(): { cle: string; entree: EntreeDisque }[] {

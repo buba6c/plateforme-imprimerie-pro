@@ -116,8 +116,8 @@
 .adm-tarif-missing td { background: color-mix(in srgb, var(--warning-soft) 70%, transparent); }
 .ev-table tbody tr.adm-tarif-missing:hover td { background: var(--warning-soft); }
 .adm-tarif-inactive td { color: var(--text-muted); }
-.adm-price { display: inline-flex; align-items: center; gap: var(--space-2); justify-content: flex-end; }
-.adm-price .ev-input { width: 120px; height: var(--control-sm); text-align: right; font-family: var(--font-mono); font-variant-numeric: tabular-nums; font-size: 13px; }
+.adm-price { display: inline-flex; align-items: center; gap: 4px; justify-content: flex-end; }
+.adm-price .ev-input { width: 104px; height: var(--control-sm); text-align: right; font-family: var(--font-mono); font-variant-numeric: tabular-nums; font-size: 13px; }
 .adm-price .ev-input[aria-invalid="true"] { border-color: var(--danger); }
 .adm-tag-missing { display: inline-flex; align-items: center; gap: 4px; height: 20px; padding: 0 8px; border-radius: var(--radius-full); background: var(--warning-soft); color: var(--warning-ink); font-size: 11px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; white-space: nowrap; }
 .adm-note { display: flex; align-items: flex-start; gap: 6px; margin-top: 4px; font-size: 12px; line-height: 16px; color: var(--warning-ink); }
@@ -185,3 +185,15 @@
 .ev-table.adm-dense th, .ev-table.adm-dense td { padding-left: var(--space-3); padding-right: var(--space-3); }
 .ev-table.adm-dense th:first-child, .ev-table.adm-dense td:first-child { padding-left: var(--space-4); }
 .ev-table.adm-dense th:last-child, .ev-table.adm-dense td:last-child { padding-right: var(--space-4); }
+.ev-icon-btn:disabled { opacity: .4; cursor: not-allowed; }
+.ev-icon-btn.adm-save { color: var(--accent-ink); }
+.adm-caisse-sub .ev-num { font-size: 12px; line-height: 16px; }
+.adm-price__actions { display: inline-flex; gap: 0; width: 64px; justify-content: flex-start; }
+.adm-price__unit { width: 12px; font-size: 13px; color: var(--text-muted); text-align: left; }
+.adm-price .ev-input-group .ev-input { border-top-right-radius: 0; border-bottom-right-radius: 0; }
+.adm-linkbtn { background: none; border: 0; padding: 0; font: inherit; color: var(--accent-ink); cursor: pointer; }
+.adm-sim-grid { display: grid; gap: var(--space-3); grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.adm-fieldset { border: 0; margin: 0; padding: 0; display: grid; gap: var(--space-2); min-width: 0; }
+.adm-fieldset legend { padding: 0; margin-bottom: var(--space-2); }
+.adm-tarifs-table { table-layout: fixed; min-width: 680px; }
+.adm-tarifs-table td:nth-child(2) .ev-ref { white-space: normal; overflow-wrap: anywhere; }

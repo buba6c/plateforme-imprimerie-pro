@@ -116,13 +116,22 @@ export class SourceLegacy {
     return out;
   }
 
-  /** Empreinte de contrôle d'une table (nombre de lignes + md5 du contenu), pour prouver qu'elle n'a pas changé. */
+  /**
+   * Empreinte de contrôle d'une table (nombre de lignes + md5 des md5 de chaque ligne), pour prouver
+   * qu'elle n'a pas changé. 32 octets par ligne côté serveur : supporte des millions de lignes.
+   */
   async empreinte(table: string): Promise<{ lignes: number; md5: string }> {
-    const ordre = this.aColonne(table, 'id') ? 'ORDER BY t.id' : 'ORDER BY to_jsonb(t)::text';
+    const ordre = this.aColonne(table, 'id') ? 'ORDER BY t.id' : 'ORDER BY md5(to_jsonb(t)::text)';
     const r = await this.requete<{ n: string; md5: string }>(
-      `SELECT count(*)::text AS n, coalesce(md5(string_agg(to_jsonb(t)::text, '|' ${ordre})), '') AS md5 FROM public.${ident(table)} t`,
+      `SELECT count(*)::text AS n, coalesce(md5(string_agg(md5(to_jsonb(t)::text), '' ${ordre})), '') AS md5 FROM public.${ident(table)} t`,
     );
     return { lignes: Number(r[0]?.n ?? 0), md5: r[0]?.md5 ?? '' };
+  }
+
+  /** Termine l'instantané courant et en ouvre un nouveau (toujours en lecture seule). */
+  async nouvelInstantane(): Promise<void> {
+    await this.client.query('ROLLBACK');
+    await this.client.query('BEGIN TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY');
   }
 
   async fermer(): Promise<void> {

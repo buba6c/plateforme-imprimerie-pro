@@ -147,13 +147,15 @@ export default function ListeClients() {
                 <Link key={c.id} to={`/clients/${c.id}`} className="ev-job ev-card--interactive cm-carte" aria-label={`Client ${c.nom}`}>
                   <div>
                     <p className="ev-job__client">{c.nom}</p>
-                    <p className="ev-job__spec ev-ref">{[c.telephone, c.email].filter(Boolean).join(' · ') || 'Sans téléphone ni e-mail'}</p>
+                    <p className="ev-job__spec">{[c.telephone, c.email].filter(Boolean).join(' · ') || 'Sans téléphone ni e-mail'}</p>
                   </div>
                   <div className="ev-job__foot">
                     <span className="ev-muted" style={{ fontSize: 13 }}>
                       {pluriel(c.nb_dossiers, 'dossier')} · {formatFCFA(c.total_commandes)}
                     </span>
-                    {c.reste_du > 0 ? <span className="ev-num cm-danger">Reste {formatFCFA(c.reste_du)}</span> : <span className="ev-muted" style={{ fontSize: 13 }}>Rien à payer</span>}
+                    {c.reste_du > 0 ? <span className="cm-danger" style={{ fontSize: 13 }}>
+                        Reste <span className="ev-num">{formatFCFA(c.reste_du)}</span>
+                      </span> : <span className="ev-muted" style={{ fontSize: 13 }}>Rien à payer</span>}
                   </div>
                 </Link>
               ))}
