@@ -13,7 +13,8 @@
 --   * fichiers : seconde racine backend/uploads (12), retrouvé seulement par son nom (13),
 --     nom ambigu présent deux fois sur le disque (14), empreinte et taille différentes (15) ;
 --     orphelin PDF de facture dans backend/uploads/factures ;
---   * paiements : montant nul, centimes, trop-perçu, dossier inexistant, statut et mode inconnus ;
+--   * paiements : montant nul, centimes, trop-perçu, dossier inexistant, statut et mode inconnus,
+--     dossier marqué « payé » sans paiement validé (28) ;
 --   * factures : dossier introuvable, seconde facture émise pour un même dossier ;
 --   * tarifs : unité et catégorie inconnues ; journal : détails qui ne sont pas du JSON.
 -- =============================================================================
@@ -38,8 +39,8 @@ INSERT INTO dossiers (id, numero, client, type_formulaire, machine, statut, prep
   VALUES (26, 'CMD-2026-0023', 'Studio Graphik', NULL, NULL, 'Annulé', 6, '{"type_document":"Carte de visite","format":"85x55","nombre_exemplaires":"500","prix":"12 500,50 FCFA"}'::jsonb, '5f0c1e2a-0d26-4a1b-9c2d-000000000026', 'Cartes de visite annulées par le client', '2026-09-30 10:00:00', '2026-09-30 12:00:00', '2026-09-30');
 INSERT INTO dossiers (id, numero, client, type_formulaire, machine, statut, preparateur_id, data_formulaire, montant_cfa, folder_id, created_at, updated_at, date_reception)
   VALUES (27, 'CMD-2026-0011', '   ', 'Roland', 'Xerox', 'pret livraison', 2, '{"type_support":"Bâche","largeur":"200","hauteur":"100","unite":"cm","nombre_exemplaires":"1","prix":"à définir"}'::jsonb, 0, '5f0c1e2a-0d27-4a1b-9c2d-000000000027', '2026-09-29 11:00:00', '2026-09-30 09:00:00', '2026-09-29');
-INSERT INTO dossiers (id, numero, client, type_formulaire, machine, statut, preparateur_id, data_formulaire, montant_cfa, urgent, date_livraison_reelle, folder_id, created_at, updated_at, date_reception)
-  VALUES (28, 'CMD-2026-0024', 'Garage Sall', NULL, NULL, 'livre', 2, '{}'::jsonb, 15000.40, TRUE, '2026-09-20', '5f0c1e2a-0d28-4a1b-9c2d-000000000028', '2026-09-15 08:00:00', '2026-09-20 17:30:00', '2026-09-15');
+INSERT INTO dossiers (id, numero, client, type_formulaire, machine, statut, preparateur_id, data_formulaire, montant_cfa, urgent, date_livraison_reelle, statut_paiement, folder_id, created_at, updated_at, date_reception)
+  VALUES (28, 'CMD-2026-0024', 'Garage Sall', NULL, NULL, 'livre', 2, '{}'::jsonb, 15000.40, TRUE, '2026-09-20', 'paye', '5f0c1e2a-0d28-4a1b-9c2d-000000000028', '2026-09-15 08:00:00', '2026-09-20 17:30:00', '2026-09-15');
 
 ALTER TABLE dossiers ADD CONSTRAINT dossiers_statut_check CHECK (statut IN (
     'en_cours', 'a_revoir', 'pret_impression', 'en_impression', 'imprime',

@@ -274,7 +274,14 @@ describe("import de l'ancienne plateforme", () => {
     expect(refus.valide_at).not.toBeNull();
     const codes = reel.rapport!.anomalies.map((a) => `${a.code}:${a.legacy_id ?? ''}`);
     expect(codes).toEqual(
-      expect.arrayContaining(['paiement_sans_dossier:9', 'paiement_montant_invalide:6', 'paiement_statut_inconnu:10', 'paiement_mode_inconnu:10', 'trop_percu:']),
+      expect.arrayContaining([
+        'paiement_sans_dossier:9',
+        'paiement_montant_invalide:6',
+        'paiement_statut_inconnu:10',
+        'paiement_mode_inconnu:10',
+        'trop_percu:',
+        'statut_paiement_divergent:28', // « payé » dans l'ancienne plateforme, paiement seulement à valider
+      ]),
     );
     const mp = reel.rapport!.montants.paiements;
     const somme = (await cible.query(`SELECT sum(montant)::bigint AS s FROM paiements`)).rows[0].s;

@@ -131,6 +131,8 @@ interface DossierImporte {
   montant: number | null;
   statut: Statut;
   clientNom: string;
+  /** Marqué « payé » dans l'ancienne plateforme (statut_paiement). */
+  payeAncien: boolean;
 }
 
 interface Ctx {
@@ -1152,7 +1154,8 @@ async function importerDossiers(ctx: Ctx, resume: ResumeHisto) {
           colonnes: sansCles(r, ['data_formulaire', 'sections', 'supports']),
         },
       });
-      infos.set(id, { numero, montant, statut, clientNom: clientNom ?? CLIENT_INCONNU });
+      const sp = sansAccents(texte(r.statut_paiement) ?? '').toLowerCase();
+      infos.set(id, { numero, montant, statut, clientNom: clientNom ?? CLIENT_INCONNU, payeAncien: sp === 'paye' || sp === 'approuve_admin' || sp === 'encaisse' });
       ctx.numeros.push({ serie: 'CMD', numero });
     }
     const res = await inserer<{ id: number; legacy_id: number }>(ctx.db, 'dossiers', COLONNES_DOSSIER, lignes, 'id, legacy_id');
@@ -1796,6 +1799,30 @@ async function controlerPaiements(ctx: Ctx) {
   );
   for (const r of doubles.rows) {
     ctx.rapport.anomalie('paiements', null, 'paiement_doublon_probable', 'attention', `Dossier ${r.numero} : ${r.n} paiements validés de ${r.montant} FCFA (double encaissement ?).`);
+  }
+  // En v2, « payé » se déduit des paiements validés : un dossier marqué payé dans l'ancienne plateforme
+  // sans paiement validé suffisant apparaîtra comme non payé (ou acompte).
+  const payes = [...ctx.dossiers.entries()].filter(([, d]) => d.payeAncien && d.montant !== null).map(([legacyId]) => legacyId);
+  if (payes.length) {
+    const r = await ctx.db.query<{ legacy_id: number; numero: string; montant: number; valide: number; attente: number }>(
+      `SELECT d.legacy_id, d.numero, d.montant,
+              coalesce(sum(p.montant) FILTER (WHERE p.statut = 'valide'), 0)::int AS valide,
+              coalesce(sum(p.montant) FILTER (WHERE p.statut = 'a_valider'), 0)::int AS attente
+       FROM dossiers d LEFT JOIN paiements p ON p.dossier_id = d.id
+       WHERE d.legacy_id = ANY($1::int[]) GROUP BY d.id ORDER BY d.legacy_id`,
+      [payes],
+    );
+    for (const x of r.rows) {
+      if (x.valide >= x.montant) continue;
+      ctx.rapport.anomalie(
+        'dossiers',
+        x.legacy_id,
+        'statut_paiement_divergent',
+        'attention',
+        `Dossier ${x.numero} marqué « payé » dans l'ancienne plateforme, mais seuls ${x.valide} FCFA sur ${x.montant} sont validés` +
+          `${x.attente ? ` (${x.attente} FCFA à valider)` : ''} : il apparaîtra comme ${x.valide > 0 ? 'acompte' : 'non payé'} en v2. Valider ou saisir le paiement manquant.`,
+      );
+    }
   }
 }
 
