@@ -148,7 +148,6 @@ interface Ctx {
   clients: Map<string, number>;
   devisRows: LigneLegacy[];
   facturesRows: LigneLegacy[];
-  devisVersDossier: Map<number, number>;
   devisLegacyVersDossierLegacy: Map<number, number>;
   devisParDossier: Map<number, number>;
   dossiers: Map<number, DossierImporte>;
@@ -208,13 +207,25 @@ export async function runImport(options: ImportOptions): Promise<ImportResult> {
     rapport.data.cible.migrations_appliquees = await migrate(target, (m) => log(m));
     const existantes = await compterTables(target, TABLES_METIER);
     const nonVides = Object.entries(existantes).filter(([, n]) => n > 0);
+    let vider = remplacer;
     if (nonVides.length && !remplacer) {
       const detail = nonVides.map(([t, n]) => `${t} ${n}`).join(', ');
-      rapport.terminer('refuse', `cible non vide (${detail})`);
-      return fin(
-        2,
-        `La base v2 contient déjà des données (${detail}). Relancez avec --remplacer pour les effacer et refaire l'import, ou videz la base.`,
-        false,
+      if (!dryRun) {
+        rapport.terminer('refuse', `cible non vide (${detail})`);
+        return fin(
+          2,
+          `La base v2 contient déjà des données (${detail}). Relancez avec --remplacer pour les effacer et refaire l'import, ou videz la base.`,
+          false,
+        );
+      }
+      // Une simulation n'écrit jamais rien : on la fait comme avec --remplacer, dans la transaction annulée.
+      vider = true;
+      rapport.anomalie(
+        'cible',
+        null,
+        'cible_non_vide',
+        'attention',
+        `La base v2 contient déjà des données (${detail}) : la simulation a été faite comme avec --remplacer (rien n'a été modifié). L'import réel exigera --remplacer, qui effacera ces données.`,
       );
     }
 
@@ -253,7 +264,6 @@ export async function runImport(options: ImportOptions): Promise<ImportResult> {
       clients: new Map(),
       devisRows: [],
       facturesRows: [],
-      devisVersDossier: new Map(),
       devisLegacyVersDossierLegacy: new Map(),
       devisParDossier: new Map(),
       dossiers: new Map(),
@@ -263,7 +273,7 @@ export async function runImport(options: ImportOptions): Promise<ImportResult> {
     try {
       await db.query('BEGIN');
       await db.query(`SELECT set_config('TimeZone', $1, true)`, [fuseau]);
-      if (remplacer) await viderCible(ctx, existantes);
+      if (vider) await viderCible(ctx, existantes);
       await importerUtilisateurs(ctx);
       await indexerDossiers(ctx);
       ctx.devisRows = await src.toutes('devis');
@@ -272,11 +282,13 @@ export async function runImport(options: ImportOptions): Promise<ImportResult> {
       await importerDevis(ctx);
       const resume = await resumerHistorique(ctx);
       await importerDossiers(ctx, resume);
+      await analyser(ctx, 'users', 'clients', 'devis', 'dossiers', 'dossier_events');
       await lierDevis(ctx);
       await importerHistorique(ctx);
       await importerFichiers(ctx);
       await importerFactures(ctx);
       await importerPaiements(ctx);
+      await analyser(ctx, 'fichiers', 'factures', 'paiements', 'dossier_events');
       await controlerPaiements(ctx);
       await importerTarifs(ctx);
       await fixerCompteurs(ctx);
@@ -300,28 +312,40 @@ export async function runImport(options: ImportOptions): Promise<ImportResult> {
     }
     if (dryRun) await suivi.annuler();
 
-    // 4. Après validation : anciens fichiers v2 devenus orphelins (--remplacer) mis de côté, jamais supprimés.
-    if (!dryRun && remplacer) await mettreDeCoteFichiersV2(target, storageDir, rapport, log);
-
+    // L'import est validé à ce stade : une erreur dans les vérifications qui suivent est signalée
+    // dans le rapport, sans faire croire à un échec de l'import.
+    const apres = async (quoi: string, fn: () => Promise<void>) => {
+      try {
+        await fn();
+      } catch (e) {
+        rapport.anomalie('import', null, 'verification_apres_import', 'attention', `${quoi} : ${(e as Error).message}`);
+      }
+    };
+    // 4. Anciens fichiers v2 devenus orphelins (--remplacer) mis de côté, jamais supprimés.
+    if (!dryRun && remplacer) {
+      await apres('Mise de côté des anciens fichiers v2', () => mettreDeCoteFichiersV2(target, storageDir, rapport, log));
+    }
     // 5. Preuve que l'ancienne base n'a pas bougé (nouvelle lecture, hors de l'instantané de l'import).
-    await src.nouvelInstantane();
-    let inchangee = true;
-    for (const t of src.tables()) {
-      const e = await src.empreinte(t);
-      rapport.data.source.empreinte_apres[t] = e;
-      const avant = rapport.data.source.empreinte_avant[t];
-      if (!avant || avant.md5 !== e.md5 || avant.lignes !== e.lignes) inchangee = false;
-    }
-    rapport.data.source.inchangee = inchangee;
-    if (!inchangee) {
-      rapport.anomalie(
-        'source',
-        null,
-        'source_modifiee_pendant_import',
-        'attention',
-        "L'ancienne base a changé pendant l'import (l'ancienne application est-elle encore active ?). Relancez l'import une fois l'application arrêtée.",
-      );
-    }
+    await apres("Contrôle de l'ancienne base", async () => {
+      await src!.nouvelInstantane();
+      let inchangee = true;
+      for (const t of src!.tables()) {
+        const e = await src!.empreinte(t);
+        rapport.data.source.empreinte_apres[t] = e;
+        const avant = rapport.data.source.empreinte_avant[t];
+        if (!avant || avant.md5 !== e.md5 || avant.lignes !== e.lignes) inchangee = false;
+      }
+      rapport.data.source.inchangee = inchangee;
+      if (!inchangee) {
+        rapport.anomalie(
+          'source',
+          null,
+          'source_modifiee_pendant_import',
+          'attention',
+          "L'ancienne base a changé pendant l'import (l'ancienne application est-elle encore active ?). Relancez l'import une fois l'application arrêtée.",
+        );
+      }
+    });
     rapport.terminer('ok');
     const r = fin(0, dryRun ? 'Simulation réussie.' : 'Import réussi.');
     log(resumeTexte(rapport.data, r.rapportPath));
@@ -399,6 +423,14 @@ async function viderCible(ctx: Ctx, existantes: Record<string, number>) {
   ctx.rapport.data.cible.lignes_supprimees_avant_import = Object.fromEntries(Object.entries(avant).filter(([, n]) => n > 0));
   const total = Object.values(existantes).reduce((s, n) => s + n, 0);
   ctx.log(`--remplacer : données v2 existantes effacées dans la transaction (${total} ligne(s) métier).`);
+}
+
+/**
+ * Statistiques du planificateur après un chargement massif : sans elles, PostgreSQL croit les tables
+ * vides (elles viennent d'être remplies dans la transaction) et choisit des plans quadratiques.
+ */
+async function analyser(ctx: Ctx, ...tables: string[]) {
+  for (const t of tables) await ctx.db.query(`ANALYZE ${ident(t)}`);
 }
 
 function progression(ctx: Ctx, quoi: string, n: number, total: number) {
@@ -1269,21 +1301,24 @@ async function importerHistorique(ctx: Ctx) {
 
   // Une même transition peut avoir été écrite dans plusieurs tables (ou deux fois) : on fusionne
   // les doublons exacts (même dossier, même statut d'arrivée, à 5 s près, sans commentaire propre).
-  // (La sous-requête s'appuie sur l'index dossier_events (dossier_id, created_at) : coût linéaire.)
+  // Jointure par hachage sur (dossier, statut) : coût linéaire, même sur des centaines de milliers
+  // d'entrées (les statistiques sont rafraîchies juste avant, la table vient d'être remplie).
+  await analyser(ctx, 'dossier_events');
   const rang = (e: string) => `CASE ${e}.data->>'source' WHEN 'historique_statuts' THEN 1 WHEN 'dossier_status_history' THEN 2 ELSE 3 END`;
+  await ctx.db.query('SET LOCAL enable_nestloop = off');
   const doublons = await ctx.db.query<{ source: string; n: number }>(
     `WITH sup AS (
-       DELETE FROM dossier_events a
-       WHERE a.type = 'statut' AND a.data ? 'source' AND EXISTS (
-         SELECT 1 FROM dossier_events b
-         WHERE b.dossier_id = a.dossier_id
-           AND b.created_at BETWEEN a.created_at - interval '5 seconds' AND a.created_at + interval '5 seconds'
-           AND b.type = 'statut' AND b.vers_statut = a.vers_statut AND b.id <> a.id AND b.data ? 'source'
-           AND (${rang('b')} < ${rang('a')} OR (${rang('b')} = ${rang('a')} AND b.id < a.id))
-           AND (a.commentaire IS NULL OR a.commentaire = b.commentaire))
+       DELETE FROM dossier_events a USING dossier_events b
+       WHERE a.type = 'statut' AND a.data ? 'source' AND b.type = 'statut' AND b.data ? 'source'
+         AND b.dossier_id = a.dossier_id AND b.vers_statut = a.vers_statut AND b.id <> a.id
+         AND b.created_at BETWEEN a.created_at - interval '5 seconds' AND a.created_at + interval '5 seconds'
+         AND (${rang('b')} < ${rang('a')} OR (${rang('b')} = ${rang('a')} AND b.id < a.id))
+         AND (a.commentaire IS NULL OR a.commentaire = b.commentaire)
        RETURNING a.data->>'source' AS source)
      SELECT source, count(*)::int AS n FROM sup GROUP BY source`,
   );
+  await ctx.db.query('SET LOCAL enable_nestloop = on');
+  await analyser(ctx, 'dossier_events');
   for (const d of doublons.rows) {
     const t = ctx.rapport.table(d.source);
     t.importes -= d.n;

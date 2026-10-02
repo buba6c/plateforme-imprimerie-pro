@@ -132,11 +132,15 @@ export function resoudre(index: IndexDisque, l: LigneFichier): Resolution {
     if (e) return { src: e.reel, cle: index.cle(e), taille: e.taille, regle, raison: null };
     return null;
   };
-  const absolusHorsRacine = (p: string, regle: string): Resolution | null => {
-    if (!path.isAbsolute(p)) return null;
+  // Seuls les fichiers situés sous les racines d'uploads sont lus : un chemin absolu en base qui pointe
+  // ailleurs (valeur corrompue, autre serveur) n'est jamais copié, il est signalé.
+  let horsRacines: string | null = null;
+  const viaLienSymbolique = (p: string, regle: string): Resolution | null => {
     try {
-      const st = fs.statSync(p);
-      if (st.isFile()) return { src: p, cle: p.normalize('NFC'), taille: st.size, regle, raison: null };
+      const reel = fs.realpathSync(p);
+      const r = essayer(reel, regle);
+      if (r) return r;
+      if (fs.statSync(reel).isFile()) horsRacines ??= p;
     } catch {
       /* absent */
     }
@@ -147,7 +151,7 @@ export function resoudre(index: IndexDisque, l: LigneFichier): Resolution {
   for (const c of l.chemins) {
     const p = c.replace(/\\/g, '/');
     if (path.isAbsolute(p)) {
-      const r = essayer(p, 'chemin_bd') ?? absolusHorsRacine(p, 'chemin_bd');
+      const r = essayer(p, 'chemin_bd') ?? viaLienSymbolique(p, 'chemin_bd');
       if (r) return r;
     }
     const rel = p.replace(/^\/+/, '');
@@ -181,12 +185,15 @@ export function resoudre(index: IndexDisque, l: LigneFichier): Resolution {
     }
   }
   // 5. Recherche par nom (correspondance unique seulement).
-  let raison = 'introuvable sur le disque';
+  let raison = horsRacines
+    ? `présent hors des dossiers d'uploads indiqués (${horsRacines}) : non lu ; ajoutez son dossier avec --uploads si ce fichier doit être repris`
+    : 'introuvable sur le disque';
   for (const n of noms) {
     const trouves = index.parNomFichier(n).filter((cle) => !index.utilises.has(cle));
     if (trouves.length === 0) continue;
     const dansRepDossier = trouves.filter((cle) => {
-      const segs = cle.split(path.sep);
+      const e = index.fichiers.get(cle)!;
+      const segs = path.relative(e.racine, e.reel).split(path.sep).slice(0, -1);
       return reps.some(([rep]) => segs.includes(rep));
     });
     let choix: string | null = null;

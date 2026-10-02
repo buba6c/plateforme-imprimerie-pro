@@ -338,11 +338,17 @@ describe("import de l'ancienne plateforme", () => {
   });
 
   it('refuse une base v2 déjà remplie sans --remplacer (code 2)', async () => {
-    const avant = await compte('dossiers');
+    const avant = await projection();
     const r = await runImport({ ...base(), rapport: null });
     expect(r.code).toBe(2);
     expect(r.message).toContain('--remplacer');
-    expect(await compte('dossiers')).toBe(avant);
+    expect(await projection()).toEqual(avant);
+    // Une simulation reste possible (elle n'écrit rien) et prévient que l'import réel exigera --remplacer.
+    const sim = await runImport({ ...base(), dryRun: true, rapport: null });
+    expect(sim.code, sim.message).toBe(0);
+    expect(sim.rapport!.anomalies.some((a) => a.code === 'cible_non_vide')).toBe(true);
+    expect(sim.rapport!.tables.dossiers!.importes).toBe(28);
+    expect(await projection()).toEqual(avant);
   });
 
   it('une relance avec --remplacer donne exactement le même résultat', async () => {
@@ -356,6 +362,19 @@ describe("import de l'ancienne plateforme", () => {
     expect(r.rapport!.cible.fichiers_v2_mis_de_cote.nombre).toBe(fichiersAvant);
     expect(Object.keys(inventaire(path.join(storageDir, 'dossiers'))).length).toBe(11);
     expect(await empreinteLegacy()).toEqual(legacyAvant);
+  });
+
+  it("tout ou rien : une erreur en cours d'import annule tout, y compris l'effacement de --remplacer", async () => {
+    const avant = await projection();
+    const bloque = path.join(tmp, 'stockage-impossible');
+    fs.writeFileSync(bloque, "ce n'est pas un répertoire");
+    const fichier = path.join(tmp, 'rapport-echec.json');
+    const r = await runImport({ ...base(), storageDir: bloque, remplacer: true, rapport: fichier });
+    expect(r.code).toBe(1);
+    expect(r.rapport!.statut).toBe('echec');
+    expect(JSON.parse(fs.readFileSync(fichier, 'utf8')).erreur).toBeTruthy();
+    expect(await projection()).toEqual(avant);
+    expect(Object.keys(inventaire(path.join(storageDir, 'dossiers'))).length).toBe(11);
   });
 
   it("permet de se connecter à la v2 et de travailler sur les données importées", async () => {
