@@ -3,6 +3,7 @@ import {
   ACTIONS_BY_ID,
   actionsDisponibles,
   calculerPrix,
+  formatFCFA,
   dossierCreateSchema,
   dossierUpdateSchema,
   isStatut,
@@ -22,6 +23,7 @@ import {
   type Statut,
 } from '@evocom/shared';
 import { getPool, one, query, tx, type Db } from '../../db/pool';
+import { journal } from '../../lib/audit';
 import { badRequest, conflict, forbidden, notFound, unprocessable } from '../../lib/errors';
 import { prochainNumero } from '../../lib/numbering';
 import { getParametres } from '../../lib/params';
@@ -228,11 +230,11 @@ export async function detailDossier(user: AuthUser, id: number) {
     : [];
   const events = await query(
     `SELECT e.id, e.type, e.action, e.de_statut, e.vers_statut, e.commentaire, e.created_at, e.user_id, u.nom AS user_nom, u.role AS user_role,
-            CASE WHEN $2 THEN e.data ELSE NULL END AS data
+            CASE WHEN $2 OR e.type NOT IN ('modification','paiement') OR (e.type = 'paiement' AND $3) THEN e.data ELSE NULL END AS data
      FROM dossier_events e LEFT JOIN users u ON u.id = e.user_id
-     WHERE e.dossier_id = $1 AND ($2 OR e.type <> 'modification')
+     WHERE e.dossier_id = $1 AND ($2 OR e.type <> 'modification') AND ($3 OR e.type <> 'paiement')
      ORDER BY e.created_at DESC, e.id DESC LIMIT 200`,
-    [id, user.role === 'admin'],
+    [id, user.role === 'admin', peutVoirMontants(user)],
   );
   const paiements = peutVoirMontants(user)
     ? await query(
@@ -427,16 +429,28 @@ export async function modifierDossier(user: AuthUser, id: number, body: unknown)
       args.push(value);
       sets.push(`${col} = $${args.length}`);
     };
+    const montantSaisi = input.montant !== undefined && input.montant !== null;
+    // montant: null envoyé explicitement = revenir au prix calculé à partir des spécifications.
+    const revenirAuCalcul = input.montant === null && d.montant_source === 'saisi';
     for (const k of CHAMPS_SUIVIS) {
       if (input[k] === undefined) continue;
+      if (k === 'montant' && revenirAuCalcul) continue;
       const v = input[k] ?? null;
       if (JSON.stringify(v) !== JSON.stringify(d[k] ?? null)) {
         changes[k] = { avant: d[k] ?? null, apres: v };
         set(k, v);
       }
     }
-    let montantSaisi = input.montant !== undefined && input.montant !== null;
     if (montantSaisi) set('montant_source', 'saisi');
+    if (revenirAuCalcul) {
+      const specsActuelles = specsSchemaFor(machine).parse(input.specs ?? d.specs) as Specs;
+      const prix = await prixPour(machine, specsActuelles, db);
+      if (!prix?.ok) throw unprocessable('Le prix ne peut pas être recalculé : corrigez les lignes ou gardez le montant saisi.', { erreurs: prix && !prix.ok ? prix.erreurs : [] });
+      if (prix.total_ttc !== d.montant) changes.montant = { avant: d.montant, apres: prix.total_ttc };
+      set('montant', prix.total_ttc);
+      set('montant_source', 'calcul');
+      set('detail_prix', JSON.stringify(prix));
+    }
     if (input.specs !== undefined || input.machine) {
       const specs = specsSchemaFor(machine).parse(input.specs ?? d.specs) as Specs;
       if (JSON.stringify(specs) !== JSON.stringify(d.specs)) changes.specs = { avant: d.specs, apres: specs };
@@ -444,12 +458,12 @@ export async function modifierDossier(user: AuthUser, id: number, body: unknown)
       const prix = await prixPour(machine, specs, db);
       if (prix?.ok) {
         set('detail_prix', JSON.stringify(prix));
-        if (!montantSaisi && d.montant_source !== 'saisi') {
+        if (!montantSaisi && !revenirAuCalcul && d.montant_source !== 'saisi') {
           if (prix.total_ttc !== d.montant) changes.montant = { avant: d.montant, apres: prix.total_ttc };
           set('montant', prix.total_ttc);
           set('montant_source', 'calcul');
         }
-      } else if (prix && !prix.ok && !montantSaisi && d.montant_source !== 'saisi') {
+      } else if (prix && !prix.ok && !montantSaisi && !revenirAuCalcul && d.montant_source !== 'saisi') {
         throw unprocessable('Le prix ne peut pas être calculé. Corrigez les lignes ou saisissez le montant à la main.', { erreurs: prix.erreurs });
       }
     }
@@ -595,6 +609,7 @@ export async function forcerStatut(user: AuthUser, id: number, statut: string, c
     if (d.statut === statut) throw conflict('Le dossier a déjà ce statut.');
     const row = await one<DossierRow>(`UPDATE dossiers SET statut = $1 WHERE id = $2 RETURNING *`, [statut, id], db);
     await evenement(db, id, user.id, { type: 'statut', action: 'forcer', de: d.statut, vers: statut, commentaire });
+    await journal(null, 'dossier_statut_force', 'dossier', id, { numero: d.numero, de: d.statut, vers: statut, commentaire, user_id: user.id }, db);
     return { avant: d, apres: row! };
   });
   signalDossier({ ...r.apres, ancien_statut: r.avant.statut });
@@ -679,6 +694,7 @@ export async function supprimerDossier(user: AuthUser, id: number, motif: string
     }
     await query(`UPDATE dossiers SET deleted_at = now(), deleted_by = $1 WHERE id = $2`, [user.id, id], db);
     await evenement(db, id, user.id, { type: 'suppression', commentaire: motif });
+    await journal(null, 'dossier_supprime', 'dossier', id, { numero: d.numero, client: d.client_nom, motif, user_id: user.id }, db);
     return d;
   });
   signalDossier(row, 'deleted');
@@ -691,6 +707,7 @@ export async function restaurerDossier(user: AuthUser, id: number) {
     if (!d) throw notFound('Ce dossier n\'est pas dans la corbeille.');
     const r = await one<DossierRow>(`UPDATE dossiers SET deleted_at = NULL, deleted_by = NULL WHERE id = $1 RETURNING *`, [id], db);
     await evenement(db, id, user.id, { type: 'restauration' });
+    await journal(null, 'dossier_restaure', 'dossier', id, { numero: d.numero, user_id: user.id }, db);
     return r!;
   });
   signalDossier({ ...row, ancien_statut: null }, 'created');
@@ -733,7 +750,7 @@ export async function enregistrerPaiement(
     data: { paiement_id: r!.id, montant: p.montant, mode: p.mode, reference: p.reference },
   });
   if (statut === 'a_valider') {
-    await notifier(db, { roles: ['admin'], exclure: user.id }, { type: 'paiement_a_valider', titre: 'Paiement à valider', message: `${p.montant} FCFA`, dossier_id: d.id });
+    await notifier(db, { roles: ['admin'], exclure: user.id }, { type: 'paiement_a_valider', titre: 'Paiement à valider', message: formatFCFA(p.montant), dossier_id: d.id });
   }
   return r!.id;
 }

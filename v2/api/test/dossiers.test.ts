@@ -240,3 +240,32 @@ describe('dossiers et circuit', () => {
     expect(r.body.items.every((i: any) => i.statut === 'en_cours')).toBe(true);
   });
 });
+
+describe('corrections d\'intégration', () => {
+  it('montant: null fait revenir au prix calculé après une saisie manuelle', async () => {
+    const prep = await agent(comptes.prep);
+    const d = await prep.post('/api/dossiers').send({ ...flyers, client_nom: 'Retour calcul', montant: 12345 });
+    expect(d.body.montant_source).toBe('saisi');
+    const r = await prep.patch(`/api/dossiers/${d.body.id}`).send({ montant: null });
+    expect(r.status).toBe(200);
+    expect(r.body.montant).toBe(50000);
+    expect(r.body.montant_source).toBe('calcul');
+  });
+
+  it("l'historique montre les fichiers à l'imprimeur mais jamais les montants", async () => {
+    const roland = await agent(comptes.roland);
+    const liste = await roland.get('/api/dossiers?file=travail');
+    const id = liste.body.items[0]?.id ?? (await roland.get('/api/dossiers')).body.items[0].id;
+    const d = await roland.get(`/api/dossiers/${id}`);
+    const types = d.body.historique.map((e: any) => e.type);
+    expect(types).not.toContain('paiement');
+    const fichier = d.body.historique.find((e: any) => e.type === 'fichier');
+    if (fichier) expect(fichier.data?.nom).toBeTruthy();
+  });
+
+  it('le résumé lisible des spécifications utilise les libellés', async () => {
+    const admin = await agent(comptes.admin);
+    const r = await admin.get('/api/dossiers?q=Boutique%20Keur%20Yaye');
+    expect(r.body.items[0].resume_specs).toContain('Bâche standard');
+  });
+});

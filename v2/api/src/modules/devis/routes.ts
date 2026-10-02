@@ -24,7 +24,7 @@ import {
 import { getPool, one, query, tx, type Db } from '../../db/pool';
 import { me, requireAuth, requireRole } from '../../lib/auth';
 import { badRequest, conflict, notFound, unprocessable } from '../../lib/errors';
-import { intParam, qList, qStr } from '../../lib/http';
+import { intParam, qList, qStr, qInt } from '../../lib/http';
 import { prochainNumero } from '../../lib/numbering';
 import { getParametres } from '../../lib/params';
 import { getTarifs } from '../../lib/tarifs';
@@ -162,14 +162,18 @@ devisRouter.get('/', async (req, res) => {
   const { page, limit, offset } = pagination(req, 50, 200);
   const c = new Conditions();
   if (user.role !== 'admin') c.add('dv.created_by = ?', user.id);
+  const q = qStr(req, 'q');
+  if (q) c.add(`lower(dv.numero || ' ' || dv.client_nom || ' ' || coalesce(dv.description, '')) LIKE ?`, motifLike(q));
+  const clientId = qInt(req, 'client_id');
+  if (clientId) c.add('dv.client_id = ?', clientId);
+  // Compteurs par statut pour les onglets, avant le filtre de statut.
+  const compteurs = await query<{ statut: string; n: number }>(`SELECT dv.statut, count(*)::int AS n FROM devis dv ${c.where} GROUP BY dv.statut`, c.args);
   const statuts = qList(req, 'statut');
   if (statuts?.length) {
     const inconnus = statuts.filter((s) => !(STATUTS_DEVIS as readonly string[]).includes(s));
     if (inconnus.length) throw badRequest(`Statut de devis inconnu : ${inconnus.join(', ')}. Valeurs possibles : ${STATUTS_DEVIS.join(', ')}.`);
     c.add('dv.statut = ANY(?)', statuts);
   }
-  const q = qStr(req, 'q');
-  if (q) c.add(`lower(dv.numero || ' ' || dv.client_nom || ' ' || coalesce(dv.description, '')) LIKE ?`, motifLike(q));
   const total = await one<{ n: number }>(`SELECT count(*)::int AS n FROM devis dv ${c.where}`, c.args);
   const tz = `$${c.args.length + 1}`; // fuseau, pour les colonnes calculées
   const rows = await query<DevisRow>(
@@ -186,7 +190,13 @@ devisRouter.get('/', async (req, res) => {
      LIMIT ${limit} OFFSET ${offset}`,
     [...c.args, params.fuseau],
   );
-  res.json({ items: rows.map((r) => ({ ...r, statut_label: STATUT_DEVIS_LABELS[r.statut] })), total: total?.n ?? 0, page, limit });
+  res.json({
+    items: rows.map((r) => ({ ...r, statut_label: STATUT_DEVIS_LABELS[r.statut] })),
+    total: total?.n ?? 0,
+    page,
+    limit,
+    compteurs: Object.fromEntries(compteurs.map((x) => [x.statut, x.n])),
+  });
 });
 
 devisRouter.post('/', async (req, res) => {

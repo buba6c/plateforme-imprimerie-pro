@@ -34,7 +34,8 @@ export function errorHandler(log: { error: (o: unknown, m?: string) => void }) {
       return res.status(400).json({ error: 'Certains champs sont invalides.', code: 'requete_invalide', champs: zodDetails(err) });
     }
     if (err instanceof HttpError) {
-      return res.status(err.status).json({ error: err.message, code: err.code, details: err.details });
+      const champs = (err.details as { champs?: unknown } | undefined)?.champs;
+      return res.status(err.status).json({ error: err.message, code: err.code, details: err.details, ...(champs ? { champs } : {}) });
     }
     const e = err as { type?: string; status?: number };
     if (e?.type === 'entity.too.large') return res.status(413).json({ error: 'Requête trop volumineuse.' });

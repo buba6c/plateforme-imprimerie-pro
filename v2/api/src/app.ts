@@ -30,7 +30,7 @@ export function createApp(config: Config, log: Logger): Express {
               imgSrc: ["'self'", 'data:', 'blob:'],
               fontSrc: ["'self'"],
               connectSrc: ["'self'", 'ws:', 'wss:'],
-              frameSrc: ["'self'"],
+              frameSrc: ["'self'", 'blob:'],
               objectSrc: ["'none'"],
               frameAncestors: ["'self'"],
             },

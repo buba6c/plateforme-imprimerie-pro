@@ -230,10 +230,9 @@ export default function NouveauDossier() {
           if (JSON.stringify(val) !== JSON.stringify((avant as Record<string, unknown>)[k])) patch[k] = val;
         }
         if (patch.machine !== undefined) patch.specs = corps.specs;
-        // Retour au prix calculé après une saisie manuelle : l'API ne sait pas effacer la saisie
-        // (montant: null viderait le montant), on envoie donc le total calculé.
+        // Retour au prix calculé après une saisie manuelle : montant null demande à l'API de recalculer.
         if (!f.montantManuel && initial.current!.montantManuel) {
-          patch.montant = resultat?.ok ? resultat.total_ttc : null;
+          patch.montant = null;
           patch.specs = corps.specs;
         }
         if (!Object.keys(patch).length) {

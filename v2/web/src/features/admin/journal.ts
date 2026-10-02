@@ -15,6 +15,9 @@ export const ACTION_LABELS: Record<string, string> = {
   facture_annulee: 'Facture annulée',
   client_modifie: 'Client modifié',
   client_fusionne: 'Clients fusionnés',
+  dossier_supprime: 'Dossier mis à la corbeille',
+  dossier_restaure: 'Dossier restauré',
+  dossier_statut_force: 'Statut de dossier forcé',
 };
 
 export function libelleAction(a: string): string {

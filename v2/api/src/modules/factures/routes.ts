@@ -106,7 +106,8 @@ facturesRouter.get('/', async (req, res) => {
   const items = await query(
     `SELECT f.id, f.numero, f.statut, f.dossier_id, dos.numero AS dossier_numero, f.client_id, f.client_nom,
             f.total_ht, f.tva_taux, f.tva, f.total_ttc, f.date_emission, f.annulee_at, f.motif_annulation, f.created_at,
-            uc.nom AS created_by_nom
+            uc.nom AS created_by_nom,
+            (SELECT coalesce(sum(p.montant),0)::int FROM paiements p WHERE p.dossier_id = f.dossier_id AND p.statut = 'valide') AS deja_paye
      FROM factures f JOIN dossiers dos ON dos.id = f.dossier_id LEFT JOIN users uc ON uc.id = f.created_by
      ${c.where}
      ORDER BY f.date_emission DESC, f.numero DESC
@@ -114,7 +115,12 @@ facturesRouter.get('/', async (req, res) => {
     c.args,
   );
   // somme_ttc : total des factures émises (les annulées ne comptent pas) parmi les résultats filtrés.
-  res.json({ items, total: agg?.n ?? 0, somme_ttc: agg?.somme ?? 0, page, limit });
+  const lignes = items.map((f: any) => ({
+    ...f,
+    reste: Math.max(0, f.total_ttc - f.deja_paye),
+    situation_paiement: situationPaiement(f.total_ttc, f.deja_paye),
+  }));
+  res.json({ items: lignes, total: agg?.n ?? 0, somme_ttc: agg?.somme ?? 0, page, limit });
 });
 
 facturesRouter.get('/:id', async (req, res) => {
