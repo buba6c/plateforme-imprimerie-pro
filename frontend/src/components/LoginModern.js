@@ -32,7 +32,7 @@ const LoginModern = () => {
     if (errorStr.includes('timeout')) {
       return '⏱️ Le serveur met trop de temps à répondre. Réessayez dans un instant.';
     }
-    return '❌ Une erreur est survenue. Contactez le support si le problème persiste.';
+    return '❌ Une erreur est survenue. Veuillez réessayer.';
   };
 
   const handleChange = (e) => {

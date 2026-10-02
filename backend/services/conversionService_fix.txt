@@ -1,0 +1,23 @@
+      // 5. Créer le dossier dans la base de données avec TOUTES les données
+      const [dossierResult] = await dbHelper.query(
+        `INSERT INTO dossiers (
+          numero, 
+          client, 
+          preparateur_id,
+          type_formulaire,
+          data_formulaire, 
+          statut,
+          montant_cfa,
+          created_at
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, NOW())
+        RETURNING id, numero`,
+        [
+          numeroDossier,
+          clientNom,                  // ✅ Client du devis (avec fallback)
+          devis.user_id,              // ✅ Le préparateur qui a CRÉÉ le devis
+          devis.machine_type,         // type_formulaire = machine_type
+          JSON.stringify(dataJson),   // ✅ TOUTES les données techniques
+          'en_cours',                 // Statut initial du dossier
+          devis.prix_final || devis.prix_estime // Montant du devis
+        ]
+      );

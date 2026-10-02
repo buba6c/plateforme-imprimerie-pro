@@ -424,10 +424,11 @@ const getDossierFilterForUser = user => {
  * Middleware: Logger les actions sur les dossiers
  * Utilise la fonction log_dossier_activity de PostgreSQL
  */
+
 const logDossierActivity = async (folderId, userId, action, details = {}) => {
   try {
     await query(
-      'SELECT log_dossier_activity($1, $2, $3, $4)',
+      'INSERT INTO dossier_activity_log (dossier_id, user_id, action, details) VALUES ($1, $2, $3, $4)',
       [folderId, userId, action, JSON.stringify(details)]
     );
   } catch (error) {
@@ -435,6 +436,7 @@ const logDossierActivity = async (folderId, userId, action, details = {}) => {
     console.error('Erreur logDossierActivity:', error);
   }
 };
+
 
 module.exports = {
   checkDossierPermission,

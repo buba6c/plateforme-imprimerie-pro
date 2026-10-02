@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { XMarkIcon, CheckCircleIcon, BanknotesIcon, CalendarIcon } from '@heroicons/react/24/outline';
 
 const ValiderLivraisonModal = ({ isOpen, onClose, dossier, onConfirm }) => {
@@ -8,6 +8,56 @@ const ValiderLivraisonModal = ({ isOpen, onClose, dossier, onConfirm }) => {
   const [modePaiement, setModePaiement] = useState('');
   const [montantCfa, setMontantCfa] = useState('');
   const [commentaire, setCommentaire] = useState('');
+
+  // Préremplir le montant quand le dossier change
+  useEffect(() => {
+    if (!dossier) return;
+    
+    console.log('🔍 [ValiderLivraisonModal] useEffect triggered');
+    console.log('🔍 [ValiderLivraisonModal] dossier:', dossier);
+    
+    // 1. Priorité : montant_cfa direct
+    if (dossier.montant_cfa) {
+      console.log('✅ [ValiderLivraisonModal] Setting from montant_cfa:', dossier.montant_cfa);
+      setMontantCfa(dossier.montant_cfa);
+      return;
+    }
+    
+    // 2. Essayer amount
+    if (dossier.amount) {
+      console.log('✅ [ValiderLivraisonModal] Setting from amount:', dossier.amount);
+      setMontantCfa(dossier.amount);
+      return;
+    }
+    
+    // 3. Essayer montant
+    if (dossier.montant) {
+      console.log('✅ [ValiderLivraisonModal] Setting from montant:', dossier.montant);
+      setMontantCfa(dossier.montant);
+      return;
+    }
+    
+    // 4. Extraire du data_formulaire (prix_total_cfa)
+    if (dossier.data_formulaire) {
+      try {
+        const formData = typeof dossier.data_formulaire === 'string' 
+          ? JSON.parse(dossier.data_formulaire) 
+          : dossier.data_formulaire;
+        
+        const montantFromForm = formData.prix_total_cfa || formData.montant_total || formData.total || formData.prix;
+        
+        if (montantFromForm) {
+          console.log('✅ [ValiderLivraisonModal] Setting from data_formulaire:', montantFromForm);
+          setMontantCfa(montantFromForm);
+          return;
+        }
+      } catch (e) {
+        console.warn('⚠️ [ValiderLivraisonModal] Erreur parsing data_formulaire:', e);
+      }
+    }
+    
+    console.log('⚠️ [ValiderLivraisonModal] No montant field found, leaving empty');
+  }, [dossier]);
 
   if (!isOpen || !dossier) return null;
 
@@ -65,10 +115,10 @@ const ValiderLivraisonModal = ({ isOpen, onClose, dossier, onConfirm }) => {
         <div className="bg-emerald-50 dark:bg-emerald-900/30 p-4 rounded-xl mb-6">
           <p className="text-sm text-neutral-600 dark:text-neutral-300 mb-1">Dossier</p>
           <p className="font-bold text-neutral-900 dark:text-white text-lg">
-            {dossier.nom_client || dossier.client}
+            {dossier.numero || dossier.numero_commande}
           </p>
           <p className="text-sm text-neutral-600 dark:text-neutral-300 mt-1">
-            N° {dossier.numero_dossier}
+            Client: {dossier.client || dossier.nom_client}
           </p>
         </div>
 

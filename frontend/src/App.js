@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import { ThemeProvider } from './providers/ThemeProvider';
 import { AuthProvider, useAuth } from './context/AuthContext';
-import Login from './components/LoginModern';
+import Login from './components/LoginProfessional';
 import Layout from './components/LayoutImproved';
 import AdminDashboardProfessional from './components/admin/AdminDashboardProfessional';
 import { 
@@ -13,12 +13,13 @@ import LivreurBoard from './components/livreur/LivreurBoard';
 import LivreurDossiers from './components/LivreurDossiers';
 import LivreurPlanning from './pages/LivreurPlanning';
 import LivreurHistorique from './pages/LivreurHistorique';
+import LivreurPaiements from './components/livreur/LivreurPaiements';
 import Statistics from './components/admin/StatisticsProfessional';
 import UserManagement from './components/admin/UserManagement';
 import RolePermissions from './components/admin/RolePermissions';
 import Settings from './components/admin/Settings';
 import DossierManagement from './components/dossiers/DossierManagement';
-import FileManager from './components/admin/FileManager';
+import FileManagerFinder from './components/admin/FileManagerFinder';
 import { ToastProvider } from './components/ui/Toast';
 import './styles/scrollbar.css';
 
@@ -62,6 +63,8 @@ function AppContent() {
           return <LivreurPlanning user={user} />;
         case 'historique':
           return <LivreurHistorique user={user} />;
+        case 'paiements':
+          return <LivreurPaiements user={user} />;
         case 'dossiers':
           return <LivreurDossiers user={user} />;
       }
@@ -91,7 +94,7 @@ function AppContent() {
         }
         return <DossierManagement user={user} />;
       case 'files':
-        return <FileManager user={user} />;
+        return <FileManagerFinder user={user} />;
       case 'statistics':
         return <Statistics />;
       case 'settings':
@@ -170,8 +173,7 @@ function AppContent() {
           )
         } 
       />
-
-      {/* Route IA Intelligente */}
+      
       <Route
         path="/"
         element={

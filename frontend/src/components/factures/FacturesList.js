@@ -67,24 +67,53 @@ const FacturesList = ({ user }) => {
     }
   };
 
+  // 💰 Badge pour le statut de paiement de factures
   const getStatutBadge = (statut) => {
-    const badges = {
-      non_paye: 'bg-red-100 text-red-800',
-      paye: 'bg-green-100 text-green-800',
-      partiellement_paye: 'bg-yellow-100 text-yellow-800',
-      annule: 'bg-gray-100 text-gray-800'
+    const paymentConfig = {
+      non_paye: {
+        gradient: 'bg-gradient-to-r from-red-500 to-rose-600 dark:from-red-600 dark:to-rose-700',
+        icon: '💳',
+        label: 'Non payé',
+        ring: 'ring-red-300/50 dark:ring-red-400/40',
+        shadow: 'shadow-red-500/50 dark:shadow-red-600/40',
+        animate: 'animate-pulse'
+      },
+      acompte: {
+        gradient: 'bg-gradient-to-r from-orange-500 to-amber-600 dark:from-orange-600 dark:to-amber-700',
+        icon: '💰',
+        label: 'Acompte',
+        ring: 'ring-orange-300/50 dark:ring-orange-400/40',
+        shadow: 'shadow-orange-500/50 dark:shadow-orange-600/40'
+      },
+      partiellement_paye: {
+        gradient: 'bg-gradient-to-r from-yellow-500 to-orange-600 dark:from-yellow-600 dark:to-orange-700',
+        icon: '💰',
+        label: 'Partiellement payé',
+        ring: 'ring-yellow-300/50 dark:ring-yellow-400/40',
+        shadow: 'shadow-yellow-500/50 dark:shadow-yellow-600/40'
+      },
+      paye: {
+        gradient: 'bg-gradient-to-r from-green-500 to-emerald-600 dark:from-green-600 dark:to-emerald-700',
+        icon: '✅',
+        label: 'Payé',
+        ring: 'ring-green-300/50 dark:ring-green-400/40',
+        shadow: 'shadow-green-500/50 dark:shadow-green-600/40'
+      },
+      annule: {
+        gradient: 'bg-gradient-to-r from-gray-500 to-slate-600 dark:from-gray-600 dark:to-slate-700',
+        icon: '❌',
+        label: 'Annulé',
+        ring: 'ring-gray-300/50 dark:ring-gray-400/40',
+        shadow: 'shadow-gray-500/50 dark:shadow-gray-600/40'
+      }
     };
-    
-    const labels = {
-      non_paye: 'Non payé',
-      paye: 'Payé',
-      partiellement_paye: 'Partiellement payé',
-      annule: 'Annulé'
-    };
-    
+
+    const config = paymentConfig[statut] || paymentConfig.non_paye;
+
     return (
-      <span className={`px-3 py-1 text-xs font-semibold rounded-full ${badges[statut]}`}>
-        {labels[statut]}
+      <span className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg font-bold text-xs text-white ${config.gradient} shadow-md ${config.shadow} ring-2 ${config.ring} transform transition-all duration-300 hover:scale-105 hover:shadow-lg ${config.animate || ''}`}>
+        <span className="text-sm">{config.icon}</span>
+        <span className="tracking-wide">{config.label}</span>
       </span>
     );
   };

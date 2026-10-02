@@ -1,0 +1,428 @@
+import React, { useState, useEffect } from 'react';
+import { useAuth } from '../context/AuthContext';
+import { useTheme } from '../providers/ThemeProvider';
+import { 
+  EyeIcon, 
+  EyeSlashIcon, 
+  PrinterIcon, 
+  UserIcon,
+  EnvelopeIcon,
+  PhoneIcon,
+  GlobeAltIcon,
+  CheckCircleIcon,
+  ClockIcon,
+  CogIcon,
+  TruckIcon,
+  MoonIcon,
+  SunIcon
+} from '@heroicons/react/24/outline';
+import { useToast } from './ui/Toast';
+
+const LoginProfessional = () => {
+  const { login: authLogin } = useAuth();
+  const { theme, setTheme, resolvedTheme } = useTheme();
+  const toast = useToast?.() || { error: (msg) => console.error(msg) };
+  const [formData, setFormData] = useState({
+    email: '',
+    password: '',
+  });
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
+  const [mounted, setMounted] = useState(false);
+  const [showAbout, setShowAbout] = useState(false);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
+  const toggleTheme = () => {
+    setTheme(resolvedTheme === 'dark' ? 'light' : 'dark');
+  };
+
+  const getErrorMessage = (error) => {
+    const errorStr = String(error).toLowerCase();
+    if (errorStr.includes('401') || errorStr.includes('unauthorized') || errorStr.includes('incorrect')) {
+      return '🔒 Identifiants incorrects. Vérifiez votre email et mot de passe.';
+    }
+    if (errorStr.includes('network') || errorStr.includes('fetch') || errorStr.includes('connexion')) {
+      return '🌐 Problème de connexion. Vérifiez votre connexion internet.';
+    }
+    if (errorStr.includes('timeout')) {
+      return '⏱️ Le serveur met trop de temps à répondre. Réessayez dans un instant.';
+    }
+    return '❌ Une erreur est survenue. Contactez le support si le problème persiste.';
+  };
+
+  const handleChange = (e) => {
+    const { name, value } = e.target;
+    setFormData((prev) => ({
+      ...prev,
+      [name]: value,
+    }));
+    if (error) setError('');
+  };
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    setLoading(true);
+    setError('');
+    
+    try {
+      const result = await authLogin(formData.email, formData.password);
+      if (!result.success) {
+        const errorMsg = getErrorMessage(result.error || 'Erreur de connexion');
+        setError(errorMsg);
+        if (toast?.error) {
+          toast.error(errorMsg);
+        }
+      }
+    } catch (err) {
+      console.error('❌ Erreur de connexion:', err);
+      const errorMsg = getErrorMessage(err.error || err.message || 'Erreur de connexion');
+      setError(errorMsg);
+      if (toast?.error) {
+        toast.error(errorMsg);
+      }
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const features = [
+    { icon: ClockIcon, title: 'Suivi en temps réel', description: 'Suivez vos dossiers en temps réel' },
+    { icon: CogIcon, title: 'Gestion simplifiée', description: 'Interface intuitive et rapide' },
+    { icon: TruckIcon, title: 'Livraison optimisée', description: 'Coordination des livraisons' },
+    { icon: CheckCircleIcon, title: 'Qualité garantie', description: 'Contrôle qualité à chaque étape' },
+  ];
+
+  return (
+    <div className="min-h-screen flex bg-gradient-to-br from-blue-50 via-white to-rose-50 dark:from-neutral-900 dark:via-neutral-800 dark:to-neutral-900">
+      {/* Navigation Top Bar */}
+      <nav className="fixed top-0 left-0 right-0 z-50 bg-white/80 dark:bg-neutral-900/80 backdrop-blur-lg border-b border-neutral-200 dark:border-neutral-700">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="flex justify-between items-center h-16">
+            <div className="flex items-center space-x-3">
+              <div className="w-10 h-10 bg-gradient-to-br from-blue-600 to-blue-700 rounded-xl flex items-center justify-center shadow-lg">
+                <PrinterIcon className="w-6 h-6 text-white" />
+              </div>
+              <span className="text-2xl font-black bg-gradient-to-r from-blue-600 to-rose-600 bg-clip-text text-transparent">
+                EvocomPrint
+              </span>
+            </div>
+            <div className="hidden md:flex items-center space-x-8">
+              <button 
+                onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
+                className="text-neutral-700 dark:text-neutral-300 hover:text-blue-600 dark:hover:text-blue-400 font-medium transition-colors"
+              >
+                Accueil
+              </button>
+              <button 
+                onClick={() => setShowAbout(!showAbout)}
+                className="text-neutral-700 dark:text-neutral-300 hover:text-blue-600 dark:hover:text-blue-400 font-medium transition-colors"
+              >
+                À propos
+              </button>
+              <a 
+                href="#contact"
+                className="text-neutral-700 dark:text-neutral-300 hover:text-blue-600 dark:hover:text-blue-400 font-medium transition-colors"
+              >
+                Contact
+              </a>
+              
+              {/* Theme Toggle Button */}
+              <button
+                onClick={toggleTheme}
+                className="p-2 rounded-lg bg-neutral-100 dark:bg-neutral-800 hover:bg-neutral-200 dark:hover:bg-neutral-700 transition-all duration-200 border border-neutral-300 dark:border-neutral-600"
+                aria-label="Toggle theme"
+              >
+                {resolvedTheme === 'dark' ? (
+                  <SunIcon className="w-5 h-5 text-yellow-500" />
+                ) : (
+                  <MoonIcon className="w-5 h-5 text-blue-600" />
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      </nav>
+
+      {/* Main Content */}
+      <div className={`flex-1 flex items-center justify-center px-4 sm:px-6 lg:px-8 pt-24 pb-12 transition-all duration-1000 ${mounted ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-10'}`}>
+        <div className="max-w-7xl w-full">
+          <div className="grid lg:grid-cols-2 gap-12 items-center">
+            
+            {/* Left Column - Company Information */}
+            <div className="space-y-8 order-2 lg:order-1">
+              {/* Hero Section */}
+              <div className="space-y-6">
+                <div className="inline-flex items-center space-x-2 bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 px-4 py-2 rounded-full text-sm font-semibold">
+                  <span className="w-2 h-2 bg-blue-600 rounded-full animate-pulse"></span>
+                  <span>Plateforme d'impression numérique</span>
+                </div>
+                
+                <h1 className="text-4xl md:text-5xl lg:text-6xl font-black text-neutral-900 dark:text-white leading-tight">
+                  Bienvenue sur{' '}
+                  <span className="bg-gradient-to-r from-blue-600 via-blue-700 to-rose-600 bg-clip-text text-transparent">
+                    EvocomPrint
+                  </span>
+                </h1>
+                
+                <p className="text-xl text-neutral-600 dark:text-neutral-300 leading-relaxed">
+                  Gérez vos commandes d'impression en toute simplicité. Créez, suivez et imprimez vos dossiers en un seul endroit.
+                </p>
+
+                <button 
+                  onClick={() => setShowAbout(!showAbout)}
+                  className="inline-flex items-center space-x-2 bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 text-white px-6 py-3 rounded-xl font-semibold shadow-lg hover:shadow-xl transform hover:-translate-y-0.5 transition-all duration-200"
+                >
+                  <span>En savoir plus</span>
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7l5 5m0 0l-5 5m5-5H6" />
+                  </svg>
+                </button>
+              </div>
+
+              {/* Features Grid */}
+              <div className="grid grid-cols-2 gap-4 pt-4">
+                {features.map((feature, index) => (
+                  <div 
+                    key={index}
+                    className="bg-white dark:bg-neutral-800/50 backdrop-blur-sm rounded-2xl p-4 border border-neutral-200 dark:border-neutral-700 hover:border-blue-300 dark:hover:border-blue-600 transition-all duration-300 hover:shadow-lg group"
+                  >
+                    <feature.icon className="w-8 h-8 text-blue-600 dark:text-blue-400 mb-3 group-hover:scale-110 transition-transform duration-300" />
+                    <h3 className="font-bold text-neutral-900 dark:text-white mb-1">{feature.title}</h3>
+                    <p className="text-sm text-neutral-600 dark:text-neutral-400">{feature.description}</p>
+                  </div>
+                ))}
+              </div>
+
+              {/* About Section (collapsible) */}
+              {showAbout && (
+                <div className="bg-gradient-to-br from-blue-50 to-rose-50 dark:from-neutral-800/50 dark:to-neutral-800/30 backdrop-blur-sm rounded-2xl p-6 border border-blue-200 dark:border-neutral-700 animate-slideDown">
+                  <h2 className="text-2xl font-bold text-neutral-900 dark:text-white mb-4 flex items-center">
+                    <PrinterIcon className="w-6 h-6 mr-3 text-blue-600" />
+                    À propos de nous
+                  </h2>
+                  <p className="text-neutral-700 dark:text-neutral-300 leading-relaxed mb-4">
+                    EvocomPrint est une solution tout-en-un développée pour les imprimeries modernes. Notre plateforme vous permet de suivre vos dossiers, gérer vos clients et optimiser votre production en temps réel.
+                  </p>
+                  <p className="text-neutral-700 dark:text-neutral-300 leading-relaxed">
+                    Que vous soyez préparateur, imprimeur ou livreur, EvocomPrint simplifie votre travail quotidien avec une interface intuitive et des fonctionnalités adaptées à chaque rôle.
+                  </p>
+                </div>
+              )}
+
+              {/* Contact Section */}
+              <div id="contact" className="bg-white dark:bg-neutral-800/50 backdrop-blur-sm rounded-2xl p-6 border border-neutral-200 dark:border-neutral-700 space-y-4">
+                <h3 className="text-xl font-bold text-neutral-900 dark:text-white mb-4">Contactez-nous</h3>
+                
+                <div className="space-y-3">
+                  <a href="mailto:contact@evocomprint.com" className="flex items-center space-x-3 text-neutral-700 dark:text-neutral-300 hover:text-blue-600 dark:hover:text-blue-400 transition-colors group">
+                    <div className="w-10 h-10 bg-blue-100 dark:bg-blue-900/30 rounded-xl flex items-center justify-center group-hover:bg-blue-600 transition-colors">
+                      <EnvelopeIcon className="w-5 h-5 text-blue-600 dark:text-blue-400 group-hover:text-white" />
+                    </div>
+                    <span className="font-medium">contact@evocomprint.com</span>
+                  </a>
+
+                  <a href="https://wa.me/237XXXXXXXXX" target="_blank" rel="noopener noreferrer" className="flex items-center space-x-3 text-neutral-700 dark:text-neutral-300 hover:text-green-600 dark:hover:text-green-400 transition-colors group">
+                    <div className="w-10 h-10 bg-green-100 dark:bg-green-900/30 rounded-xl flex items-center justify-center group-hover:bg-green-600 transition-colors">
+                      <PhoneIcon className="w-5 h-5 text-green-600 dark:text-green-400 group-hover:text-white" />
+                    </div>
+                    <span className="font-medium">+237 XX XXX XXXX (WhatsApp)</span>
+                  </a>
+
+                  <a href="https://evocomprint.com" target="_blank" rel="noopener noreferrer" className="flex items-center space-x-3 text-neutral-700 dark:text-neutral-300 hover:text-rose-600 dark:hover:text-rose-400 transition-colors group">
+                    <div className="w-10 h-10 bg-rose-100 dark:bg-rose-900/30 rounded-xl flex items-center justify-center group-hover:bg-rose-600 transition-colors">
+                      <GlobeAltIcon className="w-5 h-5 text-rose-600 dark:text-rose-400 group-hover:text-white" />
+                    </div>
+                    <span className="font-medium">www.evocomprint.com</span>
+                  </a>
+                </div>
+              </div>
+            </div>
+
+            {/* Right Column - Login Form */}
+            <div className="order-1 lg:order-2">
+              <div className="bg-white dark:bg-neutral-800/95 backdrop-blur-xl rounded-3xl shadow-2xl p-8 md:p-10 border border-neutral-200 dark:border-neutral-700 transform hover:scale-[1.01] transition-all duration-500">
+                {/* Form Header */}
+                <div className="text-center space-y-4 mb-8">
+                  <div className="inline-flex items-center justify-center w-16 h-16 bg-gradient-to-br from-blue-600 to-blue-700 rounded-2xl shadow-lg transform hover:rotate-12 transition-transform duration-300">
+                    <PrinterIcon className="w-8 h-8 text-white" />
+                  </div>
+
+                  <div>
+                    <h2 className="text-3xl font-black text-neutral-900 dark:text-white">
+                      Connexion
+                    </h2>
+                    <p className="text-neutral-600 dark:text-neutral-400 mt-2">
+                      Accédez à votre espace de travail
+                    </p>
+                  </div>
+                </div>
+
+                {/* Form */}
+                <form onSubmit={handleSubmit} className="space-y-6">
+                  {/* Error message */}
+                  {error && (
+                    <div className="bg-red-50 dark:bg-red-900/20 border-l-4 border-red-500 dark:border-red-400 rounded-lg p-4 animate-shake">
+                      <div className="flex items-center">
+                        <div className="flex-shrink-0">
+                          <svg className="h-5 w-5 text-red-400 dark:text-red-300" viewBox="0 0 20 20" fill="currentColor">
+                            <path
+                              fillRule="evenodd"
+                              d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.28 7.22a.75.75 0 00-1.06 1.06L8.94 10l-1.72 1.72a.75.75 0 101.06 1.06L10 11.06l1.72 1.72a.75.75 0 101.06-1.06L11.06 10l1.72-1.72a.75.75 0 00-1.06-1.06L10 8.94 8.28 7.22z"
+                              clipRule="evenodd"
+                            />
+                          </svg>
+                        </div>
+                        <div className="ml-3">
+                          <p className="text-sm font-medium text-red-800 dark:text-red-200">{error}</p>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Email field */}
+                  <div className="space-y-2">
+                    <label htmlFor="email" className="block text-sm font-bold text-neutral-700 dark:text-neutral-200">
+                      Adresse email
+                    </label>
+                    <div className="relative group">
+                      <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                        <UserIcon className="h-5 w-5 text-neutral-400 group-focus-within:text-blue-600 transition-colors" />
+                      </div>
+                      <input
+                        id="email"
+                        name="email"
+                        type="email"
+                        autoComplete="email"
+                        required
+                        className="block w-full pl-10 pr-3 py-3.5 border-2 border-neutral-200 dark:border-neutral-600 rounded-xl focus:outline-none focus:ring-4 focus:ring-blue-500/20 focus:border-blue-600 dark:focus:border-blue-400 transition-all duration-200 bg-white dark:bg-neutral-800/50 backdrop-blur-sm text-neutral-900 dark:text-neutral-100 placeholder-neutral-500 dark:placeholder-neutral-400 font-medium"
+                        placeholder="votre.email@exemple.com"
+                        value={formData.email}
+                        onChange={handleChange}
+                        disabled={loading}
+                      />
+                    </div>
+                  </div>
+
+                  {/* Password field */}
+                  <div className="space-y-2">
+                    <label htmlFor="password" className="block text-sm font-bold text-neutral-700 dark:text-neutral-200">
+                      Mot de passe
+                    </label>
+                    <div className="relative group">
+                      <input
+                        id="password"
+                        name="password"
+                        type={showPassword ? 'text' : 'password'}
+                        autoComplete="current-password"
+                        required
+                        className="block w-full pr-10 pl-3 py-3.5 border-2 border-neutral-200 dark:border-neutral-600 rounded-xl focus:outline-none focus:ring-4 focus:ring-blue-500/20 focus:border-blue-600 dark:focus:border-blue-400 transition-all duration-200 bg-white dark:bg-neutral-800/50 backdrop-blur-sm text-neutral-900 dark:text-neutral-100 placeholder-neutral-500 dark:placeholder-neutral-400 font-medium"
+                        placeholder="••••••••"
+                        value={formData.password}
+                        onChange={handleChange}
+                        disabled={loading}
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowPassword(!showPassword)}
+                        className="absolute inset-y-0 right-0 pr-3 flex items-center"
+                        tabIndex={-1}
+                      >
+                        {showPassword ? (
+                          <EyeSlashIcon className="h-5 w-5 text-neutral-400 hover:text-neutral-600 dark:hover:text-neutral-300 transition-colors" />
+                        ) : (
+                          <EyeIcon className="h-5 w-5 text-neutral-400 hover:text-neutral-600 dark:hover:text-neutral-300 transition-colors" />
+                        )}
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Forgot password link */}
+                  <div className="flex items-center justify-end">
+                    <button
+                      type="button"
+                      className="text-sm font-medium text-blue-600 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300 transition-colors"
+                      disabled
+                    >
+                      Mot de passe oublié ?
+                    </button>
+                  </div>
+
+                  {/* Submit button */}
+                  <button
+                    type="submit"
+                    disabled={loading}
+                    className="w-full flex justify-center items-center py-3.5 px-4 border border-transparent rounded-xl shadow-lg text-sm font-bold text-white bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 focus:outline-none focus:ring-4 focus:ring-blue-500/50 disabled:opacity-50 disabled:cursor-not-allowed transform hover:-translate-y-0.5 transition-all duration-200 relative overflow-hidden group"
+                  >
+                    <span className="absolute inset-0 w-full h-full bg-gradient-to-r from-blue-700 to-blue-800 opacity-0 group-hover:opacity-100 transition-opacity duration-300"></span>
+                    {loading ? (
+                      <div className="flex items-center space-x-2 relative z-10">
+                        <svg className="animate-spin h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                        </svg>
+                        <span>Connexion en cours...</span>
+                      </div>
+                    ) : (
+                      <span className="relative z-10">Se connecter</span>
+                    )}
+                  </button>
+                </form>
+
+                {/* Footer note */}
+                <div className="mt-6 pt-6 border-t border-neutral-200 dark:border-neutral-700">
+                  <p className="text-center text-sm text-neutral-600 dark:text-neutral-400">
+                    Accès réservé aux membres du personnel
+                  </p>
+                </div>
+              </div>
+            </div>
+
+          </div>
+        </div>
+      </div>
+
+      {/* Footer */}
+      <div className="fixed bottom-0 left-0 right-0 bg-white/50 dark:bg-neutral-900/50 backdrop-blur-lg border-t border-neutral-200 dark:border-neutral-700 py-4">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          <p className="text-center text-sm text-neutral-600 dark:text-neutral-400">
+            © 2025 EvocomPrint. Tous droits réservés. | Plateforme d'impression numérique professionnelle
+          </p>
+        </div>
+      </div>
+
+      {/* Custom CSS for animations */}
+      <style>{`
+        @keyframes shake {
+          0%, 100% { transform: translateX(0); }
+          10%, 30%, 50%, 70%, 90% { transform: translateX(-5px); }
+          20%, 40%, 60%, 80% { transform: translateX(5px); }
+        }
+        
+        @keyframes slideDown {
+          from {
+            opacity: 0;
+            transform: translateY(-20px);
+          }
+          to {
+            opacity: 1;
+            transform: translateY(0);
+          }
+        }
+        
+        .animate-shake {
+          animation: shake 0.5s ease-in-out;
+        }
+        
+        .animate-slideDown {
+          animation: slideDown 0.3s ease-out;
+        }
+      `}</style>
+    </div>
+  );
+};
+
+export default LoginProfessional;

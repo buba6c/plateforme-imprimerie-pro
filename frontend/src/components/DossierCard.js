@@ -5,6 +5,7 @@ import {
   UserIcon,
   DocumentTextIcon,
   CalendarIcon,
+  TruckIcon,
 } from '@heroicons/react/24/outline';
 import { getStatusColor, getStatusLabel } from '../utils/statusColors';
 
@@ -19,7 +20,7 @@ const DossierCard = ({
 }) => {
   const statusColor = getStatusColor(dossier.statut || dossier.status || 'nouveau');
   const statusLabel = getStatusLabel(dossier.statut || dossier.status || 'nouveau');
-
+  
   const cardVariants = {
     hidden: { opacity: 0, y: 20, scale: 0.95 },
     visible: { 
@@ -39,6 +40,10 @@ const DossierCard = ({
     },
     tap: { scale: 0.98 }
   };
+
+  // Vérifier si une livraison est programmée
+  const hasScheduledDelivery = dossier.date_livraison || dossier.livreur_id;
+  const isDeliveryStatus = ['pret_livraison', 'en_livraison', 'livre'].includes(dossier.statut || dossier.status);
 
   return (
     <motion.div
@@ -80,18 +85,46 @@ const DossierCard = ({
           </div>
         )}
 
-        {/* Date */}
+        {/* Date de création */}
         {showDate && dossier.date_creation && (
           <div className="flex items-center gap-2 text-sm">
             <CalendarIcon className="h-4 w-4 text-gray-400 dark:text-gray-500 flex-shrink-0" />
             <span className="text-gray-500 dark:text-gray-400">
-              {new Date(dossier.date_creation).toLocaleDateString('fr-FR', {
+              Créé: {new Date(dossier.date_creation).toLocaleDateString('fr-FR', {
                 day: '2-digit',
                 month: 'short',
                 year: 'numeric'
               })}
             </span>
           </div>
+        )}
+
+        {/* Date de livraison programmée */}
+        {dossier.date_livraison && (
+          <div className="flex items-center gap-2 text-sm">
+            <TruckIcon className="h-4 w-4 text-blue-500 dark:text-blue-400 flex-shrink-0" />
+            <span className="text-blue-600 dark:text-blue-400 font-medium">
+              Livraison: {new Date(dossier.date_livraison).toLocaleDateString('fr-FR', {
+                day: '2-digit',
+                month: 'short',
+                year: 'numeric'
+              })}
+            </span>
+          </div>
+        )}
+
+        {/* Badge livraison programmée */}
+        {hasScheduledDelivery && isDeliveryStatus && (
+          <motion.div
+            initial={{ opacity: 0, x: -10 }}
+            animate={{ opacity: 1, x: 0 }}
+            className="flex items-center gap-2 px-3 py-2 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg"
+          >
+            <TruckIcon className="h-4 w-4 text-blue-600 dark:text-blue-400" />
+            <span className="text-xs font-medium text-blue-700 dark:text-blue-300">
+              📦 Livraison programmée
+            </span>
+          </motion.div>
         )}
 
         {/* Détails supplémentaires */}
@@ -145,7 +178,7 @@ const DossierCard = ({
       </div>
 
       {/* Animation de pulsation pour les statuts urgents */}
-      {(dossier.statut === 'a_revoir' || dossier.urgent) && (
+      {(dossier.statut === 'a_revoir' || dossier.urgent) && dossier.statut !== 'livre' && (
         <motion.div
           className="absolute top-2 right-2 w-2 h-2 bg-red-500 rounded-full"
           animate={{

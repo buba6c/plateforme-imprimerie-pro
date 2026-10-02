@@ -1,13 +1,14 @@
 import React, { useState, useEffect } from 'react';
-import { 
-  BanknotesIcon, 
-  CheckCircleIcon, 
-  XCircleIcon, 
+import {
+  BanknotesIcon,
+  CheckCircleIcon,
+  XCircleIcon,
   ClockIcon,
   ArrowPathIcon,
   BellAlertIcon
 } from '@heroicons/react/24/outline';
 import axios from 'axios';
+import DossierDetails from '../dossiers/DossierDetails';
 
 const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:5001/api';
 
@@ -19,22 +20,35 @@ const AdminPaiementsDashboard = () => {
   const [dossiersNonPayes, setDossiersNonPayes] = useState([]);
   const [processing, setProcessing] = useState({});
 
+  // Nouveaux états pour les filtres
+  const [periode, setPeriode] = useState('mois'); // semaine, mois, annee
+  const [rechercheClient, setRechercheClient] = useState('');
+  const [showFilters, setShowFilters] = useState(false);
+  
+  // États pour le modal de détail du dossier
+  const [selectedDossierId, setSelectedDossierId] = useState(null);
+  const [showDossierDetails, setShowDossierDetails] = useState(false);
+
   useEffect(() => {
     fetchPaiements();
     fetchDossiersNonPayes();
-  }, [filter]);
+  }, [filter, periode, rechercheClient]);
 
   const fetchPaiements = async () => {
     try {
       setLoading(true);
       const token = localStorage.getItem('auth_token');
-      const params = filter !== 'tous' ? { statut: filter } : {};
-      
+      const params = {
+        ...(filter !== 'tous' && { statut: filter }),
+        ...(periode && { periode }),
+        ...(rechercheClient && { client: rechercheClient })
+      };
+
       const response = await axios.get(`${API_URL}/paiements`, {
         headers: { Authorization: `Bearer ${token}` },
         params
       });
-      
+
       setPaiements(response.data.paiements || []);
       setStats(response.data.stats || {});
     } catch (error) {
@@ -51,26 +65,52 @@ const AdminPaiementsDashboard = () => {
         headers: { Authorization: `Bearer ${token}` },
         params: { jours: 3 }
       });
-      
+
       setDossiersNonPayes(response.data.dossiers_non_payes || []);
     } catch (error) {
       console.error('Erreur chargement dossiers non payés:', error);
     }
   };
 
+  const openDossierDetails = (dossierId) => {
+    setSelectedDossierId(dossierId);
+    setShowDossierDetails(true);
+  };
+
+  const closeDossierDetails = () => {
+    setShowDossierDetails(false);
+    setSelectedDossierId(null);
+  };
+
+  const ignorerRappel = async (dossierId) => {
+    const token = localStorage.getItem("auth_token");
+    try {
+      await axios.post(`${API_URL}/paiements/rappels/ignorer/${dossierId}`, {}, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      
+      setDossiersNonPayes(prev => prev.filter(d => d.folder_id !== dossierId));
+      
+      alert("✅ Rappel ignoré. Il réapparaîtra dans 7 jours si le paiement n'est toujours pas effectué.");
+    } catch (error) {
+      console.error("Erreur ignorer rappel:", error);
+      alert("❌ Erreur lors de l'ignorance du rappel");
+    }
+  };
+
   const approuverPaiement = async (paiementId) => {
     const commentaire = prompt('Commentaire (optionnel) :');
-    
+
     try {
       setProcessing(prev => ({ ...prev, [paiementId]: 'approving' }));
       const token = localStorage.getItem('auth_token');
-      
+
       await axios.post(`${API_URL}/paiements/${paiementId}/approuver`, {
         commentaire
       }, {
         headers: { Authorization: `Bearer ${token}` }
       });
-      
+
       alert('✅ Paiement approuvé avec succès');
       fetchPaiements();
     } catch (error) {
@@ -84,17 +124,17 @@ const AdminPaiementsDashboard = () => {
   const refuserPaiement = async (paiementId) => {
     const raison = prompt('Raison du refus (obligatoire) :');
     if (!raison) return;
-    
+
     try {
       setProcessing(prev => ({ ...prev, [paiementId]: 'refusing' }));
       const token = localStorage.getItem('auth_token');
-      
+
       await axios.post(`${API_URL}/paiements/${paiementId}/refuser`, {
         raison
       }, {
         headers: { Authorization: `Bearer ${token}` }
       });
-      
+
       alert('✅ Paiement refusé');
       fetchPaiements();
     } catch (error) {
@@ -108,12 +148,13 @@ const AdminPaiementsDashboard = () => {
   const getStatutBadge = (statut) => {
     const badges = {
       en_attente: { bg: 'bg-yellow-100 dark:bg-yellow-900/30', text: 'text-yellow-800 dark:text-yellow-300', label: '⏳ En attente' },
+      encaisse_livreur: { bg: 'bg-yellow-100 dark:bg-yellow-900/30', text: 'text-yellow-800 dark:text-yellow-300', label: '⏳ En attente' },
       approuve: { bg: 'bg-green-100 dark:bg-green-900/30', text: 'text-green-800 dark:text-green-300', label: '✅ Approuvé' },
       refuse: { bg: 'bg-red-100 dark:bg-red-900/30', text: 'text-red-800 dark:text-red-300', label: '❌ Refusé' },
     };
-    
+
     const badge = badges[statut] || badges.en_attente;
-    
+
     return (
       <span className={`px-3 py-1 text-xs font-semibold rounded-full ${badge.bg} ${badge.text}`}>
         {badge.label}
@@ -173,9 +214,12 @@ const AdminPaiementsDashboard = () => {
         <div className="bg-gradient-to-br from-green-50 to-green-100 dark:from-green-900/30 dark:to-green-800/30 rounded-xl p-5 border border-green-200 dark:border-green-700">
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-sm font-medium text-green-600 dark:text-green-400">Montant approuvé</p>
-              <p className="text-xl font-bold text-green-900 dark:text-green-100 mt-1">
-                {parseInt(stats.total_approuve || 0).toLocaleString('fr-FR')} F
+              <p className="text-sm font-medium text-green-600 dark:text-green-400">Approuvés</p>
+              <p className="text-2xl font-bold text-green-900 dark:text-green-100 mt-1">
+                {stats.count_approuve || 0}
+              </p>
+              <p className="text-sm text-green-700 dark:text-green-300 mt-1">
+                {parseInt(stats.total_approuve || 0).toLocaleString('fr-FR')} FCFA
               </p>
             </div>
             <CheckCircleIcon className="w-10 h-10 text-green-600 opacity-50" />
@@ -186,8 +230,11 @@ const AdminPaiementsDashboard = () => {
           <div className="flex items-center justify-between">
             <div>
               <p className="text-sm font-medium text-yellow-600 dark:text-yellow-400">En attente</p>
-              <p className="text-xl font-bold text-yellow-900 dark:text-yellow-100 mt-1">
-                {parseInt(stats.total_en_attente || 0).toLocaleString('fr-FR')} F
+              <p className="text-2xl font-bold text-yellow-900 dark:text-yellow-100 mt-1">
+                {stats.count_en_attente || 0}
+              </p>
+              <p className="text-sm text-yellow-700 dark:text-yellow-300 mt-1">
+                {parseInt(stats.total_en_attente || 0).toLocaleString('fr-FR')} FCFA
               </p>
             </div>
             <ClockIcon className="w-10 h-10 text-yellow-600 opacity-50" />
@@ -218,18 +265,26 @@ const AdminPaiementsDashboard = () => {
               </h3>
               <div className="space-y-2">
                 {dossiersNonPayes.slice(0, 5).map(d => (
-                  <div key={d.folder_id} className="text-sm text-yellow-800 dark:text-yellow-300 flex items-center gap-2">
-                    <span className="font-mono font-semibold">{d.numero_commande}</span>
-                    <span>•</span>
-                    <span>{d.client_nom}</span>
-                    <span>•</span>
-                    <span className="font-bold">{parseInt(d.prix_final || 0).toLocaleString('fr-FR')} F</span>
-                    {d.prenom && d.nom && (
-                      <>
-                        <span>•</span>
-                        <span className="text-yellow-700 dark:text-yellow-400">{d.prenom} {d.nom}</span>
-                      </>
-                    )}
+                  <div key={d.folder_id} className="text-sm flex items-center justify-between gap-3 bg-yellow-100 dark:bg-yellow-900/30 p-2 rounded">
+                    <div className="flex items-center gap-2 text-yellow-800 dark:text-yellow-300">
+                      <span className="font-mono font-semibold">{d.numero_commande}</span>
+                      <span>•</span>
+                      <span>{d.client_nom}</span>
+                      <span>•</span>
+                      <span className="font-bold">{d.prix_final > 0 ? `${parseInt(d.prix_final).toLocaleString('fr-FR')} F` : '(Montant non renseigné)'}</span>
+                      {d.nom && (
+                        <>
+                          <span>•</span>
+                          <span className="text-yellow-700 dark:text-yellow-400">Prép: {d.nom}</span>
+                        </>
+                      )}
+                    </div>
+                    <button
+                      onClick={() => ignorerRappel(d.folder_id)}
+                      className="px-3 py-1 bg-gray-200 hover:bg-gray-300 dark:bg-gray-700 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-300 text-xs rounded transition-colors whitespace-nowrap"
+                    >
+                      Ignorer (7j)
+                    </button>
                   </div>
                 ))}
                 {dossiersNonPayes.length > 5 && (
@@ -244,20 +299,58 @@ const AdminPaiementsDashboard = () => {
       )}
 
       {/* Filtres */}
-      <div className="flex gap-2">
-        {['tous', 'en_attente', 'approuve', 'refuse'].map(f => (
-          <button
-            key={f}
-            onClick={() => setFilter(f)}
-            className={`px-4 py-2 rounded-lg font-medium transition-colors ${
-              filter === f
+      <div className="space-y-4">
+        {/* Filtres de statut */}
+        <div className="flex gap-2">
+          {['tous', 'en_attente', 'approuve', 'refuse'].map(f => (
+            <button
+              key={f}
+              onClick={() => setFilter(f)}
+              className={`px-4 py-2 rounded-lg font-medium transition-colors ${filter === f
                 ? 'bg-green-600 text-white shadow-md'
                 : 'bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 border border-gray-300 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700'
-            }`}
-          >
-            {f === 'tous' ? 'Tous' : f === 'en_attente' ? 'En attente' : f === 'approuve' ? 'Approuvés' : 'Refusés'}
-          </button>
-        ))}
+                }`}
+            >
+              {f === 'tous' ? 'Tous' : f === 'en_attente' ? 'En attente' : f === 'approuve' ? 'Approuvés' : 'Refusés'}
+            </button>
+          ))}
+        </div>
+
+        {/* Filtres avancés - Période et Recherche */}
+        <div className="bg-gradient-to-br from-gray-50 to-blue-50 dark:from-gray-800 dark:to-gray-900 rounded-xl p-6 border border-gray-200 dark:border-gray-700">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            {/* Filtre période */}
+            <div>
+              <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">
+                📅 Période
+              </label>
+              <select
+                value={periode}
+                onChange={(e) => setPeriode(e.target.value)}
+                className="w-full px-4 py-2.5 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-white font-medium focus:ring-2 focus:ring-green-500"
+              >
+                <option value="">Toutes</option>
+                <option value="semaine">Cette semaine (7 jours)</option>
+                <option value="mois">Ce mois (30 jours)</option>
+                <option value="annee">Cette année (365 jours)</option>
+              </select>
+            </div>
+
+            {/* Recherche client */}
+            <div className="md:col-span-2">
+              <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">
+                🔍 Recherche par client
+              </label>
+              <input
+                type="text"
+                placeholder="Nom du client..."
+                value={rechercheClient}
+                onChange={(e) => setRechercheClient(e.target.value)}
+                className="w-full px-4 py-2.5 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-green-500"
+              />
+            </div>
+          </div>
+        </div>
       </div>
 
       {/* Liste des paiements */}
@@ -285,10 +378,10 @@ const AdminPaiementsDashboard = () => {
                       {parseInt(p.montant).toLocaleString('fr-FR')} FCFA
                     </span>
                     <span className="text-xl">
-                      {getModePaiementIcon(p.mode_paiement)}
+                      {getModePaiementIcon(p.mode_paiement_final || p.mode_paiement)}
                     </span>
                     <span className="text-sm text-gray-600 dark:text-gray-400 capitalize">
-                      {p.mode_paiement?.replace('_', ' ')}
+                      {(p.mode_paiement_final || p.mode_paiement)?.replace('_', ' ')}
                     </span>
                   </div>
 
@@ -303,9 +396,12 @@ const AdminPaiementsDashboard = () => {
                     {p.dossier_numero && (
                       <div>
                         <span className="text-gray-500 dark:text-gray-400 block mb-1">Dossier</span>
-                        <span className="text-blue-600 dark:text-blue-400 font-semibold">
+                        <button
+                          onClick={() => openDossierDetails(p.dossier_id)}
+                          className="text-blue-600 dark:text-blue-400 font-semibold hover:text-blue-800 dark:hover:text-blue-300 hover:underline transition-colors"
+                        >
                           {p.dossier_numero}
-                        </span>
+                        </button>
                       </div>
                     )}
 
@@ -371,7 +467,7 @@ const AdminPaiementsDashboard = () => {
                 </div>
 
                 {/* Actions */}
-                {p.statut === 'en_attente' && (
+                {(p.statut === 'en_attente' || p.statut === 'encaisse_livreur') && (
                   <div className="ml-4 flex flex-col gap-2">
                     <button
                       onClick={() => approuverPaiement(p.id)}
@@ -381,7 +477,7 @@ const AdminPaiementsDashboard = () => {
                       <CheckCircleIcon className="w-5 h-5" />
                       {processing[p.id] === 'approving' ? 'Approbation...' : 'Approuver'}
                     </button>
-                    
+
                     <button
                       onClick={() => refuserPaiement(p.id)}
                       disabled={processing[p.id] === 'refusing'}
@@ -397,6 +493,17 @@ const AdminPaiementsDashboard = () => {
           ))}
         </div>
       )}
+
+      {/* Modal Détails Dossier */}
+      <DossierDetails
+        dossierId={selectedDossierId}
+        isOpen={showDossierDetails}
+        onClose={closeDossierDetails}
+        onStatusChange={() => {
+          // Recharger les paiements après modification
+          fetchPaiements();
+        }}
+      />
     </div>
   );
 };

@@ -10,8 +10,11 @@ import {
   SparklesIcon,
 } from '@heroicons/react/24/outline';
 import { dossiersService } from '../../services/apiAdapter';
+import SectionsManager from './SectionsManager';
+import SupportsManager from './SupportsManager';
 import filesService from '../../services/filesService';
-import IAOptimizationPanel from '../ai/IAOptimizationPanel';
+import dossierHistoryService from '../../services/dossierHistoryService';
+import notificationService from '../../services/notificationService';
 
 const CreateDossier = ({ isOpen, onClose, onSuccess }) => {
   const [selectedType, setSelectedType] = useState('roland');
@@ -20,7 +23,15 @@ const CreateDossier = ({ isOpen, onClose, onSuccess }) => {
   const [errors, setErrors] = useState({});
   const [files, setFiles] = useState([]);
   const [selectedPreset, setSelectedPreset] = useState('');
-  const [showIAPanel, setShowIAPanel] = useState(false);
+
+  // Mode édition
+  const [editMode, setEditMode] = useState(false);
+  const [dossierToEdit, setDossierToEdit] = useState(null);
+
+  // Nouveaux champs communs
+  const [description, setDescription] = useState('');
+  const [telephoneClient, setTelephoneClient] = useState('');
+  const [isUrgent, setIsUrgent] = useState(false);
 
   // État du formulaire Roland
   const [rolandData, setRolandData] = useState({
@@ -56,9 +67,92 @@ const CreateDossier = ({ isOpen, onClose, onSuccess }) => {
     conditionnement: [],
   });
 
+  
+  // ✅ NOUVEAU: États pour sections multiples et amount (vides par défaut, optionnels)
+  const [sections, setSections] = useState([]);
+  const [supports, setSupports] = useState([]);
+  const [amount, setAmount] = useState(null);
+
   useEffect(() => {
     const userData = JSON.parse(localStorage.getItem('user_data') || '{}');
     setCurrentUser(userData);
+  }, []);
+
+  // Écouter l'événement pour ouvrir en mode édition
+  useEffect(() => {
+    const handleEditDossier = (event) => {
+      const dossier = event.detail;
+      if (!dossier) {
+        console.error('❌ Aucun dossier fourni pour édition');
+        return;
+      }
+
+      console.log('📝 Mode édition activé pour le dossier:', dossier);
+
+      setEditMode(true);
+      setDossierToEdit(dossier);
+
+      // Pré-remplir les champs communs
+      setDescription(dossier.description_travail || dossier.description || '');
+      setTelephoneClient(dossier.telephone_client || '');
+      setIsUrgent(dossier.urgence || dossier.urgent || false);
+      setAmount(dossier.montant_cfa || dossier.amount || null);
+
+      // Pré-remplir sections/supports si présents
+      setSections(dossier.sections || []);
+      setSupports(dossier.supports || []);
+
+      // Déterminer le type et pré-remplir les données
+      const formData = dossier.form_data || dossier.data_formulaire || {};
+      const dossierType = (dossier.type_formulaire || dossier.type || dossier.machine || '').toLowerCase();
+      
+      console.log('📋 Type de dossier détecté:', dossierType);
+      console.log('📋 Données formulaire:', formData);
+      
+      // Détection du type: Roland ou Xerox
+      if (dossierType.includes('roland') || formData.type_support) {
+        console.log('✅ Mode ROLAND détecté');
+        setSelectedType('roland');
+        setRolandData({
+          client: dossier.nom_client || dossier.client_nom || dossier.client || '',
+          type_support: formData.type_support || '',
+          type_support_autre: formData.type_support_autre || '',
+          largeur: formData.largeur || '',
+          hauteur: formData.hauteur || '',
+          unite: formData.unite || 'cm',
+          nombre_exemplaires: formData.nombre_exemplaires || formData.exemplaires || '',
+          finition_oeillets: formData.finition_oeillets || '',
+          finition_position: formData.finition_position || '',
+        });
+      } else {
+        console.log('✅ Mode XEROX détecté');
+        setSelectedType('xerox');
+        setXeroxData({
+          client: dossier.nom_client || dossier.client_nom || dossier.client || '',
+          type_document: formData.type_document || '',
+          type_document_autre: formData.type_document_autre || '',
+          format: formData.format || '',
+          format_personnalise: formData.format_personnalise || '',
+          mode_impression: formData.mode_impression || 'recto_simple',
+          nombre_exemplaires: formData.nombre_exemplaires || formData.nombre_copies || '',
+          couleur_impression: formData.couleur_impression || 'couleur',
+          grammage: formData.grammage || '',
+          grammage_autre: formData.grammage_autre || '',
+          finition: Array.isArray(formData.finition) ? formData.finition : [],
+          faconnage: Array.isArray(formData.faconnage) ? formData.faconnage : [],
+          faconnage_autre: formData.faconnage_autre || '',
+          numerotation: formData.numerotation || false,
+          debut_numerotation: formData.debut_numerotation || '',
+          nombre_chiffres: formData.nombre_chiffres || '',
+          conditionnement: Array.isArray(formData.conditionnement) ? formData.conditionnement : [],
+        });
+      }
+
+      console.log('✅ Pré-remplissage terminé, prêt pour édition');
+    };
+
+    window.addEventListener('editDossier', handleEditDossier);
+    return () => window.removeEventListener('editDossier', handleEditDossier);
   }, []);
 
   // Presets rapides
@@ -86,7 +180,7 @@ const CreateDossier = ({ isOpen, onClose, onSuccess }) => {
         nombre_exemplaires: '1000',
         couleur_impression: 'couleur',
         grammage: '170g',
-        finition: ['Pelliculage Brillant Recto'],
+        finition: [],
       },
     },
     brochure_a4: {
@@ -226,7 +320,7 @@ const CreateDossier = ({ isOpen, onClose, onSuccess }) => {
     }
 
     return (w * h).toFixed(2);
-  }, [rolandData]);
+  }, [rolandData.largeur, rolandData.hauteur, rolandData.unite]);
 
   // Handlers pour Roland
   const handleRolandChange = (name, value) => {
@@ -287,6 +381,8 @@ const CreateDossier = ({ isOpen, onClose, onSuccess }) => {
 
   const validateForm = () => {
     const newErrors = {};
+
+    // Description maintenant facultative - pas de validation
 
     if (selectedType === 'roland') {
       if (!rolandData.client.trim()) {
@@ -360,7 +456,7 @@ const CreateDossier = ({ isOpen, onClose, onSuccess }) => {
     setLoading(true);
 
     try {
-      // Préparer les données JSON attendues par l'API de création
+      // Préparer les données JSON attendues par l'API
       const dataToSend = selectedType === 'roland'
         ? { ...rolandData, surface_m2: calculatedSurface }
         : { ...xeroxData };
@@ -369,25 +465,103 @@ const CreateDossier = ({ isOpen, onClose, onSuccess }) => {
         client: selectedType === 'roland' ? rolandData.client : xeroxData.client,
         type_formulaire: selectedType,
         data_formulaire: dataToSend,
+        description: description.trim(),
+        telephone_client: telephoneClient.trim() || null,
+        urgent: isUrgent,
+        // ✅ Toujours envoyer sections/supports si présents (plus de condition toggle)
+        ...(selectedType === 'xerox' && sections.length > 0 && { sections }),
+        ...(selectedType === 'roland' && supports.length > 0 && { supports }),
+        ...(amount !== null && amount > 0 && { amount: parseFloat(amount) || null }),
       };
 
-      // eslint-disable-next-line no-console
-      console.log('CreateDossier - Envoi création (JSON):', {
-        type: selectedType,
-        data: dataToSend,
-        filesCount: files.length,
-      });
+      let finalDossier;
 
-      // 1) Créer le dossier
-      const createRes = await dossiersService.createDossier(payload);
-      const createdDossier = createRes?.dossier || createRes;
-      // eslint-disable-next-line no-console
-      console.log('CreateDossier - Dossier créé:', createdDossier);
+      if (editMode && dossierToEdit) {
+        // MODE ÉDITION - Mise à jour du dossier existant
+        console.log('📝 CreateDossier - Mise à jour dossier:', dossierToEdit.id);
+        
+        // Récupérer l'utilisateur actuel
+        const currentUserData = JSON.parse(localStorage.getItem('user_data') || '{}');
+        
+        // Pour la mise à jour, créer un payload complet avec tous les champs modifiables
+        const updatePayload = {
+          client: payload.client,
+          telephone_client: payload.telephone_client,
+          description: payload.description,
+          urgent: payload.urgent,
+          data_formulaire: payload.data_formulaire,
+        };
+        
+        // Ajouter le montant seulement s'il est défini
+        if (payload.amount !== null && payload.amount !== undefined) {
+          updatePayload.amount = payload.amount;
+        }
+        
+        console.log('🔍 Payload de mise à jour:', JSON.stringify(updatePayload, null, 2));
+        
+        // Enregistrer les modifications AVANT la mise à jour
+        const oldData = {
+          client: dossierToEdit.nom_client || dossierToEdit.client_nom || dossierToEdit.client,
+          telephone_client: dossierToEdit.telephone_client,
+          description: dossierToEdit.description_travail || dossierToEdit.description,
+          urgent: dossierToEdit.urgence || dossierToEdit.urgent,
+          amount: dossierToEdit.montant_cfa || dossierToEdit.amount,
+          form_data: dossierToEdit.form_data || dossierToEdit.data_formulaire || {},
+        };
 
-      // 2) Si des fichiers ont été sélectionnés, les uploader via l'endpoint dédié
-      if (files.length > 0) {
+        const newData = {
+          client: updatePayload.client,
+          telephone_client: updatePayload.telephone_client,
+          description: updatePayload.description,
+          urgent: updatePayload.urgent,
+          amount: updatePayload.amount,
+          data_formulaire: updatePayload.data_formulaire,
+        };
+        
+        // Comparer les modifications pour générer un commentaire
+        const changes = dossierHistoryService.compareObjects(oldData, newData);
+        
+        // Mettre à jour le dossier
+        const updateRes = await dossiersService.updateDossier(dossierToEdit.id, updatePayload);
+        finalDossier = updateRes?.dossier || updateRes;
+        
+        // Enregistrer les modifications dans l'historique
+        if (changes.length > 0) {
+          const changeComment = dossierHistoryService.generateChangeComment(changes, currentUserData);
+          console.log('📝 Modifications effectuées:', changeComment);
+          
+          // Enregistrer dans l'historique
+          await dossierHistoryService.recordChanges(
+            dossierToEdit.id,
+            oldData,
+            newData,
+            currentUserData
+          );
+        }
+        
+        notificationService.success('Dossier mis à jour avec succès');
+        console.log('✅ CreateDossier - Dossier mis à jour avec succès');
+        
+        // Notifier les autres composants que le dossier a été mis à jour
+        console.log('📡 CreateDossier - Dispatch événement dossierUpdated pour ID:', dossierToEdit.id);
+        window.dispatchEvent(new CustomEvent('dossierUpdated', { 
+          detail: { dossierId: dossierToEdit.id, dossier: finalDossier } 
+        }));
+        console.log('✅ CreateDossier - Événement dossierUpdated dispatché');
+      } else {
+        // MODE CRÉATION - Créer un nouveau dossier
+        console.log('🆕 CreateDossier - Création nouveau dossier');
+        
+        const createRes = await dossiersService.createDossier(payload);
+        finalDossier = createRes?.dossier || createRes;
+        notificationService.success('Dossier créé avec succès');
+        console.log('✅ CreateDossier - Nouveau dossier créé');
+      }
+
+      // 2) Si des fichiers ont été sélectionnés, les uploader via l'endpoint dédié (création uniquement)
+      if (files.length > 0 && !editMode) {
         try {
-          await filesService.uploadFiles(createdDossier, files);
+          await filesService.uploadFiles(finalDossier, files);
           // eslint-disable-next-line no-console
           console.log('CreateDossier - Upload fichiers terminé');
         } catch (uploadErr) {
@@ -404,7 +578,16 @@ const CreateDossier = ({ isOpen, onClose, onSuccess }) => {
       }
 
       // 3) Succès global
-      onSuccess(createdDossier);
+      // En mode édition, on ne ferme pas et on ne notifie pas DossierManagement
+      // car DossierDetails va se recharger automatiquement via l'événement
+      if (!editMode) {
+        onSuccess(finalDossier);
+      }
+      onClose();
+
+      // Reset edit mode
+      setEditMode(false);
+      setDossierToEdit(null);
 
       // Reset forms
       setRolandData({
@@ -442,6 +625,9 @@ const CreateDossier = ({ isOpen, onClose, onSuccess }) => {
       setFiles([]);
       setErrors({});
       setSelectedPreset('');
+      setDescription('');
+      setTelephoneClient('');
+      setIsUrgent(false);
     } catch (err) {
       // eslint-disable-next-line no-console
       console.error('Erreur création dossier:', err);
@@ -473,13 +659,21 @@ const CreateDossier = ({ isOpen, onClose, onSuccess }) => {
           <div className="flex items-center justify-between">
             <div className="flex items-center space-x-3">
               <div className="bg-white bg-opacity-20 p-2 rounded-lg">
-                <PlusIcon className="h-6 w-6 text-white" />
+                {editMode ? (
+                  <svg className="h-6 w-6 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                  </svg>
+                ) : (
+                  <PlusIcon className="h-6 w-6 text-white" />
+                )}
               </div>
               <div>
                 <h3 className="text-xl font-bold text-white">
-                  Formulaire {selectedType === 'roland' ? 'Roland' : 'Xerox'} Standard
+                  {editMode ? '✏️ Modifier le dossier' : `Formulaire ${selectedType === 'roland' ? 'Roland' : 'Xerox'} Standard`}
                 </h3>
-                <p className="text-blue-100 text-sm">Nouveau dossier d'impression</p>
+                <p className="text-blue-100 text-sm">
+                  {editMode ? `Dossier #${dossierToEdit?.id || dossierToEdit?.folder_id}` : 'Nouveau dossier d\'impression'}
+                </p>
               </div>
             </div>
 
@@ -533,22 +727,13 @@ const CreateDossier = ({ isOpen, onClose, onSuccess }) => {
               </div>
             )}
 
-            {/* Presets rapides + Bouton IA */}
+            {/* Presets rapides */}
             <div className="mb-6 bg-gradient-to-r from-purple-50 to-pink-50 dark:from-purple-900/20 dark:to-pink-900/20 rounded-lg p-4 border border-purple-200 dark:border-purple-700">
-              <div className="flex items-center justify-between mb-3">
-                <div className="flex items-center gap-2">
-                  <SparklesIcon className="h-5 w-5 text-purple-600" />
-                  <h4 className="font-semibold text-neutral-900 dark:text-neutral-100">
-                    Presets rapides
-                  </h4>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => setShowIAPanel(true)}
-                  className="flex items-center gap-2 px-3 py-1 bg-purple-600 text-white rounded-lg text-sm font-medium hover:bg-purple-700 transition-colors"
-                >
-                  🤖 Suggestions IA
-                </button>
+              <div className="flex items-center gap-2 mb-3">
+                <SparklesIcon className="h-5 w-5 text-purple-600" />
+                <h4 className="font-semibold text-neutral-900 dark:text-neutral-100">
+                  Presets rapides
+                </h4>
               </div>
               <div className="grid grid-cols-2 md:grid-cols-5 gap-2">
                 {Object.entries(presets).map(([key, preset]) => (
@@ -568,8 +753,8 @@ const CreateDossier = ({ isOpen, onClose, onSuccess }) => {
               </div>
             </div>
 
-            {/* Informations auto-générées */}
-            <div className="bg-neutral-50 dark:bg-neutral-900/50 p-4 rounded-lg mb-6 border border-neutral-200 dark:border-neutral-700">
+            {/* Informations auto-générées - MASQUÉ PAR L'UTILISATEUR */}
+            {/* <div className="bg-neutral-50 dark:bg-neutral-900/50 p-4 rounded-lg mb-6 border border-neutral-200 dark:border-neutral-700">
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm">
                 <div>
                   <span className="font-semibold text-neutral-700 dark:text-neutral-300">N°:</span>
@@ -590,27 +775,70 @@ const CreateDossier = ({ isOpen, onClose, onSuccess }) => {
                   </span>
                 </div>
               </div>
+            </div> */}
+
+            {/* Client et Téléphone côte à côte */}
+            <div className="mb-6 grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <label htmlFor="client-input" className="form-label">
+                  Client * <span className="text-xs text-neutral-500">(Nom ou entreprise)</span>
+                </label>
+                <input
+                  id="client-input"
+                  type="text"
+                  value={selectedType === 'roland' ? rolandData.client : xeroxData.client}
+                  onChange={e =>
+                    selectedType === 'roland'
+                      ? handleRolandChange('client', e.target.value)
+                      : handleXeroxChange('client', e.target.value)
+                  }
+                  className={`form-input ${errors.client ? 'border-danger-300 focus:border-danger-500' : ''}`}
+                  placeholder="Nom du client ou de l'entreprise"
+                />
+                {errors.client && <p className="form-error">{errors.client}</p>}
+              </div>
+
+              {/* Téléphone Client (conditionnel selon le rôle) */}
+              {(currentUser?.role === 'admin' || currentUser?.role === 'preparateur' || currentUser?.role === 'livreur') && (
+                <div>
+                  <label htmlFor="telephone-input" className="form-label">
+                    Téléphone du client <span className="text-xs text-neutral-500">(Optionnel)</span>
+                  </label>
+                  <input
+                    id="telephone-input"
+                    type="tel"
+                    value={telephoneClient}
+                    onChange={e => setTelephoneClient(e.target.value)}
+                    className="form-input"
+                    placeholder="Ex: +33 6 12 34 56 78"
+                  />
+                </div>
+              )}
             </div>
 
-            {/* Client */}
-            <div className="mb-6">
-              <label htmlFor="client-input" className="form-label">
-                Client * <span className="text-xs text-neutral-500">(Nom ou entreprise)</span>
-              </label>
-              <input
-                id="client-input"
-                type="text"
-                value={selectedType === 'roland' ? rolandData.client : xeroxData.client}
-                onChange={e =>
-                  selectedType === 'roland'
-                    ? handleRolandChange('client', e.target.value)
-                    : handleXeroxChange('client', e.target.value)
-                }
-                className={`form-input ${errors.client ? 'border-danger-300 focus:border-danger-500' : ''}`}
-                placeholder="Nom du client ou de l'entreprise"
-              />
-              {errors.client && <p className="form-error">{errors.client}</p>}
-            </div>
+            {/* ✅ MONTANT (intégré directement, visible selon rôle) */}
+            {(currentUser?.role === 'admin' || currentUser?.role === 'preparateur' || currentUser?.role === 'livreur') && (
+              <div className="mb-6">
+                <label htmlFor="amount-input" className="form-label">
+                  💰 Montant (FCFA) <span className="text-xs text-neutral-500">(Facultatif - sera prérempli pour le livreur)</span>
+                </label>
+                <input
+                  id="amount-input"
+                  type="number"
+                  min="0"
+                  step="100"
+                  value={amount || ''}
+                  onChange={e => setAmount(e.target.value ? parseFloat(e.target.value) : null)}
+                  className="form-input"
+                  placeholder="Entrez le montant en FCFA"
+                />
+                {amount && (
+                  <p className="text-sm text-green-600 dark:text-green-400 mt-1">
+                    ✓ Montant: {amount.toLocaleString('fr-FR')} FCFA
+                  </p>
+                )}
+              </div>
+            )}
 
             {/* Formulaire Roland */}
             {selectedType === 'roland' && (
@@ -803,6 +1031,85 @@ const CreateDossier = ({ isOpen, onClose, onSuccess }) => {
                         </fieldset>
                       </div>
                     )}
+
+                  {/* ✅ NOUVEAU: Supports additionnels (optionnel - bâche + vinyle) */}
+                  <div className="mt-6 pt-6 border-t-2 border-green-200 dark:border-green-700">
+                    <div className="mb-4">
+                      <div className="flex items-center justify-between mb-2">
+                        <div>
+                          <h5 className="font-semibold text-neutral-900 dark:text-neutral-100">
+                            🖨️ Supports additionnels (optionnel)
+                          </h5>
+                          <p className="text-xs text-neutral-500 dark:text-neutral-400 mt-1">
+                            Ajoutez plusieurs types de supports pour le même client (ex: bâche + vinyle)
+                          </p>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const newSupport = {
+                              type_support: 'Bâche',
+                              largeur: '',
+                              hauteur: '',
+                              unite: 'm',
+                              exemplaires: 1,
+                              finitions: []
+                            };
+                            setSupports([...supports, newSupport]);
+                          }}
+                          className="btn btn-sm bg-green-600 hover:bg-green-700 dark:bg-green-700 dark:hover:bg-green-800 text-white px-4 py-2 rounded-lg transition-colors flex items-center gap-2 shadow-sm"
+                        >
+                          <span>➕</span>
+                          <span>Ajouter un support</span>
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Affichage des supports uniquement s'ils existent */}
+                    {supports.length > 0 && (
+                      <SupportsManager 
+                        supports={supports} 
+                        onChange={setSupports}
+                      />
+                    )}
+                  </div>
+
+                  {/* Description du travail */}
+                  <div className={rolandData.finition_oeillets && rolandData.finition_oeillets !== 'Collage' ? '' : 'mt-6'}>
+                    <label htmlFor="description-input-roland" className="form-label">
+                      Description du travail <span className="text-xs text-neutral-500">(Optionnel - Détails du projet)</span>
+                    </label>
+                    <textarea
+                      id="description-input-roland"
+                      rows="3"
+                      value={description}
+                      onChange={e => {
+                        setDescription(e.target.value);
+                        if (errors.description) {
+                          setErrors(prev => ({ ...prev, description: null }));
+                        }
+                      }}
+                      className={`form-input ${errors.description ? 'border-danger-300 focus:border-danger-500' : ''}`}
+                      placeholder="Décrivez le travail d'impression à réaliser..."
+                    />
+                    {errors.description && <p className="form-error">{errors.description}</p>}
+                  </div>
+
+                  {/* Marquer comme urgent */}
+                  <div className="mt-4">
+                    <label className="flex items-center gap-3 p-4 bg-gradient-to-r from-orange-50 to-red-50 dark:from-orange-900/20 dark:to-red-900/20 border-2 border-orange-200 dark:border-orange-800 rounded-xl cursor-pointer hover:shadow-md transition-all">
+                      <input
+                        type="checkbox"
+                        checked={isUrgent}
+                        onChange={e => setIsUrgent(e.target.checked)}
+                        className="w-5 h-5 text-red-600 border-red-300 rounded focus:ring-red-500 focus:ring-2"
+                      />
+                      <div className="flex items-center gap-2">
+                        <ExclamationTriangleIcon className="h-5 w-5 text-red-600" />
+                        <span className="font-semibold text-red-800 dark:text-red-300">Marquer comme URGENT</span>
+                      </div>
+                    </label>
+                  </div>
                 </div>
               </div>
             )}
@@ -1037,6 +1344,53 @@ const CreateDossier = ({ isOpen, onClose, onSuccess }) => {
                       )}
                     </div>
                   </div>
+
+                  {/* ✅ NOUVEAU: Sections multiples (optionnel - couverture + intérieur) */}
+                  <div className="mt-6 pt-6 border-t-2 border-blue-200 dark:border-blue-700">
+                    <div className="mb-4">
+                      <div className="flex items-center justify-between mb-2">
+                        <div>
+                          <h5 className="font-semibold text-neutral-900 dark:text-neutral-100">
+                            📑 Sections additionnelles (optionnel)
+                          </h5>
+                          <p className="text-xs text-neutral-500 dark:text-neutral-400 mt-1">
+                            Pour les brochures : ajoutez la couverture et les pages intérieures avec leurs propres spécifications
+                          </p>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const newSection = {
+                              type: 'Intérieur',
+                              mode_impression: 'recto_verso',
+                              copies: 1,
+                              paper_types: [{
+                                format: 'A4',
+                                couleur: 'nb',
+                                grammage: '80',
+                                pages: 1
+                              }],
+                              finitions: [],
+                              faconnage: []
+                            };
+                            setSections([...sections, newSection]);
+                          }}
+                          className="btn btn-sm bg-blue-600 hover:bg-blue-700 dark:bg-blue-700 dark:hover:bg-blue-800 text-white px-4 py-2 rounded-lg transition-colors flex items-center gap-2 shadow-sm"
+                        >
+                          <span>➕</span>
+                          <span>Ajouter une section</span>
+                        </button>
+                      </div>
+                    </div>
+                    
+                    {/* Affichage des sections uniquement si elles existent */}
+                    {sections.length > 0 && (
+                      <SectionsManager 
+                        sections={sections} 
+                        onChange={setSections}
+                      />
+                    )}
+                  </div>
                 </div>
 
                 {/* Section FINITION */}
@@ -1158,7 +1512,7 @@ const CreateDossier = ({ isOpen, onClose, onSuccess }) => {
                   </div>
 
                   {/* Conditionnement */}
-                  <div>
+                  <div className="mb-6">
                     <fieldset>
                       <legend className="form-label">Conditionnement</legend>
                       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
@@ -1186,6 +1540,43 @@ const CreateDossier = ({ isOpen, onClose, onSuccess }) => {
                         ))}
                       </div>
                     </fieldset>
+                  </div>
+
+                  {/* Description du travail */}
+                  <div>
+                    <label htmlFor="description-input-xerox" className="form-label">
+                      Description du travail <span className="text-xs text-neutral-500">(Optionnel - Détails du projet)</span>
+                    </label>
+                    <textarea
+                      id="description-input-xerox"
+                      rows="3"
+                      value={description}
+                      onChange={e => {
+                        setDescription(e.target.value);
+                        if (errors.description) {
+                          setErrors(prev => ({ ...prev, description: null }));
+                        }
+                      }}
+                      className={`form-input ${errors.description ? 'border-danger-300 focus:border-danger-500' : ''}`}
+                      placeholder="Décrivez le travail d'impression à réaliser..."
+                    />
+                    {errors.description && <p className="form-error">{errors.description}</p>}
+                  </div>
+
+                  {/* Marquer comme urgent */}
+                  <div className="mt-4">
+                    <label className="flex items-center gap-3 p-4 bg-gradient-to-r from-orange-50 to-red-50 dark:from-orange-900/20 dark:to-red-900/20 border-2 border-orange-200 dark:border-orange-800 rounded-xl cursor-pointer hover:shadow-md transition-all">
+                      <input
+                        type="checkbox"
+                        checked={isUrgent}
+                        onChange={e => setIsUrgent(e.target.checked)}
+                        className="w-5 h-5 text-red-600 border-red-300 rounded focus:ring-red-500 focus:ring-2"
+                      />
+                      <div className="flex items-center gap-2">
+                        <ExclamationTriangleIcon className="h-5 w-5 text-red-600" />
+                        <span className="font-semibold text-red-800 dark:text-red-300">Marquer comme URGENT</span>
+                      </div>
+                    </label>
                   </div>
                 </div>
               </div>
@@ -1295,53 +1686,23 @@ const CreateDossier = ({ isOpen, onClose, onSuccess }) => {
               {loading ? (
                 <div className="flex items-center space-x-2">
                   <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
-                  <span>Création...</span>
+                  <span>{editMode ? 'Mise à jour...' : 'Création...'}</span>
                 </div>
               ) : (
                 <div className="flex items-center space-x-2">
-                  <CheckCircleIcon className="h-5 w-5" />
-                  <span>Créer le dossier {selectedType === 'roland' ? 'Roland' : 'Xerox'}</span>
+                  {editMode ? (
+                    <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                    </svg>
+                  ) : (
+                    <CheckCircleIcon className="h-5 w-5" />
+                  )}
+                  <span>{editMode ? '✅ Enregistrer les modifications' : `Créer le dossier ${selectedType === 'roland' ? 'Roland' : 'Xerox'}`}</span>
                 </div>
               )}
             </button>
           </div>
         </form>
-
-        {/* Modal IA */}
-        {showIAPanel && (
-          <div className="fixed inset-0 z-50 flex items-end justify-end p-4 bg-black/50">
-            <div className="bg-white dark:bg-neutral-800 rounded-lg shadow-xl dark:shadow-secondary-900/30 w-full max-w-md max-h-[90vh] flex flex-col">
-              <div className="flex items-center justify-between px-6 py-4 border-b border-neutral-200 dark:border-neutral-700">
-                <h3 className="text-lg font-bold text-neutral-900 dark:text-neutral-100">
-                  💡 Suggestions IA
-                </h3>
-                <button
-                  type="button"
-                  onClick={() => setShowIAPanel(false)}
-                  className="text-neutral-500 hover:text-neutral-700 dark:hover:text-neutral-300"
-                >
-                  <XMarkIcon className="h-6 w-6" />
-                </button>
-              </div>
-              <div className="flex-1 overflow-y-auto px-6 py-6">
-                <IAOptimizationPanel
-                  formData={selectedType === 'roland' ? rolandData : xeroxData}
-                  formType="dossier"
-                  description={selectedType === 'roland' ? rolandData.type_support : xeroxData.type_document}
-                  onSuggestionSelect={(suggestion) => {
-                    if (selectedType === 'roland') {
-                      setRolandData({ ...rolandData, ...suggestion });
-                    } else {
-                      setXeroxData({ ...xeroxData, ...suggestion });
-                    }
-                    setShowIAPanel(false);
-                  }}
-                  compact={false}
-                />
-              </div>
-            </div>
-          </div>
-        )}
       </div>
     </div>
   );

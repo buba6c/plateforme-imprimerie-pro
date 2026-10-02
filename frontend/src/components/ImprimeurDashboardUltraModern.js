@@ -1,4 +1,5 @@
 import React, { useEffect, useState, useCallback } from 'react';
+import { motion } from 'framer-motion';
 import {
   PrinterIcon,
   QueueListIcon,
@@ -17,6 +18,8 @@ import notificationService from '../services/notificationService';
 import { getStatusColor, getStatusLabel } from '../utils/statusColors';
 import PropTypes from 'prop-types';
 import useRealtimeUpdates from '../hooks/useRealtimeUpdates';
+import { SkeletonGrid } from './transitions/SkeletonCard';
+import LoadingButton from './transitions/LoadingButton';
 
 const ImprimeurDashboardUltraModern = ({ user }) => {
   const [dossiers, setDossiers] = useState([]);
@@ -27,6 +30,7 @@ const ImprimeurDashboardUltraModern = ({ user }) => {
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedMachine, setSelectedMachine] = useState('all');
   const [sortBy, setSortBy] = useState('date');
+  const [actionLoading, setActionLoading] = useState({});
 
   // Normalisation des statuts
   const normalizeStatus = (statut) => {
@@ -184,8 +188,8 @@ const ImprimeurDashboardUltraModern = ({ user }) => {
   const handleMarquerImprime = async (dossier) => {
     try {
       setActionLoading(prev => ({ ...prev, [`finish-${dossier.id}`]: true }));
-      await dossiersService.updateDossierStatus(dossier.id, 'imprime');
-      notificationService.success('Marqué comme imprimé');
+      await dossiersService.updateDossierStatus(dossier.id, 'pret_livraison');
+      notificationService.success('Marqué prêt pour livraison');
       // Pas besoin de loadDossiers(), Socket.IO mettra à jour
     } catch (error) {
       notificationService.error('Erreur lors de la mise à jour');

@@ -1,0 +1,436 @@
+/**
+ * THEME GLOBALS - Application forcée des thèmes
+ * 
+ * Ce fichier force l'application des couleurs de thème sur toute la plateforme
+ * en surchargeant les classes Tailwind et en appliquant les variables CSS partout.
+ */
+
+/* ============================================
+   APPLICATION DES BACKGROUNDS
+   ============================================ */
+
+/* Background principal de l'app */
+htmlhtml[data-theme] body,
+htmlhtml[data-theme] #root {
+  background-color: var(--color-background) !important;
+  color: var(--color-text) !important;
+}
+
+/* S'assurer que html a aussi le bon background */
+htmlhtml[data-theme] {
+  background-color: var(--color-background) !important;
+}
+
+/* Toutes les divs avec bg-neutral */
+html[data-theme] .bg-neutral-50,
+html[data-theme] .bg-neutral-100,
+html[data-theme] .bg-neutral-200,
+html[data-theme] .bg-neutral-300 {
+  background-color: var(--color-background-secondary) !important;
+}
+
+html[data-theme] .bg-neutral-900,
+html[data-theme] .bg-neutral-800,
+html[data-theme] .bg-neutral-700,
+html[data-theme] .bg-neutral-600 {
+  background-color: var(--color-surface) !important;
+}
+
+/* Backgrounds gris clair */
+html[data-theme] .bg-gray-50,
+html[data-theme] .bg-gray-100,
+html[data-theme] .bg-gray-200,
+html[data-theme] .bg-gray-300 {
+  background-color: var(--color-background-secondary) !important;
+}
+
+/* Fonds gris foncé vers surface */
+html[data-theme] .bg-gray-900,
+html[data-theme] .bg-gray-800,
+html[data-theme] .bg-gray-700,
+html[data-theme] .bg-gray-600 {
+  background-color: var(--color-surface) !important;
+}
+
+/* Backgrounds blancs deviennent surfaces */
+html[data-theme] .bg-white {
+  background-color: var(--color-surface) !important;
+}
+
+/* ============================================
+   APPLICATION DES TEXTES
+   ============================================ */
+
+/* Nuances neutral */
+html[data-theme] .text-neutral-900,
+html[data-theme] .text-neutral-800,
+html[data-theme] .text-neutral-700 {
+  color: var(--color-text) !important;
+}
+
+html[data-theme] .text-neutral-600,
+html[data-theme] .text-neutral-500 {
+  color: var(--color-text-secondary) !important;
+}
+
+html[data-theme] .text-neutral-400,
+html[data-theme] .text-neutral-300 {
+  color: var(--color-text-tertiary) !important;
+}
+
+/* Nuances gray */
+html[data-theme] .text-gray-900,
+html[data-theme] .text-gray-800,
+html[data-theme] .text-gray-700 {
+  color: var(--color-text) !important;
+}
+
+html[data-theme] .text-gray-600,
+html[data-theme] .text-gray-500 {
+  color: var(--color-text-secondary) !important;
+}
+
+html[data-theme] .text-gray-400,
+html[data-theme] .text-gray-300 {
+  color: var(--color-text-tertiary) !important;
+}
+
+/* Liens */
+html[data-theme] a:not([class*="text-"]) {
+  color: var(--color-primary);
+}
+html[data-theme] a:hover:not([class*="text-"]) {
+  color: var(--color-primary-light);
+}
+
+/* ============================================
+   APPLICATION DES BORDURES
+   ============================================ */
+
+/* Neutral */
+html[data-theme] .border-neutral-200,
+html[data-theme] .border-neutral-300,
+html[data-theme] .border-neutral-400 {
+  border-color: var(--color-border) !important;
+}
+
+html[data-theme] .border-neutral-700,
+html[data-theme] .border-neutral-600 {
+  border-color: var(--color-border-light) !important;
+}
+
+/* Gray */
+html[data-theme] .border-gray-200,
+html[data-theme] .border-gray-300,
+html[data-theme] .border-gray-400 {
+  border-color: var(--color-border) !important;
+}
+
+html[data-theme] .border-gray-700,
+html[data-theme] .border-gray-600 {
+  border-color: var(--color-border-light) !important;
+}
+
+/* ============================================
+   APPLICATION DES COULEURS PRIMAIRES
+   ============================================ */
+
+html[data-theme] .bg-blue-50,
+html[data-theme] .bg-blue-100 {
+  background-color: var(--color-primary) !important;
+  opacity: 0.1;
+}
+
+html[data-theme] .bg-blue-500,
+html[data-theme] .bg-blue-600,
+html[data-theme] .bg-blue-700 {
+  background-color: var(--color-primary) !important;
+}
+
+html[data-theme] .text-blue-600,
+html[data-theme] .text-blue-700 {
+  color: var(--color-primary) !important;
+}
+
+html[data-theme] .text-blue-400,
+html[data-theme] .text-blue-300 {
+  color: var(--color-primary-light) !important;
+}
+
+html[data-theme] .border-blue-500,
+html[data-theme] .border-blue-600 {
+  border-color: var(--color-primary) !important;
+}
+
+/* ============================================
+   HOVER STATES
+   ============================================ */
+
+/* Background hover */
+html[data-theme] .hover\:bg-neutral-100:hover,
+html[data-theme] .hover\:bg-neutral-200:hover,
+html[data-theme] .hover\:bg-gray-100:hover,
+html[data-theme] .hover\:bg-gray-200:hover {
+  background-color: var(--color-surface-hover) !important;
+}
+
+html[data-theme] .hover\:bg-neutral-700:hover,
+html[data-theme] .hover\:bg-neutral-600:hover,
+html[data-theme] .hover\:bg-gray-700:hover,
+html[data-theme] .hover\:bg-gray-600:hover {
+  background-color: var(--color-surface-hover) !important;
+}
+
+/* Border hover (primaire) */
+html[data-theme] .hover\:border-blue-300:hover,
+html[data-theme] .hover\:border-blue-400:hover {
+  border-color: var(--color-primary-light) !important;
+}
+
+/* ============================================
+   COMPOSANTS SPÉCIFIQUES
+   ============================================ */
+
+/* Sidebar */
+html[data-theme] .sidebar,
+html[data-theme] nav {
+  background-color: var(--color-surface) !important;
+  border-color: var(--color-border) !important;
+}
+
+/* Cards */
+html[data-theme] .card,
+html[data-theme] [class*="card"] {
+  background-color: var(--color-surface) !important;
+  border-color: var(--color-border) !important;
+}
+
+/* HR, separators */
+html[data-theme] hr {
+  border-color: var(--color-border) !important;
+  color: var(--color-border) !important;
+}
+
+/* Code, kbd */
+html[data-theme] code,
+html[data-theme] kbd,
+html[data-theme] pre {
+  background-color: var(--color-background-tertiary) !important;
+  color: var(--color-text) !important;
+  border-color: var(--color-border) !important;
+}
+
+/* Inputs */
+html[data-theme] input,
+html[data-theme] textarea,
+html[data-theme] select {
+  background-color: var(--color-background-tertiary) !important;
+  border-color: var(--color-border) !important;
+  color: var(--color-text) !important;
+  caret-color: var(--color-primary) !important;
+}
+
+html[data-theme] input::placeholder,
+html[data-theme] textarea::placeholder {
+  color: var(--color-text-tertiary) !important;
+}
+
+/* Accent color for checkboxes/radios */
+html[data-theme] { accent-color: var(--color-primary); }
+
+/* Selection color */
+html[data-theme] ::selection {
+  background: var(--color-primary);
+  color: var(--color-on-primary);
+}
+
+/* Buttons */
+html[data-theme] button:not([class*="bg-blue"]):not([class*="bg-gradient"]) {
+  background-color: var(--color-surface) !important;
+  border-color: var(--color-border) !important;
+  color: var(--color-text) !important;
+}
+
+html[data-theme] button:not([class*="bg-blue"]):not([class*="bg-gradient"]):hover {
+  background-color: var(--color-surface-hover) !important;
+}
+
+/* Boutons primaires (bleu Tailwind) → texte "on-primary" */
+html[data-theme] button.bg-blue-500,
+html[data-theme] button.bg-blue-600,
+html[data-theme] button.bg-blue-700,
+html[data-theme] button[class*="from-blue-"],
+html[data-theme] button[class*="to-cyan-"] {
+  color: var(--color-on-primary) !important;
+}
+
+/* Gradients principaux → texte on-primary */
+html[data-theme] [class*="bg-gradient-to-"][class*="from-blue-"],
+html[data-theme] [class*="bg-gradient-to-"][class*="from-sky-"],
+html[data-theme] [class*="bg-gradient-to-"][class*="from-cyan-"],
+html[data-theme] [class*="bg-gradient-to-"][class*="from-indigo-"],
+html[data-theme] [class*="bg-gradient-to-"][class*="from-purple-"],
+html[data-theme] [class*="bg-gradient-to-"][class*="from-violet-"],
+html[data-theme] [class*="bg-gradient-to-"][class*="from-fuchsia-"],
+html[data-theme] [class*="bg-gradient-to-"][class*="from-pink-"],
+html[data-theme] [class*="bg-gradient-to-"][class*="from-rose-"],
+html[data-theme] [class*="bg-gradient-to-"][class*="from-red-"],
+html[data-theme] [class*="bg-gradient-to-"][class*="from-orange-"],
+html[data-theme] [class*="bg-gradient-to-"][class*="from-amber-"],
+html[data-theme] [class*="bg-gradient-to-"][class*="from-yellow-"],
+html[data-theme] [class*="bg-gradient-to-"][class*="from-lime-"],
+html[data-theme] [class*="bg-gradient-to-"][class*="from-green-"],
+html[data-theme] [class*="bg-gradient-to-"][class*="from-emerald-"],
+html[data-theme] [class*="bg-gradient-to-"][class*="from-teal-"] {
+  color: var(--color-on-primary) !important;
+}
+
+/* Forcer le texte interne en cohérence sur les gradients */
+html[data-theme] [class*="bg-gradient-to-"] .text-white {
+  color: var(--color-on-primary) !important;
+}
+html[data-theme] [class*="bg-gradient-to-"] .text-black {
+  color: var(--color-on-primary) !important;
+}
+
+/* ============================================
+   SCROLLBARS (pour les thèmes sombres)
+   ============================================ */
+
+[data-theme="ocean"] ::-webkit-scrollbar-track,
+[data-theme="forest"] ::-webkit-scrollbar-track,
+[data-theme="sunset"] ::-webkit-scrollbar-track,
+[data-theme="midnight"] ::-webkit-scrollbar-track,
+[data-theme="rose"] ::-webkit-scrollbar-track {
+  background: var(--color-background-secondary);
+}
+
+[data-theme="ocean"] ::-webkit-scrollbar-thumb,
+[data-theme="forest"] ::-webkit-scrollbar-thumb,
+[data-theme="sunset"] ::-webkit-scrollbar-thumb,
+[data-theme="midnight"] ::-webkit-scrollbar-thumb,
+[data-theme="rose"] ::-webkit-scrollbar-thumb {
+  background: var(--color-border);
+  border-radius: 4px;
+}
+
+[data-theme="ocean"] ::-webkit-scrollbar-thumb:hover,
+[data-theme="forest"] ::-webkit-scrollbar-thumb:hover,
+[data-theme="sunset"] ::-webkit-scrollbar-thumb:hover,
+[data-theme="midnight"] ::-webkit-scrollbar-thumb:hover,
+[data-theme="rose"] ::-webkit-scrollbar-thumb:hover {
+  background: var(--color-primary);
+}
+
+/* ============================================
+   SHADOWS - Application des ombres thématiques
+   ============================================ */
+
+html[data-theme] .shadow-sm {
+  box-shadow: var(--shadow-sm) !important;
+}
+
+html[data-theme] .shadow-md {
+  box-shadow: var(--shadow-md) !important;
+}
+
+html[data-theme] .shadow-lg {
+  box-shadow: var(--shadow-lg) !important;
+}
+
+html[data-theme] .shadow-xl {
+  box-shadow: var(--shadow-xl) !important;
+}
+
+/* ============================================
+   TRANSITIONS + FOCUS
+   ============================================ */
+
+html[data-theme] * {
+  transition-property: background-color, border-color, color, opacity, box-shadow;
+  transition-duration: 200ms;
+  transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* Focus visible accessible */
+html[data-theme] :focus-visible {
+  outline: 2px solid var(--ring-primary);
+  outline-offset: 2px;
+}
+
+/* Ne pas animer les transformations de layout */
+html[data-theme] *[class*="scale"],
+html[data-theme] *[class*="translate"],
+html[data-theme] *[class*="rotate"] {
+  transition-property: transform, background-color, border-color, color, opacity;
+}
+
+/* ============================================
+   CORRECTIONS SPÉCIFIQUES PAR THÈME
+   ============================================ */
+
+/* Ocean - Accent sur les bleus */
+[data-theme="ocean"] .text-blue-600 {
+  color: #0ea5e9 !important;
+}
+
+[data-theme="ocean"] .bg-blue-600 {
+  background-color: #0ea5e9 !important;
+}
+
+/* Forest - Accent sur les verts */
+[data-theme="forest"] .text-blue-600 {
+  color: #22c55e !important;
+}
+
+[data-theme="forest"] .bg-blue-600 {
+  background-color: #22c55e !important;
+}
+
+/* Sunset - Accent sur les oranges */
+[data-theme="sunset"] .text-blue-600 {
+  color: #f97316 !important;
+}
+
+[data-theme="sunset"] .bg-blue-600 {
+  background-color: #f97316 !important;
+}
+
+/* Midnight - Accent sur les violets */
+[data-theme="midnight"] .text-blue-600 {
+  color: #a855f7 !important;
+}
+
+[data-theme="midnight"] .bg-blue-600 {
+  background-color: #a855f7 !important;
+}
+
+/* Rose - Accent sur les roses */
+[data-theme="rose"] .text-blue-600 {
+  color: #ec4899 !important;
+}
+
+[data-theme="rose"] .bg-blue-600 {
+  background-color: #ec4899 !important;
+}
+
+/* ============================================
+   CLASSES UTILITAIRES SPÉCIALES
+   ============================================ */
+
+/* Force l'application du thème sur les éléments avec ces classes */
+html[data-theme] .theme-bg-primary {
+  background-color: var(--color-primary) !important;
+}
+
+html[data-theme] .theme-bg-surface {
+  background-color: var(--color-surface) !important;
+}
+
+html[data-theme] .theme-text {
+  color: var(--color-text) !important;
+}
+
+html[data-theme] .theme-border {
+  border-color: var(--color-border) !important;
+}

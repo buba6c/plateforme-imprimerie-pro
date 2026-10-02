@@ -10,7 +10,7 @@ router.use(authenticateToken);
  * GET /api/statistiques/dashboard
  * Obtenir le dashboard complet avec toutes les statistiques
  */
-router.get('/dashboard', authorizeRoles(['admin', 'preparateur']), async (req, res) => {
+router.get('/dashboard', authorizeRoles('admin', 'preparateur'), async (req, res) => {
   try {
     const { periode = 'month' } = req.query;
 
@@ -39,7 +39,7 @@ router.get('/dashboard', authorizeRoles(['admin', 'preparateur']), async (req, r
  * GET /api/statistiques/generales
  * Obtenir les statistiques générales
  */
-router.get('/generales', authorizeRoles(['admin', 'preparateur']), async (req, res) => {
+router.get('/generales', authorizeRoles('admin', 'preparateur'), async (req, res) => {
   try {
     const { periode = 'month' } = req.query;
 
@@ -64,7 +64,7 @@ router.get('/generales', authorizeRoles(['admin', 'preparateur']), async (req, r
  * GET /api/statistiques/performances
  * Obtenir les performances des utilisateurs
  */
-router.get('/performances', authorizeRoles(['admin', 'preparateur']), async (req, res) => {
+router.get('/performances', authorizeRoles('admin', 'preparateur'), async (req, res) => {
   try {
     const { periode = 'month' } = req.query;
 
@@ -89,7 +89,7 @@ router.get('/performances', authorizeRoles(['admin', 'preparateur']), async (req
  * GET /api/statistiques/evolution
  * Obtenir l'évolution des dossiers dans le temps
  */
-router.get('/evolution', authorizeRoles(['admin', 'preparateur']), async (req, res) => {
+router.get('/evolution', authorizeRoles('admin', 'preparateur'), async (req, res) => {
   try {
     const { periode = 'month' } = req.query;
 
@@ -114,7 +114,7 @@ router.get('/evolution', authorizeRoles(['admin', 'preparateur']), async (req, r
  * GET /api/statistiques/machines
  * Obtenir la répartition par type de machine/imprimante
  */
-router.get('/machines', authorizeRoles(['admin', 'preparateur']), async (req, res) => {
+router.get('/machines', authorizeRoles('admin', 'preparateur'), async (req, res) => {
   try {
     const { periode = 'month' } = req.query;
 
@@ -196,7 +196,7 @@ router.get('/summary', async (req, res) => {
  * POST /api/statistiques/cache/clear
  * Vider le cache des statistiques (admin uniquement)
  */
-router.post('/cache/clear', authorizeRoles(['admin']), async (req, res) => {
+router.post('/cache/clear', authorizeRoles('admin'), async (req, res) => {
   try {
     statistiquesService.clearCache();
 
@@ -220,7 +220,7 @@ router.post('/cache/clear', authorizeRoles(['admin']), async (req, res) => {
  * GET /api/statistiques/export
  * Exporter les statistiques en CSV (admin/preparateur uniquement)
  */
-router.get('/export', authorizeRoles(['admin', 'preparateur']), async (req, res) => {
+router.get('/export', authorizeRoles('admin', 'preparateur'), async (req, res) => {
   try {
     const { periode = 'month', type = 'dashboard' } = req.query;
 

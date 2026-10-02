@@ -114,6 +114,13 @@ router.post('/login', async (req, res) => {
     // Générer le token
     const token = generateToken(user);
 
+    // Mettre à jour last_login (non bloquant - ne doit pas empêcher le login)
+    try {
+      await query('UPDATE users SET last_login = NOW() WHERE id = $1', [user.id]);
+    } catch (lastLoginErr) {
+      console.warn('⚠️ Impossible de mettre à jour last_login:', lastLoginErr.message);
+    }
+
     // Réponse de connexion réussie (sans le mot de passe)
     const { password_hash: _, ...userWithoutPassword } = user;
 

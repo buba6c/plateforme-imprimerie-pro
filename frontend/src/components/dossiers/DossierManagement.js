@@ -90,6 +90,7 @@ const DossierManagement = () => {
 
   const loadDossiers = useCallback(async () => {
     try {
+      console.log('🔄 DossierManagement: Début du chargement des dossiers...');
       setLoading(true);
       const params = {
         page: currentPage,
@@ -97,19 +98,23 @@ const DossierManagement = () => {
         search: filters.search || undefined,
         status: filters.status || undefined,
         type: defaultMachineType || filters.type || undefined,
+        urgent: filters.urgence || undefined, // Ajout du filtre urgent
       };
+      console.log('🔌 DossierManagement: Paramètres de requête:', params);
       const response = await dossiersService.getDossiers(params);
+      console.log('✅ DossierManagement: Réponse API:', response);
       let dossiersList = normalizeDossierList(response.dossiers || []);
+      console.log(`📋 DossierManagement: ${dossiersList.length} dossiers normalisés pour rôle ${user?.role}`);
 
       if (user?.role === 'preparateur') {
         dossiersList = dossiersList.filter(d => String(d.created_by) === String(user.id));
       } else if (user?.role === 'imprimeur_roland') {
         dossiersList = dossiersList.filter(
-          d => d.type === 'roland' && ['en_cours', 'en_impression', 'termine'].includes(d.status)
+          d => d.type === 'roland' && ['pret_impression', 'en_impression', 'imprime', 'termine'].includes(d.status)
         );
       } else if (user?.role === 'imprimeur_xerox') {
         dossiersList = dossiersList.filter(
-          d => d.type === 'xerox' && ['en_cours', 'en_impression', 'termine'].includes(d.status)
+          d => d.type === 'xerox' && ['pret_impression', 'en_impression', 'imprime', 'termine'].includes(d.status)
         );
       } else if (user?.role === 'livreur') {
         dossiersList = dossiersList.filter(d =>
@@ -117,25 +122,35 @@ const DossierManagement = () => {
         );
       }
       setDossiers(dossiersList);
+      console.log(`📊 DossierManagement: ${dossiersList.length} dossiers finaux après filtrage rôle`);
       setDossiers(dossiersList);
       setTotalPages(response.pagination?.total_pages || 1);
       setTotalItems(response.pagination?.total_items || 0);
+      console.log('✅ DossierManagement: Chargement terminé avec succès');
     } catch (err) {
-      // eslint-disable-next-line no-console
       console.error('❌ DossierManagement: Erreur chargement dossiers:', err);
-      // eslint-disable-next-line no-console
       console.error('❌ DossierManagement: Stack trace:', err.stack);
-      // eslint-disable-next-line no-console
       console.error('❌ DossierManagement: Response:', err.response);
       setError('Erreur lors du chargement des dossiers');
     } finally {
       setLoading(false);
     }
-  }, [currentPage, filters.search, filters.status, filters.type, defaultMachineType, user]);
+  }, [currentPage, filters.search, filters.status, filters.type, filters.urgence, defaultMachineType, user]);
 
   useEffect(() => {
     loadDossiers();
   }, [loadDossiers]);
+
+  // Écouter l'événement editDossier pour ouvrir le modal automatiquement
+  useEffect(() => {
+    const handleEditDossier = (event) => {
+      console.log('🎯 DossierManagement: Événement editDossier reçu, ouverture du modal...', event.detail);
+      setShowCreateModal(true);
+    };
+
+    window.addEventListener('editDossier', handleEditDossier);
+    return () => window.removeEventListener('editDossier', handleEditDossier);
+  }, []);
 
   // Initialiser des filtres par défaut selon le rôle + filtres rapides depuis Dashboard
   useEffect(() => {
@@ -276,13 +291,15 @@ const DossierManagement = () => {
     // Système de couleurs unifié pour le statut
     const statusColors = getStatusColor(dossier.status);
     
-    // Logique de suppression selon rôle et statut
-    // Préparateur : peut supprimer uniquement ses dossiers NON VALIDÉS (nouveau, en_cours, a_revoir)
-    // Admin : peut tout supprimer
+    // Logique de suppression CORRIGÉE selon les spécifications :
+    // - Admin : peut tout supprimer
+    // - Préparateur : peut supprimer UNIQUEMENT si :
+    //   1. NON validé (valide_preparateur = false)
+    //   2. ET statut != 'a_revoir' (un dossier renvoyé "à revoir" ne peut plus être supprimé)
     const canDelete = user?.role === 'admin' || 
       (user?.role === 'preparateur' && 
-       dossier.created_by === user.id &&
-       ['nouveau', 'en_cours', 'a_revoir'].includes(dossier.status));
+       !dossier.valide_preparateur &&
+       dossier.status !== 'a_revoir');
     
     // Couleur harmonisée selon le type de machine
     const normalizedType = (dossier.type || '').toString().trim().toLowerCase();
@@ -329,13 +346,37 @@ const DossierManagement = () => {
           {/* En-tête avec numéro de commande et statut */}
           <div className="flex items-start justify-between mb-3">
             <div className="flex-1 min-w-0">
-              <h3 className="text-lg font-bold text-gray-900 dark:text-gray-100 truncate">
-                {dossier.numero_commande}
-              </h3>
-              <div className="flex items-center mt-1 text-sm text-gray-600 dark:text-gray-400">
-                <UserIcon className="h-4 w-4 mr-1.5 flex-shrink-0" />
-                <span className="truncate">{dossier.preparateur_name || 'Non assigné'}</span>
+              <div className="flex items-center gap-2 mb-1">
+                <h3 className="text-lg font-bold text-gray-900 dark:text-gray-100 truncate">
+                  {dossier.numero_commande}
+                </h3>
+                {/* Badge URGENT */}
+                {dossier.urgent && (dossier.statut || dossier.status) !== 'livre' && (
+                  <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-gradient-to-r from-red-500 to-orange-600 text-white rounded-md font-bold text-xs shadow-md animate-pulse flex-shrink-0">
+                    <ExclamationTriangleIcon className="h-3 w-3" />
+                    URGENT
+                  </span>
+                )}
               </div>
+              {/* Préparateur avec badge */}
+              <div className="flex items-center mt-2">
+                <span className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-indigo-50 dark:bg-indigo-900/20 border border-indigo-200 dark:border-indigo-800 rounded-md text-xs">
+                  <UserIcon className="h-3.5 w-3.5 text-indigo-600 dark:text-indigo-400" />
+                  <span className="text-indigo-700 dark:text-indigo-300 font-medium truncate max-w-[150px]">
+                    {dossier.preparateur_name || 'Non assigné'}
+                  </span>
+                </span>
+              </div>
+              {/* Client avec badge différent */}
+              {dossier.client && (
+                <div className="flex items-center mt-2">
+                  <span className="inline-flex items-center px-2.5 py-1 bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-200 dark:border-emerald-800 rounded-md text-xs">
+                    <span className="text-emerald-700 dark:text-emerald-300 font-semibold truncate max-w-[150px]">
+                      {dossier.client}
+                    </span>
+                  </span>
+                </div>
+              )}
             </div>
             
             {/* Badge de statut avec couleurs unifiées */}
@@ -372,10 +413,10 @@ const DossierManagement = () => {
           </div>
 
           {/* Actions */}
-          <div className={`grid ${canDelete ? 'grid-cols-2' : 'grid-cols-1'} gap-2`}>
+          <div className="flex flex-wrap gap-2">
             <button
               onClick={() => handleViewDetails(dossier)}
-              className="flex items-center justify-center gap-2 px-4 py-2 rounded-lg font-medium text-sm bg-blue-600 hover:bg-blue-700 text-white transition-colors duration-200 shadow-sm hover:shadow"
+              className="flex-1 flex items-center justify-center gap-2 px-4 py-2 rounded-lg font-medium text-sm bg-blue-600 hover:bg-blue-700 text-white transition-colors duration-200 shadow-sm hover:shadow"
             >
               <EyeIcon className="h-4 w-4" />
               <span>Détails</span>
@@ -497,17 +538,19 @@ const DossierManagement = () => {
       <div className="card">
         <div className="card-body">
           <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
-            {/* Recherche */}
-            <div className="relative">
-              <MagnifyingGlassIcon className="absolute left-3 top-1/2 transform -translate-y-1/2 h-5 w-5 text-neutral-400" />
-              <input
-                type="text"
-                placeholder="Rechercher..."
-                className="form-input pl-10"
-                value={filters.search}
-                onChange={e => handleFilterChange('search', e.target.value)}
-              />
-            </div>
+            {/* Recherche - Masquée pour les imprimeurs */}
+            {!user?.role?.includes('imprimeur') && (
+              <div className="relative">
+                <MagnifyingGlassIcon className="absolute left-3 top-1/2 transform -translate-y-1/2 h-5 w-5 text-neutral-400" />
+                <input
+                  type="text"
+                  placeholder="Rechercher..."
+                  className="form-input pl-10"
+                  value={filters.search}
+                  onChange={e => handleFilterChange('search', e.target.value)}
+                />
+              </div>
+            )}
 
             {/* Filtre par statut */}
             <select
@@ -740,14 +783,12 @@ const DossierManagement = () => {
         </div>
       )}
 
-      {/* Modal de création */}
-      {showCreateModal && (
-        <CreateDossier
-          isOpen={showCreateModal}
-          onClose={() => setShowCreateModal(false)}
-          onSuccess={handleCreateSuccess}
-        />
-      )}
+      {/* Modal de création - Toujours monté pour écouter l'événement editDossier */}
+      <CreateDossier
+        isOpen={showCreateModal}
+        onClose={() => setShowCreateModal(false)}
+        onSuccess={handleCreateSuccess}
+      />
 
       {/* Modal de détails du dossier */}
       <DossierDetails

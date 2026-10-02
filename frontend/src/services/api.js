@@ -110,7 +110,7 @@ export const dossiersService = {
           cleanParams[key] = value;
         }
       });
-      
+
       console.log('[api.js] getDossiers - Params nettoyés:', cleanParams);
       const response = await api.get('/dossiers', { params: cleanParams });
       return response.data;
@@ -165,7 +165,7 @@ export const dossiersService = {
     try {
       // Le backend attend directement les noms français des statuts
       // La nouvelle route PATCH /status attend le statut en anglais (underscore)
-      
+
       // Utiliser la nouvelle route PATCH /status pour les permissions 'change_status'
       const payload = {
         status: newStatus,
@@ -231,6 +231,20 @@ export const dossiersService = {
         montant_cfa: payload?.montant_paye ?? payload?.montant_cfa ?? null,
       };
       const response = await api.patch(`/dossiers/${id}/status`, body);
+      return response.data;
+    } catch (error) {
+      throw mapDossierError(error);
+    }
+  },
+  // Reporter une livraison (livreur)
+  repousserLivraison: async (idLike, payload) => {
+    const id = resolveDossierKey(idLike);
+    try {
+      const body = {
+        date_livraison_prevue: payload?.date_livraison_prevue || null,
+        commentaire_report: payload?.commentaire_report || null,
+      };
+      const response = await api.patch(`/dossiers/${id}/repousser-livraison`, body);
       return response.data;
     } catch (error) {
       throw mapDossierError(error);
@@ -338,7 +352,7 @@ export const filesService = {
       throw error.response?.data || { error: 'Erreur récupération fichiers' };
     }
   },
-  
+
   // Récupérer les fichiers par ID de dossier (alias pour compatibilité)
   getFilesByDossier: async dossierId => {
     try {
@@ -409,6 +423,32 @@ export const systemConfigService = {
       return response.data;
     } catch (error) {
       throw error.response?.data || { error: 'Erreur récupération liste paramètres système' };
+    }
+  },
+};
+
+// ===================================
+// SERVICE DE RÉINITIALISATION SYSTÈME
+// ===================================
+
+export const systemResetService = {
+  // Récupérer les statistiques avant réinitialisation
+  getStats: async () => {
+    try {
+      const response = await api.get('/system/reset/stats');
+      return response.data;
+    } catch (error) {
+      throw error.response?.data || { error: 'Erreur récupération statistiques' };
+    }
+  },
+
+  // Réinitialiser la plateforme
+  reset: async (confirmation) => {
+    try {
+      const response = await api.post('/system/reset', { confirmation });
+      return response.data;
+    } catch (error) {
+      throw error.response?.data || { error: 'Erreur lors de la réinitialisation' };
     }
   },
 };

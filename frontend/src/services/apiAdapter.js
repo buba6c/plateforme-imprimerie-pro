@@ -362,6 +362,26 @@ export const dossiersService = {
     }
   },
 
+  repousserLivraison: async (id, payload) => {
+    if (backendAvailable) {
+      try {
+        return await realDossiersService.repousserLivraison(id, payload);
+      } catch (error) {
+        if (typeof FORCE_REAL !== 'undefined' && FORCE_REAL) {
+          throw error.response?.data || error;
+        }
+        const status = error?.response?.status;
+        if (status && status >= 400 && status < 500) {
+          throw error.response?.data || error;
+        }
+        // Pas de fallback mock pour cette fonction spécifique
+        throw error;
+      }
+    } else {
+      throw new Error('Fonctionnalité non disponible en mode mock');
+    }
+  },
+
   deleteDossier: async id => {
     if (backendAvailable) {
       try {

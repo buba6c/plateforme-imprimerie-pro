@@ -1,11 +1,10 @@
 {
   "name": "imprimerie-backend",
-  "version": "1.0.0",
-  "description": "Backend pour la plateforme d'imprimerie numérique",
+  "version": "2.0.0",
+  "description": "Backend pour la plateforme d'imprimerie numérique - Déploiement 26 oct 2025",
   "main": "server.js",
   "scripts": {
-    "start": "node server.js",
-    "start:pm2": "pm2-runtime start ecosystem.config.js",
+    "start": "pm2-runtime start ecosystem.config.js",
     "dev": "nodemon server.js",
     "test": "jest",
     "migrate": "node scripts/migrate.js",
@@ -16,8 +15,7 @@
     "format": "prettier --write \"**/*.{js,json}\" --ignore-path .prettierignore",
     "format:check": "prettier --check \"**/*.{js,json}\" --ignore-path .prettierignore",
     "quality": "npm run lint && npm run format:check",
-    "quality:fix": "npm run lint:fix && npm run format",
-    "postinstall": "node scripts/setup-render.js"
+    "quality:fix": "npm run lint:fix && npm run format"
   },
   "dependencies": {
     "bcryptjs": "^2.4.3",
@@ -45,6 +43,7 @@
     "socket.io": "^4.7.2",
     "swagger-jsdoc": "^6.2.8",
     "swagger-ui-express": "^5.0.1",
+    "tus-node-server": "^0.9.0",
     "uuid": "^9.0.1"
   },
   "devDependencies": {

@@ -65,8 +65,9 @@ const LayoutImproved = ({ children, activeSection, onNavigate, onSearch }) => {
 
     const livreurItems = [
       { id: 'a-livrer', name: 'À Livrer', icon: MapPinIcon, color: 'from-red-600 to-red-700 dark:from-red-500 dark:to-red-600', roles: ['livreur'] },
-      { id: 'en-livraison', name: 'En Livraison', icon: TruckIcon, color: 'from-yellow-600 to-yellow-700 dark:from-yellow-500 dark:to-yellow-600', roles: ['livreur'] },
+      // { id: 'en-livraison', name: 'En Livraison', icon: TruckIcon, color: 'from-yellow-600 to-yellow-700 dark:from-yellow-500 dark:to-yellow-600', roles: ['livreur'] },
       { id: 'livres', name: 'Livrés', icon: CheckCircleIcon, color: 'from-green-600 to-green-700 dark:from-green-500 dark:to-green-600', roles: ['livreur'] },
+      { id: 'paiements', name: 'Paiements', icon: CurrencyDollarIcon, color: 'from-orange-600 to-orange-700 dark:from-orange-500 dark:to-orange-600', roles: ['livreur'] },
     ];
 
     // Section Devis & Facturation
@@ -75,8 +76,6 @@ const LayoutImproved = ({ children, activeSection, onNavigate, onSearch }) => {
       { id: 'devis-create', name: 'Créer un devis', icon: DocumentTextIcon, color: 'from-pink-600 to-pink-700 dark:from-pink-500 dark:to-pink-600', roles: ['preparateur'] },
       { id: 'mes-devis', name: 'Mes devis', icon: DocumentTextIcon, color: 'from-fuchsia-600 to-fuchsia-700 dark:from-fuchsia-500 dark:to-fuchsia-600', roles: ['preparateur'] },
       { id: 'mes-factures', name: 'Mes factures', icon: BanknotesIcon, color: 'from-rose-600 to-rose-700 dark:from-rose-500 dark:to-rose-600', roles: ['preparateur'] },
-      // IA Intelligente (pour tous sauf livreur)
-      { id: 'ia-devis', name: '🤖 IA Intelligente', icon: DocumentTextIcon, color: 'from-violet-600 to-purple-700 dark:from-violet-500 dark:to-purple-600', roles: ['preparateur', 'admin'] },
       // Pour les admins
       { id: 'tous-devis', name: 'Tous les devis', icon: DocumentTextIcon, color: 'from-violet-600 to-violet-700 dark:from-violet-500 dark:to-violet-600', roles: ['admin'] },
       { id: 'toutes-factures', name: 'Toutes les factures', icon: BanknotesIcon, color: 'from-sky-600 to-sky-700 dark:from-sky-500 dark:to-sky-600', roles: ['admin'] },
@@ -189,7 +188,7 @@ const LayoutImproved = ({ children, activeSection, onNavigate, onSearch }) => {
               {navigationItems.map((item, index) => {
                 const Icon = item.icon;
                 const isActive = activeSection === item.id || location.pathname === `/${item.id}`;
-                const isRoute = ['a-livrer', 'en-livraison', 'livres', 'ia-devis'].includes(item.id);
+                const isRoute = ['a-livrer', 'en-livraison', 'livres'].includes(item.id);
 
                 return (
                   <li

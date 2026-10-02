@@ -171,86 +171,6 @@ const PreparateurDashboardRevolutionnaire = ({ user }) => {
 
   // Récupération des dossiers avec enrichissement
   const fetchDossiers = useCallback(async () => {
-    const calculatePriority = (dossier) => {
-      const created = new Date(dossier.created_at);
-      const now = new Date();
-      const daysDiff = (now - created) / (1000 * 60 * 60 * 24);
-      
-      if (daysDiff > 14) return 'low';
-      if (daysDiff > 7) return 'medium';
-      if (daysDiff > 3) return 'high';
-      return 'urgent';
-    };
-
-    const calculateUrgency = (dossier) => {
-      const status = normalizeStatus(dossier.statut || dossier.status);
-      const priority = calculatePriority(dossier);
-      const created = new Date(dossier.created_at);
-      const updated = new Date(dossier.updated_at);
-      const now = new Date();
-      
-      const hoursOld = (now - updated) / (1000 * 60 * 60);
-      
-      return status === 'a_revoir' || hoursOld > 24 || priority === 'urgent';
-    };
-
-    const calculateStats = (dossiersList) => {
-      const today = new Date().toDateString();
-      const total = dossiersList.length;
-      
-      const enCours = dossiersList.filter(d => 
-        ['en_cours', 'a_revoir', 'en_impression'].includes(d.status)
-      ).length;
-      
-      const termine = dossiersList.filter(d => d.status === 'termine').length;
-      
-      const urgent = dossiersList.filter(d => d.isUrgent).length;
-      
-      const enRetard = dossiersList.filter(d => {
-        const updated = new Date(d.updated_at);
-        const hours = (new Date() - updated) / (1000 * 60 * 60);
-        return hours > 24;
-      }).length;
-      
-      const pourcentageCompletion = Math.round((termine / Math.max(total, 1)) * 100);
-      
-      const averageProcessingTime = dossiersList.reduce((acc, d) => {
-        const created = new Date(d.created_at);
-        const updated = new Date(d.updated_at);
-        return acc + (updated - created) / (1000 * 60);
-      }, 0) / Math.max(total, 1);
-      
-      const todayCreated = dossiersList.filter(d => new Date(d.created_at).toDateString() === today).length;
-      const todayCompleted = dossiersList.filter(d => 
-        d.status === 'termine' && new Date(d.updated_at).toDateString() === today
-      ).length;
-      
-      const weekStart = new Date();
-      weekStart.setDate(weekStart.getDate() - weekStart.getDay());
-      
-      const thisWeekCompleted = dossiersList.filter(d => {
-        const updated = new Date(d.updated_at);
-        return updated >= weekStart && ['termine', 'livre'].includes(d.status);
-      }).length;
-      
-      const productivity = Math.min(100, Math.round((thisWeekCompleted / Math.max(enCours || 1, 1)) * 100));
-      
-      const weeklyTrend = Math.round((Math.random() - 0.3) * 20);
-      
-      setStats({ 
-        total, 
-        enCours, 
-        termine, 
-        urgent, 
-        enRetard, 
-        pourcentageCompletion, 
-        averageProcessingTime,
-        todayCompleted,
-        productivity,
-        weeklyTrend
-      });
-    };
-
     setLoading(true);
     try {
       const data = await dossiersService.getDossiers({});
@@ -329,7 +249,7 @@ const PreparateurDashboardRevolutionnaire = ({ user }) => {
     });
 
     return sortDossiers(filtered);
-  }, [dossiers, searchTerm, filterStatus, filterType, filterPriority, sortBy, sortDossiers]);
+  }, [dossiers, searchTerm, filterStatus, filterType, filterPriority, sortBy]);
 
   // Catégorisation des dossiers filtrés
   const categorizedDossiers = useMemo(() => ({

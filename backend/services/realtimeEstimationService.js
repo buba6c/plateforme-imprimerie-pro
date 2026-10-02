@@ -6,16 +6,6 @@
 
 const NodeCache = require('node-cache');
 const dbHelper = require('../utils/dbHelper');
-const { 
-  mapRolandSupport, 
-  mapXeroxDocument,
-  mapXeroxFormat,
-  mapXeroxGrammage,
-  mapXeroxCouleur,
-  mapFinition,
-  normalizeRolandData,
-  normalizeXeroxData
-} = require('../utils/tariffMapping');
 
 // Cache des estimations (durée: 5 minutes)
 const estimationCache = new NodeCache({ stdTTL: 300, checkperiod: 60 });
@@ -33,12 +23,6 @@ async function estimateRealtime(formData, machineType) {
   const startTime = Date.now();
   
   try {
-    // DEBUG: Log les données reçues
-    console.log(`📥 REÇU - machineType: ${machineType}`);
-    console.log(`📥 formData keys:`, Object.keys(formData));
-    console.log(`📥 formData.nombre_exemplaires:`, formData.nombre_exemplaires, typeof formData.nombre_exemplaires);
-    console.log(`📥 formData.exemplaires:`, formData.exemplaires, typeof formData.exemplaires);
-    
     // 1. Générer une clé de cache basée sur les données
     const cacheKey = generateCacheKey(formData, machineType);
     
@@ -128,30 +112,22 @@ function calculateQuickEstimate(formData, machineType, tarifs) {
     };
     
     // Support / Matériau
-    const supportField = formData.type_support || formData.support;
-    if (supportField) {
-      // Mapper le label du support vers la clé de tarif
-      const tarifClue = mapRolandSupport(supportField);
-      
-      console.log(`🔍 Roland Support: "${supportField}" → Clé tarif: "${tarifClue}"`);
-      
-      const tarifSupport = tarifClue 
-        ? tarifs.find(t => t.cle === tarifClue)
-        : null;
+    if (formData.support) {
+      const tarifSupport = tarifs.find(t => 
+        t.cle === `${formData.support}_m2` || 
+        t.cle === formData.support ||
+        t.cle.includes(formData.support)
+      );
       
       if (tarifSupport) {
         prixBase = surface * tarifSupport.valeur;
         details.base.support = {
-          type: supportField,
-          tarif_cle: tarifClue,
-          prix_unitaire: parseFloat(tarifSupport.valeur),
-          surface_m2: parseFloat(surface.toFixed(4)),
+          type: formData.support,
+          prix_unitaire: tarifSupport.valeur,
           prix_total: Math.round(prixBase)
         };
-        console.log(`✅ Tarif trouvé: ${tarifSupport.valeur} FCFA/m² × ${surface.toFixed(2)}m² = ${Math.round(prixBase)} FCFA`);
       } else {
-        console.warn(`⚠️ Support "${supportField}" (clé: "${tarifClue}") non trouvé dans les tarifs`);
-        warnings.push(`Support "${supportField}" non trouvé dans les tarifs`);
+        warnings.push(`Support "${formData.support}" non trouvé dans les tarifs`);
       }
     }
     
@@ -212,8 +188,7 @@ function calculateQuickEstimate(formData, machineType, tarifs) {
     // CALCUL XEROX - Basé sur PAGES
     // ============================================
     
-    // Si nombre_pages n'est pas fourni, par défaut 1 page par document
-    const nbPages = parseInt(formData.nombre_pages || formData.pages || 1) || 1;
+    const nbPages = parseInt(formData.nombre_pages || formData.pages) || 0;
     const exemplaires = parseInt(formData.exemplaires || formData.nombre_exemplaires) || 1;
     const totalPages = nbPages * exemplaires;
     
@@ -223,100 +198,65 @@ function calculateQuickEstimate(formData, machineType, tarifs) {
       total_pages: totalPages
     };
     
-    // Déterminer le tarif papier basé sur format et couleur
-    let tarifPapierCle = null;
-    
-    // Option 1: Format explicite
-    if (formData.format) {
-      tarifPapierCle = mapXeroxFormat(formData.format);
-      console.log(`🔍 Xerox Format: "${formData.format}" → Clé tarif: "${tarifPapierCle}"`);
-    }
-    
-    // Option 2: Type de document
-    if (!tarifPapierCle && formData.type_document) {
-      tarifPapierCle = mapXeroxDocument(formData.type_document);
-      console.log(`🔍 Xerox Document: "${formData.type_document}" → Clé tarif: "${tarifPapierCle}"`);
-    }
-    
-    // Option 3: Grammage
-    if (!tarifPapierCle && formData.grammage) {
-      tarifPapierCle = mapXeroxGrammage(formData.grammage);
-      console.log(`🔍 Xerox Grammage: "${formData.grammage}" → Clé tarif: "${tarifPapierCle}"`);
-    }
-    
-    // Option 4: Couleur/Mode impression
-    if (!tarifPapierCle && formData.couleur_impression) {
-      tarifPapierCle = mapXeroxCouleur(formData.couleur_impression);
-      console.log(`🔍 Xerox Couleur: "${formData.couleur_impression}" → Clé tarif: "${tarifPapierCle}"`);
-    }
-    
-    // Défaut: A4 Couleur
-    if (!tarifPapierCle) {
-      tarifPapierCle = 'papier_a4_couleur';
-      console.log(`🔍 Xerox: Défaut → Clé tarif: "papier_a4_couleur"`);
-    }
-    
-    // Chercher le tarif en base
-    const tarifPapier = tarifPapierCle ? tarifs.find(t => t.cle === tarifPapierCle) : null;
-    
-    if (tarifPapier) {
-      prixBase = totalPages * parseFloat(tarifPapier.valeur);
-      details.base.papier = {
-        type: formData.format || formData.type_document || 'Papier standard',
-        tarif_cle: tarifPapierCle,
-        prix_par_page: parseFloat(tarifPapier.valeur),
-        total_pages: totalPages,
-        prix_total: Math.round(prixBase)
-      };
-      console.log(`✅ Tarif papier trouvé: ${tarifPapier.valeur} FCFA/page × ${totalPages} pages = ${Math.round(prixBase)} FCFA`);
-    } else {
-      console.warn(`⚠️ Papier "${tarifPapierCle}" non trouvé dans les tarifs`);
-      warnings.push(`Papier non trouvé dans les tarifs`);
-    }
-    
-    // Finitions (Plastification, Reliure, etc.)
-    if (formData.finition && Array.isArray(formData.finition)) {
-      for (const finitionLabel of formData.finition) {
-        const finitionCle = mapFinition(finitionLabel);
-        if (finitionCle) {
-          const tarifFinition = tarifs.find(t => t.cle === finitionCle);
-          if (tarifFinition) {
-            let montant = parseFloat(tarifFinition.valeur);
-            // Si c'est un prix forfaitaire par exemplaire, multiplier
-            if (tarifFinition.unite === 'forfait' || tarifFinition.unite === 'exemplaire') {
-              montant = montant * exemplaires;
-            }
-            prixFinitions += montant;
-            details.finitions.push({
-              nom: finitionLabel,
-              tarif_cle: finitionCle,
-              prix_unitaire: parseFloat(tarifFinition.valeur),
-              prix_total: Math.round(montant)
-            });
-          }
-        }
+    // Type de papier
+    if (formData.papier) {
+      const tarifPapier = tarifs.find(t => 
+        t.cle === formData.papier || 
+        t.cle.includes(formData.papier)
+      );
+      
+      if (tarifPapier) {
+        prixBase = totalPages * tarifPapier.valeur;
+        details.base.papier = {
+          type: formData.papier,
+          prix_par_page: tarifPapier.valeur,
+          prix_total: Math.round(prixBase)
+        };
+      } else {
+        warnings.push(`Papier "${formData.papier}" non trouvé dans les tarifs`);
       }
     }
     
-    // Façonnage (Découpe, Reliure, etc.)
-    if (formData.faconnage && Array.isArray(formData.faconnage)) {
-      for (const faconnageLabel of formData.faconnage) {
-        const facconnageCle = mapFinition(faconnageLabel); // Réutilise le mapping finitions
-        if (facconnageCle) {
-          const tarifFaconnage = tarifs.find(t => t.cle === facconnageCle);
-          if (tarifFaconnage) {
-            let montant = parseFloat(tarifFaconnage.valeur);
-            if (tarifFaconnage.unite === 'forfait' || tarifFaconnage.unite === 'exemplaire') {
-              montant = montant * exemplaires;
-            }
-            prixOptions += montant;
-            details.options.push({
-              nom: faconnageLabel,
-              tarif_cle: facconnageCle,
-              prix: Math.round(montant)
-            });
-          }
+    // Couleur vs N&B
+    const couleur = formData.couleur || formData.type_impression || 'noir_et_blanc';
+    if (couleur === 'couleur') {
+      const tarifCouleur = tarifs.find(t => t.cle === 'impression_couleur');
+      if (tarifCouleur) {
+        const supplementCouleur = totalPages * tarifCouleur.valeur;
+        prixBase += supplementCouleur;
+        details.base.couleur = {
+          type: 'couleur',
+          supplement: Math.round(supplementCouleur)
+        };
+      }
+    }
+    
+    // Finitions
+    if (formData.finitions && Array.isArray(formData.finitions)) {
+      formData.finitions.forEach(finition => {
+        const tarifFinition = tarifs.find(t => t.cle === finition);
+        if (tarifFinition) {
+          const montant = tarifFinition.valeur * exemplaires;
+          prixFinitions += montant;
+          details.finitions.push({
+            nom: finition,
+            prix_unitaire: tarifFinition.valeur,
+            prix_total: Math.round(montant)
+          });
         }
+      });
+    }
+    
+    // Reliure / Assemblage
+    if (formData.reliure) {
+      const tarifReliure = tarifs.find(t => t.cle === formData.reliure);
+      if (tarifReliure) {
+        const montant = tarifReliure.valeur * exemplaires;
+        prixOptions += montant;
+        details.options.push({
+          nom: formData.reliure,
+          prix: Math.round(montant)
+        });
       }
     }
   }
@@ -371,13 +311,12 @@ async function getTarifsWithCache(machineType) {
  */
 function generateCacheKey(formData, machineType) {
   const relevantFields = machineType === 'roland' 
-    ? ['largeur', 'hauteur', 'unite', 'type_support', 'support', 'quantite', 'nombre_exemplaires', 'finitions', 'options']
-    // Xerox: inclure tous les champs utilisés dans le calcul
-    : ['nombre_pages', 'pages', 'exemplaires', 'nombre_exemplaires', 'format', 'type_document', 'couleur_impression', 'grammage', 'mode_impression', 'finition', 'faconnage', 'conditionnement'];
+    ? ['largeur', 'hauteur', 'unite', 'support', 'quantite', 'finitions', 'options']
+    : ['nombre_pages', 'exemplaires', 'papier', 'couleur', 'finitions', 'reliure'];
   
   const keyData = {};
   relevantFields.forEach(field => {
-    if (formData[field] !== undefined && formData[field] !== null && formData[field] !== '') {
+    if (formData[field] !== undefined) {
       keyData[field] = formData[field];
     }
   });
@@ -390,12 +329,9 @@ function generateCacheKey(formData, machineType) {
  */
 function isPartialData(formData, machineType) {
   if (machineType === 'roland') {
-    const hasSupport = formData.type_support || formData.support;
-    return !formData.largeur || !formData.hauteur || !hasSupport;
+    return !formData.largeur || !formData.hauteur || !formData.support;
   } else {
-    // Xerox: au moins format OU type_document ET nombre_exemplaires
-    const hasFormat = formData.format || formData.type_document;
-    return !hasFormat || !formData.nombre_exemplaires;
+    return !formData.nombre_pages || !formData.papier;
   }
 }
 

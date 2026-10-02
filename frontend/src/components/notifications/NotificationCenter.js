@@ -108,6 +108,26 @@ const NotificationCenter = ({ className = '' }) => {
     notificationService.clearNotifications();
   };
 
+  const testNotification = (type = 'success') => {
+    const testNotif = {
+      id: Date.now(),
+      type: type,
+      title: `Test Notification ${type}`,
+      message: `Ceci est une notification de test de type "${type}"`,
+      timestamp: new Date().toISOString(),
+    };
+
+    notificationService.addNotification(testNotif, true);
+
+    // Afficher aussi une notification navigateur si autorisé
+    if (Notification.permission === 'granted') {
+      new Notification(testNotif.title, {
+        body: testNotif.message,
+        icon: '/favicon.ico',
+      });
+    }
+  };
+
   const getNotificationIcon = type => {
     const iconClasses = 'h-5 w-5 flex-shrink-0';
 
@@ -187,9 +207,8 @@ const NotificationCenter = ({ className = '' }) => {
 
         {/* Indicateur de connexion */}
         <div
-          className={`absolute bottom-0 right-0 w-3 h-3 rounded-full border-2 border-white ${
-            connectionStatus?.authenticated ? 'bg-success-400' : 'bg-neutral-400'
-          }`}
+          className={`absolute bottom-0 right-0 w-3 h-3 rounded-full border-2 border-white ${connectionStatus?.authenticated ? 'bg-success-400' : 'bg-neutral-400'
+            }`}
         />
       </button>
 
@@ -197,161 +216,188 @@ const NotificationCenter = ({ className = '' }) => {
       {isOpen && createPortal(
         <>
           {/* Backdrop pour fermer en cliquant à l'extérieur */}
-          <div 
-            className="fixed inset-0" 
+          <div
+            className="fixed inset-0"
             style={{ zIndex: 9998 }}
             onClick={() => setIsOpen(false)}
           />
-          
+
           {/* Panel */}
-          <div 
+          <div
             ref={panelRef}
             className="fixed w-96 bg-white dark:bg-neutral-800 rounded-lg shadow-2xl border border-neutral-200 dark:border-neutral-700 overflow-hidden"
-            style={{ 
+            style={{
               zIndex: 9999,
               top: `${panelPosition.top}px`,
               right: `${panelPosition.right}px`,
               maxHeight: 'calc(100vh - 100px)'
             }}
           >
-          {/* Header */}
-          <div className="px-4 py-3 border-b border-neutral-200 bg-neutral-50 dark:bg-neutral-900">
-            <div className="flex items-center justify-between">
-              <h3 className="text-lg font-semibold text-neutral-900 dark:text-white">Notifications</h3>
-
-              <div className="flex items-center space-x-2">
-                {/* Statut de connexion */}
-                <div
-                  className={`flex items-center text-xs ${
-                    connectionStatus?.authenticated ? 'text-success-600' : 'text-neutral-500'
-                  }`}
-                >
-                  <div
-                    className={`w-2 h-2 rounded-full mr-1 ${
-                      connectionStatus?.authenticated ? 'bg-success-400' : 'bg-neutral-400'
-                    }`}
-                  />
-                  {connectionStatus?.authenticated ? 'Connecté' : 'Hors ligne'}
-                </div>
-
-                <button
-                  onClick={() => setIsOpen(false)}
-                  className="text-neutral-400 hover:text-neutral-600 dark:text-neutral-300 transition-colors"
-                >
-                  <XMarkIcon className="h-5 w-5" />
-                </button>
-              </div>
-            </div>
-
-            {/* Compteurs et actions */}
-            {notifications.length > 0 && (
-              <div className="flex items-center justify-between mt-2">
-                <span className="text-sm text-neutral-600 dark:text-neutral-300">
-                  {unreadCount > 0 && `${unreadCount} non lue${unreadCount > 1 ? 's' : ''} • `}
-                  {notifications.length} total
-                </span>
+            {/* Header */}
+            <div className="px-4 py-3 border-b border-neutral-200 bg-neutral-50 dark:bg-neutral-900">
+              <div className="flex items-center justify-between">
+                <h3 className="text-lg font-semibold text-neutral-900 dark:text-white">Notifications</h3>
 
                 <div className="flex items-center space-x-2">
-                  {unreadCount > 0 && (
-                    <button
-                      onClick={markAllAsRead}
-                      className="text-xs text-blue-600 hover:text-blue-800 transition-colors"
-                    >
-                      Tout marquer comme lu
-                    </button>
-                  )}
+                  {/* Statut de connexion */}
+                  <div
+                    className={`flex items-center text-xs ${connectionStatus?.authenticated ? 'text-success-600' : 'text-neutral-500'
+                      }`}
+                  >
+                    <div
+                      className={`w-2 h-2 rounded-full mr-1 ${connectionStatus?.authenticated ? 'bg-success-400' : 'bg-neutral-400'
+                        }`}
+                    />
+                    {connectionStatus?.authenticated ? 'Connecté' : 'Hors ligne'}
+                  </div>
 
-                  {notifications.length > 0 && (
-                    <button
-                      onClick={clearAll}
-                      className="text-xs text-neutral-500 hover:text-neutral-700 dark:text-neutral-200 transition-colors"
-                    >
-                      Effacer tout
-                    </button>
-                  )}
+                  <button
+                    onClick={() => setIsOpen(false)}
+                    className="text-neutral-400 hover:text-neutral-600 dark:text-neutral-300 transition-colors"
+                  >
+                    <XMarkIcon className="h-5 w-5" />
+                  </button>
                 </div>
               </div>
-            )}
-          </div>
 
-          {/* Liste des notifications */}
-          <div className="max-h-80 overflow-y-auto">
-            {notifications.length === 0 ? (
-              <div className="p-6 text-center">
-                <BellIcon className="h-12 w-12 text-neutral-300 mx-auto mb-2" />
-                <p className="text-neutral-500">Aucune notification</p>
-              </div>
-            ) : (
-              <div className="divide-y divide-secondary-100">
-                {notifications.map(notification => (
-                  <div
-                    key={notification.id}
-                    className={`p-4 hover:bg-neutral-50 dark:bg-neutral-900 transition-colors ${getNotificationColor(notification)}`}
-                  >
-                    <div className="flex items-start space-x-3">
-                      {getNotificationIcon(notification.type)}
+              {/* Compteurs et actions */}
+              {notifications.length > 0 && (
+                <div className="flex items-center justify-between mt-2">
+                  <span className="text-sm text-neutral-600 dark:text-neutral-300">
+                    {unreadCount > 0 && `${unreadCount} non lue${unreadCount > 1 ? 's' : ''} • `}
+                    {notifications.length} total
+                  </span>
 
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-start justify-between">
-                          <div className="flex-1">
-                            <h4
-                              className={`text-sm font-medium ${
-                                notification.read ? 'text-neutral-700' : 'text-neutral-900 dark:text-white'
-                              }`}
-                            >
-                              {notification.title}
-                            </h4>
+                  <div className="flex items-center space-x-2">
+                    {unreadCount > 0 && (
+                      <button
+                        onClick={markAllAsRead}
+                        className="text-xs text-blue-600 hover:text-blue-800 transition-colors"
+                      >
+                        Tout marquer comme lu
+                      </button>
+                    )}
 
-                            <p
-                              className={`text-sm mt-1 ${
-                                notification.read ? 'text-neutral-500' : 'text-neutral-700 dark:text-neutral-200'
-                              }`}
-                            >
-                              {truncateMessage(notification.message)}
-                            </p>
+                    {notifications.length > 0 && (
+                      <button
+                        onClick={clearAll}
+                        className="text-xs text-neutral-500 hover:text-neutral-700 dark:text-neutral-200 transition-colors"
+                      >
+                        Effacer tout
+                      </button>
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
 
-                            <p className="text-xs text-neutral-400 mt-2">
-                              {formatTime(notification.timestamp)}
-                            </p>
-                          </div>
+            {/* Liste des notifications */}
+            <div className="max-h-80 overflow-y-auto">
+              {notifications.length === 0 ? (
+                <div className="p-6 text-center">
+                  <BellIcon className="h-12 w-12 text-neutral-300 mx-auto mb-2" />
+                  <p className="text-neutral-500 mb-4">Aucune notification</p>
 
-                          <div className="flex items-center ml-2">
-                            {notification.urgent && (
-                              <ExclamationTriangleIcon className="h-4 w-4 text-danger-500 mr-1" />
-                            )}
+                  {/* Boutons de test */}
+                  <div className="mt-4 space-y-2">
+                    <p className="text-xs text-neutral-400 mb-2">🔊 Tester les notifications sonores :</p>
+                    <div className="flex flex-wrap gap-2 justify-center">
+                      <button
+                        onClick={() => testNotification('success')}
+                        className="px-3 py-1 text-xs bg-green-100 text-green-700 rounded-lg hover:bg-green-200 transition-colors"
+                      >
+                        ✅ Succès
+                      </button>
+                      <button
+                        onClick={() => testNotification('info')}
+                        className="px-3 py-1 text-xs bg-blue-100 text-blue-700 rounded-lg hover:bg-blue-200 transition-colors"
+                      >
+                        ℹ️ Info
+                      </button>
+                      <button
+                        onClick={() => testNotification('warning')}
+                        className="px-3 py-1 text-xs bg-orange-100 text-orange-700 rounded-lg hover:bg-orange-200 transition-colors"
+                      >
+                        ⚠️ Avertissement
+                      </button>
+                      <button
+                        onClick={() => testNotification('error')}
+                        className="px-3 py-1 text-xs bg-red-100 text-red-700 rounded-lg hover:bg-red-200 transition-colors"
+                      >
+                        ❌ Erreur
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                <div className="divide-y divide-secondary-100">
+                  {notifications.map(notification => (
+                    <div
+                      key={notification.id}
+                      className={`p-4 hover:bg-neutral-50 dark:bg-neutral-900 transition-colors ${getNotificationColor(notification)}`}
+                    >
+                      <div className="flex items-start space-x-3">
+                        {getNotificationIcon(notification.type)}
 
-                            {!notification.read && (
-                              <button
-                                onClick={() => markAsRead(notification.id)}
-                                className="text-neutral-400 hover:text-neutral-600 dark:text-neutral-300 transition-colors"
-                                title="Marquer comme lu"
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-start justify-between">
+                            <div className="flex-1">
+                              <h4
+                                className={`text-sm font-medium ${notification.read ? 'text-neutral-700' : 'text-neutral-900 dark:text-white'
+                                  }`}
                               >
-                                <CheckIcon className="h-4 w-4" />
-                              </button>
-                            )}
+                                {notification.title}
+                              </h4>
+
+                              <p
+                                className={`text-sm mt-1 ${notification.read ? 'text-neutral-500' : 'text-neutral-700 dark:text-neutral-200'
+                                  }`}
+                              >
+                                {truncateMessage(notification.message)}
+                              </p>
+
+                              <p className="text-xs text-neutral-400 mt-2">
+                                {formatTime(notification.timestamp)}
+                              </p>
+                            </div>
+
+                            <div className="flex items-center ml-2">
+                              {notification.urgent && (
+                                <ExclamationTriangleIcon className="h-4 w-4 text-danger-500 mr-1" />
+                              )}
+
+                              {!notification.read && (
+                                <button
+                                  onClick={() => markAsRead(notification.id)}
+                                  className="text-neutral-400 hover:text-neutral-600 dark:text-neutral-300 transition-colors"
+                                  title="Marquer comme lu"
+                                >
+                                  <CheckIcon className="h-4 w-4" />
+                                </button>
+                              )}
+                            </div>
                           </div>
                         </div>
                       </div>
                     </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* Footer avec infos de débogage (développement) */}
+            {process.env.NODE_ENV === 'development' && connectionStatus && (
+              <div className="px-4 py-2 bg-neutral-50 dark:bg-neutral-900 border-t border-neutral-200 dark:border-neutral-700">
+                <details className="text-xs text-neutral-500">
+                  <summary className="cursor-pointer hover:text-neutral-700 dark:text-neutral-200">Debug Info</summary>
+                  <div className="mt-1 space-y-1">
+                    <div>Socket ID: {connectionStatus.socketId || 'N/A'}</div>
+                    <div>Connecté: {connectionStatus.connected ? 'Oui' : 'Non'}</div>
+                    <div>Authentifié: {connectionStatus.authenticated ? 'Oui' : 'Non'}</div>
                   </div>
-                ))}
+                </details>
               </div>
             )}
-          </div>
-
-          {/* Footer avec infos de débogage (développement) */}
-          {process.env.NODE_ENV === 'development' && connectionStatus && (
-            <div className="px-4 py-2 bg-neutral-50 dark:bg-neutral-900 border-t border-neutral-200 dark:border-neutral-700">
-              <details className="text-xs text-neutral-500">
-                <summary className="cursor-pointer hover:text-neutral-700 dark:text-neutral-200">Debug Info</summary>
-                <div className="mt-1 space-y-1">
-                  <div>Socket ID: {connectionStatus.socketId || 'N/A'}</div>
-                  <div>Connecté: {connectionStatus.connected ? 'Oui' : 'Non'}</div>
-                  <div>Authentifié: {connectionStatus.authenticated ? 'Oui' : 'Non'}</div>
-                </div>
-              </details>
-            </div>
-          )}
           </div>
         </>,
         document.body

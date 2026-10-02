@@ -64,6 +64,7 @@ const FileThumbnail = ({
   // Pour les images, essayer d'afficher la vraie image
   if (file?.mimetype?.includes('image/') || ['jpg', 'jpeg', 'png', 'gif', 'bmp', 'webp'].includes(file?.nom?.split('.').pop()?.toLowerCase())) {
     const API_BASE = process.env.REACT_APP_API_URL || 'http://localhost:5001/api';
+    const authToken = localStorage.getItem('auth_token') || sessionStorage.getItem('auth_token');
     
     if (file.id) {
       return (

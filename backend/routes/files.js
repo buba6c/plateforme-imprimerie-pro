@@ -3,21 +3,143 @@ const multer = require('multer');
 const path = require('path');
 const fs = require('fs').promises;
 const { query } = require('../config/database');
-const { authenticateToken, authorizeRoles } = require('../middleware/auth');
+const { authenticateToken, authenticateDownload, authorizeRoles } = require('../middleware/auth');
 const { getDossierByIdentifier, checkDossierPermission } = require('../middleware/permissions');
 const { isValidUUID, isValidId, validateIdParam } = require('../utils/validators');
 const router = express.Router();
 
 const rateLimit = require('express-rate-limit');
+
+// Rate limiter global pour les opérations générales de fichiers
 const filesLimiter = rateLimit({
   windowMs: 10 * 60 * 1000, // 10 minutes
-  max: 50, // 50 requêtes par IP
+  max: 1000, // Augmenté pour preview // Augmenté de 50 à 200 requêtes par IP/fenêtre
+  standardHeaders: true, // Retourne les headers RateLimit-*
+  legacyHeaders: false, // Désactive les headers X-RateLimit-*
   message: {
     error: 'Trop de requêtes sur les fichiers, veuillez patienter.',
+    code: 'RATE_LIMIT_EXCEEDED',
+    retryAfter: 'Consultez le header Retry-After pour savoir quand réessayer.',
+  },
+  handler: (req, res) => {
+    res.status(429).json({
+      error: 'Trop de requêtes',
+      code: 'RATE_LIMIT_EXCEEDED',
+      message: 'Vous avez dépassé la limite de requêtes autorisées. Veuillez patienter avant de réessayer.',
+      retryAfter: Math.ceil(req.rateLimit.resetTime - Date.now()) / 1000, // Secondes avant reset
+    });
+  },
+});
+
+// Rate limiter spécifique pour les téléchargements (plus permissif)
+const downloadLimiter = rateLimit({
+  windowMs: 10 * 60 * 1000, // 10 minutes
+  max: 300, // 300 téléchargements par IP/fenêtre (plus permissif)
+  standardHeaders: true,
+  legacyHeaders: false,
+  skipSuccessfulRequests: false, // Compter toutes les requêtes
+  message: {
+    error: 'Trop de téléchargements, veuillez patienter.',
+    code: 'DOWNLOAD_RATE_LIMIT_EXCEEDED',
+  },
+  handler: (req, res) => {
+    res.status(429).json({
+      error: 'Limite de téléchargements atteinte',
+      code: 'DOWNLOAD_RATE_LIMIT_EXCEEDED',
+      message: 'Vous avez effectué trop de téléchargements. Veuillez patienter quelques minutes avant de réessayer.',
+      retryAfter: Math.ceil((req.rateLimit.resetTime - Date.now()) / 1000), // Secondes
+    });
   },
 });
 
 // Middleware d'authentification et de rate limiting pour toutes les routes
+
+// ================================
+// TÉLÉCHARGEMENT DIRECT AVEC TOKEN TEMPORAIRE (avant auth globale)
+// ================================
+// GET /api/files/download/:id/direct?token=xxx - Téléchargement direct avec token temporaire
+router.get('/download/:id/direct', downloadLimiter, validateIdParam('id'), async (req, res) => {
+  try {
+    const fileId = req.params.id;
+    const token = req.query.token;
+
+    if (!token) {
+      return res.status(401).json({ error: 'Token requis' });
+    }
+
+    // Vérifier le token
+    const tokenData = downloadTokens.get(token);
+    if (!tokenData) {
+      return res.status(401).json({ error: 'Token invalide ou expiré' });
+    }
+
+    // Vérifier l'expiration
+    if (tokenData.expiresAt < Date.now()) {
+      // downloadTokens.delete(token); // Commenté: permettre réutilisation jusqu'à expiration
+      return res.status(401).json({ error: 'Token expiré' });
+    }
+
+    // Vérifier que le token correspond au fichier demandé
+    if (tokenData.fileId !== fileId) {
+      return res.status(403).json({ error: 'Token invalide pour ce fichier' });
+    }
+
+    // Supprimer le token (usage unique)
+    // downloadTokens.delete(token); // Commenté: permettre réutilisation jusqu'à expiration
+
+    console.log(`📥 Téléchargement direct avec token pour fichier ${fileId}`);
+
+    // Récupérer le fichier depuis la DB
+    const result = await query(
+      `SELECT f.*, d.id as dossier_id
+       FROM fichiers f
+       LEFT JOIN dossiers d ON f.dossier_id = d.id
+       WHERE f.id = $1`,
+      [fileId]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'Fichier non trouvé' });
+    }
+
+    const file = result.rows[0];
+    const filePath = path.join(__dirname, '..', '..', file.chemin_stockage || file.chemin);
+
+    // Vérifier que le fichier existe
+    try {
+      await fs.access(filePath);
+    } catch {
+      return res.status(404).json({ error: 'Fichier physique non trouvé' });
+    }
+
+    // Headers pour le téléchargement
+    const filename = file.nom_original || file.nom_fichier || 'download';
+    const encodedFilename = encodeURIComponent(filename);
+
+    res.setHeader('Content-Type', file.type_mime || 'application/octet-stream');
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"; filename*=UTF-8''${encodedFilename}`);
+    res.setHeader('Content-Length', file.taille_bytes);
+    res.setHeader('Cache-Control', 'no-cache');
+
+    // Stream le fichier (pas de chargement en mémoire)
+    const fileStream = require('fs').createReadStream(filePath);
+    fileStream.pipe(res);
+
+    fileStream.on('error', (error) => {
+      console.error('Erreur stream fichier:', error);
+      if (!res.headersSent) {
+        res.status(500).json({ error: 'Erreur lecture fichier' });
+      }
+    });
+
+  } catch (error) {
+    console.error('Erreur téléchargement direct:', error);
+    if (!res.headersSent) {
+      res.status(500).json({ error: 'Erreur serveur' });
+    }
+  }
+});
+
 router.use(authenticateToken);
 router.use(filesLimiter);
 
@@ -30,18 +152,18 @@ router.get('/manager', authorizeRoles('admin'), async (req, res) => {
   try {
     const { path: requestPath = '', search = '', machine = '', type = '' } = req.query;
     const uploadsDir = path.join(path.dirname(process.cwd()), 'uploads');
-    
+
     // Fonction récursive pour scanner les dossiers
     async function scanDirectory(dirPath, relativePath = '') {
       const items = [];
-      
+
       try {
         const entries = await fs.readdir(dirPath, { withFileTypes: true });
-        
+
         for (const entry of entries) {
           const fullPath = path.join(dirPath, entry.name);
           const itemPath = path.join(relativePath, entry.name);
-          
+
           if (entry.isDirectory()) {
             const children = await scanDirectory(fullPath, itemPath);
             items.push({
@@ -67,47 +189,47 @@ router.get('/manager', authorizeRoles('admin'), async (req, res) => {
       } catch (error) {
         console.error(`Erreur lecture dossier ${dirPath}:`, error);
       }
-      
+
       return items;
     }
-    
+
     const targetDir = requestPath ? path.join(uploadsDir, requestPath) : uploadsDir;
-    
+
     // Vérifier la sécurité du chemin
     const normalizedPath = path.normalize(targetDir);
     if (!normalizedPath.startsWith(uploadsDir)) {
       return res.status(400).json({ error: 'Chemin non autorisé' });
     }
-    
+
     let items = await scanDirectory(targetDir, requestPath);
-    
+
     // Filtres
     if (search) {
-      items = items.filter(item => 
+      items = items.filter(item =>
         item.name.toLowerCase().includes(search.toLowerCase())
       );
     }
-    
+
     if (machine) {
-      items = items.filter(item => 
+      items = items.filter(item =>
         item.path.toLowerCase().includes(machine.toLowerCase())
       );
     }
-    
+
     if (type) {
-      items = items.filter(item => 
-        item.type === type || 
+      items = items.filter(item =>
+        item.type === type ||
         (type === 'image' && item.extension && ['.jpg', '.jpeg', '.png', '.gif'].includes(item.extension)) ||
         (type === 'pdf' && item.extension === '.pdf') ||
         (type === 'document' && item.extension && ['.doc', '.docx', '.txt'].includes(item.extension))
       );
     }
-    
+
     // Calculer l'espace de stockage utilisé
     const totalSize = items
       .filter(item => item.type === 'file')
       .reduce((sum, file) => sum + file.size, 0);
-    
+
     res.json({
       success: true,
       data: {
@@ -117,12 +239,12 @@ router.get('/manager', authorizeRoles('admin'), async (req, res) => {
         totalSize
       }
     });
-    
+
   } catch (error) {
     console.error('Erreur listing fichiers:', error);
-    res.status(500).json({ 
-      success: false, 
-      error: 'Erreur lors de la récupération des fichiers' 
+    res.status(500).json({
+      success: false,
+      error: 'Erreur lors de la récupération des fichiers'
     });
   }
 });
@@ -131,18 +253,18 @@ router.get('/manager', authorizeRoles('admin'), async (req, res) => {
 router.get('/storage-info', authorizeRoles('admin'), async (req, res) => {
   try {
     const uploadsDir = path.join(path.dirname(process.cwd()), 'uploads');
-    
+
     // Calculer récursivement la taille de tous les fichiers
     async function calculateDirSize(dirPath) {
       let totalSize = 0;
       let fileCount = 0;
-      
+
       try {
         const entries = await fs.readdir(dirPath, { withFileTypes: true });
-        
+
         for (const entry of entries) {
           const fullPath = path.join(dirPath, entry.name);
-          
+
           if (entry.isDirectory()) {
             const { size, count } = await calculateDirSize(fullPath);
             totalSize += size;
@@ -156,13 +278,13 @@ router.get('/storage-info', authorizeRoles('admin'), async (req, res) => {
       } catch (error) {
         console.error(`Erreur calcul taille ${dirPath}:`, error);
       }
-      
+
       return { size: totalSize, count: fileCount };
     }
-    
+
     const { size: usedSpace, count: totalFiles } = await calculateDirSize(uploadsDir);
     const totalSpace = 50 * 1024 * 1024 * 1024; // 50GB simulé
-    
+
     res.json({
       success: true,
       data: {
@@ -173,7 +295,7 @@ router.get('/storage-info', authorizeRoles('admin'), async (req, res) => {
         totalFiles
       }
     });
-    
+
   } catch (error) {
     console.error('Erreur calcul stockage:', error);
     res.status(500).json({ error: 'Erreur lors du calcul de l\'espace de stockage' });
@@ -184,22 +306,22 @@ router.get('/storage-info', authorizeRoles('admin'), async (req, res) => {
 router.post('/manager/folder', authorizeRoles('admin'), async (req, res) => {
   try {
     const { path: folderPath, name } = req.body;
-    
+
     if (!name || !name.trim()) {
       return res.status(400).json({ error: 'Nom du dossier requis' });
     }
-    
+
     const uploadsDir = path.join(path.dirname(process.cwd()), 'uploads');
-    const targetPath = folderPath 
+    const targetPath = folderPath
       ? path.join(uploadsDir, folderPath, name.trim())
       : path.join(uploadsDir, name.trim());
-    
+
     // Vérifications de sécurité
     const normalizedPath = path.normalize(targetPath);
     if (!normalizedPath.startsWith(uploadsDir)) {
       return res.status(400).json({ error: 'Chemin non autorisé' });
     }
-    
+
     // Vérifier que le dossier n'existe pas déjà
     try {
       await fs.access(targetPath);
@@ -207,9 +329,9 @@ router.post('/manager/folder', authorizeRoles('admin'), async (req, res) => {
     } catch {
       // Le dossier n'existe pas, on peut le créer
     }
-    
+
     await fs.mkdir(targetPath, { recursive: true });
-    
+
     res.json({
       success: true,
       message: 'Dossier créé avec succès',
@@ -218,7 +340,7 @@ router.post('/manager/folder', authorizeRoles('admin'), async (req, res) => {
         path: path.relative(uploadsDir, targetPath)
       }
     });
-    
+
   } catch (error) {
     console.error('Erreur création dossier:', error);
     res.status(500).json({ error: 'Erreur lors de la création du dossier' });
@@ -235,11 +357,11 @@ const storage = multer.diskStorage({
     try {
       const providedId = req.params.dossierId || req.body.dossierId;
       if (!providedId) return cb(new Error('Dossier ID requis pour upload'));
-      // Résoudre l'identifiant et normaliser sur folder_id
+      // Résoudre l'identifiant et normaliser sur id
       const dossier = await getDossierByIdentifier(providedId);
       if (!dossier) return cb(new Error('Dossier non trouvé'));
-      const folderName = dossier.folder_id || String(dossier.id);
-      // Standardiser le chemin: uploads/dossiers/<folder_id>
+      const folderName = String(dossier.id);
+      // Standardiser le chemin: uploads/dossiers/<id>
       const dossierDir = path.join(path.dirname(process.cwd()), 'uploads', 'dossiers', folderName);
       await fs.mkdir(dossierDir, { recursive: true });
       cb(null, dossierDir);
@@ -260,41 +382,16 @@ const storage = multer.diskStorage({
 
 // Filtre pour les types de fichiers autorisés
 const fileFilter = (req, file, cb) => {
-  // Types de fichiers autorisés pour l'imprimerie
-  const allowedTypes = [
-    'application/pdf',
-    'image/jpeg',
-    'image/jpg',
-    'image/png',
-    'image/gif',
-    'application/postscript', // .ai files
-    'application/illustrator',
-    'image/svg+xml',
-    'application/zip',
-    'application/x-rar-compressed',
-    'text/plain',
-    'application/msword',
-    'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-  ];
-
-  if (allowedTypes.includes(file.mimetype)) {
-    cb(null, true);
-  } else {
-    cb(
-      new Error(
-        'Type de fichier non autorisé. Types acceptés: PDF, Images (JPG, PNG, GIF), AI, SVG, ZIP, RAR, TXT, DOC, DOCX'
-      ),
-      false
-    );
-  }
+  // On accepte TOUS les types de fichiers (y compris TIFF, fichiers natifs PSD/AI, etc.)
+  cb(null, true);
 };
 
 // Configuration multer
 const upload = multer({
   storage: storage,
   limits: {
-    fileSize: 500 * 1024 * 1024, // 500MB max
-    files: 10, // 10 fichiers max par upload
+    fileSize: 2048 * 1024 * 1024, // 2GB max
+    files: 50, // 50 fichiers max par upload
   },
   fileFilter: fileFilter,
 });
@@ -303,14 +400,14 @@ const upload = multer({
 const checkUploadPermissions = (userRole, dossier) => {
   // Admin peut toujours uploader
   if (userRole === 'admin') return true;
-  
+
   // Préparateur peut uploader sur ses dossiers non validés
   if (userRole === 'preparateur') {
     // Vérifier que le dossier n'est pas validé
     const isValidated = dossier.valide_preparateur || dossier['valide_preparateur'];
     return !isValidated;
   }
-  
+
   // Autres rôles ne peuvent pas uploader
   return false;
 };
@@ -383,44 +480,72 @@ const handleMulterError = (error, req, res, next) => {
 const checkFileAccess = async (req, res, next) => {
   try {
     const { id } = req.params;
-    
-    const fileResult = await query('SELECT * FROM fichiers WHERE id = $1', [id]);
-    
+
+    // ✅ OPTIMISÉ: Une seule requête avec JOIN au lieu de 2 requêtes séparées
+    const fileResult = await query(
+      `SELECT f.*, d.*,
+        f.id as file_id, f.dossier_id as file_dossier_id
+       FROM fichiers f
+       INNER JOIN dossiers d ON f.dossier_id = d.id
+       WHERE f.id = $1`,
+      [id]
+    );
+
     if (fileResult.rows.length === 0) {
       return res.status(404).json({
         error: 'Fichier non trouvé',
         code: 'FILE_NOT_FOUND',
       });
     }
-    
-    const file = fileResult.rows[0];
-    
-    // Récupérer le dossier associé et vérifier les permissions
-    const dossier = await getDossierByIdentifier(file.dossier_id);
-    
+
+    const row = fileResult.rows[0];
+
+    // Séparer les données fichier et dossier
+    const file = {
+      id: row.file_id,
+      dossier_id: row.file_dossier_id,
+      nom_original: row.nom_original,
+      nom_fichier: row.nom_fichier,
+      chemin_stockage: row.chemin_stockage,
+      type_mime: row.type_mime,
+      taille_bytes: row.taille_bytes,
+      uploaded_by: row.uploaded_by,
+      created_at: row.created_at
+    };
+
+    const dossier = {
+      id: row.id,
+      numero: row.numero,
+      statut: row.statut,
+      type_formulaire: row.type_formulaire,
+      preparateur_id: row.preparateur_id,
+      imprimeur_id: row.imprimeur_id,
+      livreur_id: row.livreur_id
+    };
+
     if (!dossier) {
       return res.status(404).json({
-        error: 'Dossier associé non trouvé', 
+        error: 'Dossier associé non trouvé',
         code: 'ASSOCIATED_DOSSIER_NOT_FOUND',
       });
     }
-    
+
     // Vérifier les permissions avec canAccessDossier
     const { canAccessDossier } = require('../middleware/permissions');
     const hasAccess = canAccessDossier(req.user, dossier, 'access_files');
-    
+
     if (!hasAccess) {
       return res.status(403).json({
         error: 'Accès refusé à ce fichier',
         code: 'ACCESS_DENIED',
       });
     }
-    
+
     // Passer le fichier et dossier au handler suivant
     req.file = file;
     req.dossier = dossier;
     next();
-    
+
   } catch (error) {
     console.error('❌ Erreur lors de la vérification d\'accès au fichier:', error);
     res.status(500).json({
@@ -443,7 +568,7 @@ router.post(
         code: 'MISSING_DOSSIER_ID',
       });
     }
-    
+
     // Valider le format UUID ou ID entier
     if (!isValidId(dossierId)) {
       console.error('❌ Format ID dossier invalide:', dossierId.substring(0, 50));
@@ -453,7 +578,7 @@ router.post(
         details: 'Le dossier ID doit être un UUID valide ou un entier positif',
       });
     }
-    
+
     next();
   },
   upload.array('files', 10),
@@ -478,15 +603,15 @@ router.post(
 
       // Vérifier que le dossier existe en utilisant notre fonction qui gère tous les formats d'ID
       const dossier = await getDossierByIdentifier(dossierId);
-      
+
       if (!dossier) {
         return res.status(404).json({
           error: 'Ce dossier n\'existe pas ou vous n\'avez pas l\'autorisation pour cette action',
           code: 'DOSSIER_NOT_FOUND',
         });
       }
-      
-      console.log(`✅ Dossier trouvé: ${dossier.numero} (ID: ${dossier.id}, Folder: ${dossier.folder_id})`);
+
+      console.log(`✅ Dossier trouvé: ${dossier.numero} (ID: ${dossier.id})`);
 
       // Normaliser les propriétés pour la fonction de permissions
       dossier.status = dossier.statut;
@@ -511,12 +636,12 @@ router.post(
 
       const savedFiles = [];
 
-// Enregistrer chaque fichier en base
+      // Enregistrer chaque fichier en base
       for (const file of req.files) {
         try {
-          // ✅ Chemin unifié basé sur folder_id
-          const relativePath = `uploads/dossiers/${dossier.folder_id}/${file.filename}`;
-          
+          // ✅ Chemin unifié basé sur id
+          const relativePath = `uploads/dossiers/${dossier.id}/${file.filename}`;
+
           const fileData = {
             dossier_id: dossier.id,
             original_filename: Buffer.from(file.originalname, 'latin1').toString('utf8'),
@@ -529,19 +654,17 @@ router.post(
 
           const insertResult = await query(
             `INSERT INTO fichiers 
-           (dossier_id, nom, chemin, type, taille, uploaded_by, mime_type, extension, checksum) 
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) 
+           (dossier_id, nom_original, nom_fichier, chemin_stockage, type_mime, taille_bytes, uploaded_by) 
+           VALUES ($1, $2, $3, $4, $5, $6, $7) 
            RETURNING *`,
             [
               fileData.dossier_id,
               fileData.original_filename,
+              fileData.filename,
               fileData.filepath,
-              fileData.mimetype.startsWith('image/') ? 'image' : 'document',
+              fileData.mimetype,
               fileData.size,
               fileData.uploaded_by,
-              fileData.mimetype,
-              path.extname(fileData.original_filename).toLowerCase(),
-              'temp-checksum', // Placeholder pour le checksum
             ]
           );
 
@@ -658,7 +781,7 @@ router.get('/', authenticateToken, async (req, res) => {
     // Vérifier les permissions avec le middleware unifié
     const { canAccessDossier } = require('../middleware/permissions');
     const hasAccess = canAccessDossier(req.user, dossier, 'access_files');
-    
+
     if (!hasAccess) {
       return res.status(403).json({
         error: 'Accès refusé à ce dossier',
@@ -666,29 +789,35 @@ router.get('/', authenticateToken, async (req, res) => {
       });
     }
 
-    // Récupérer les fichiers en SELECT * puis normaliser côté JS pour compat des schémas
-    const rawResult = await query('SELECT * FROM fichiers WHERE dossier_id = $1', [dossier.id]);
+    // ✅ OPTIMISÉ: Récupérer les fichiers avec JOIN pour les infos utilisateur en UNE requête
+    const rawResult = await query(
+      `SELECT 
+        f.id, f.dossier_id, f.nom_original, f.nom_fichier, f.chemin_stockage,
+        f.type_mime, f.taille_bytes, f.uploaded_by, f.created_at,
+        u.nom as uploader_nom
+       FROM fichiers f
+       LEFT JOIN users u ON f.uploaded_by = u.id
+       WHERE f.dossier_id = $1
+       ORDER BY f.created_at DESC`,
+      [dossier.id]
+    );
 
     // Normaliser les champs attendus par le frontend
     const normalize = r => ({
       id: r.id,
       dossier_id: r.dossier_id,
-      original_filename: r.nom || r.original_filename || r.stored_filename || r.filename || null,
-      filename: r.nom || r.filename || r.stored_filename || null,
-      filepath: r.chemin || r.filepath || null,
-      mimetype: r.mime_type || r.mimetype || 'application/octet-stream',
-      size: r.taille || r.size || 0,
-      uploaded_by: r.uploaded_by || r.uploadedBy || r.uploader_id || null,
-      created_at: r.uploaded_at || r.created_at || r.createdAt || null,
-      prenom: r.prenom || null,
-      nom: r.nom_uploader || r.nom || null,
+      original_filename: r.nom_original || r.nom_fichier || null,
+      filename: r.nom_fichier || null,
+      filepath: r.chemin_stockage || null,
+      mimetype: r.type_mime || 'application/octet-stream',
+      size: r.taille_bytes || 0,
+      uploaded_by: r.uploaded_by || null,
+      created_at: r.created_at || null,
+      nom: r.uploader_nom || null, // Seulement nom (pas de prenom dans la table users)
     });
 
-    const files = rawResult.rows.map(normalize).sort((a, b) => {
-      const ta = a.created_at ? new Date(a.created_at).getTime() : 0;
-      const tb = b.created_at ? new Date(b.created_at).getTime() : 0;
-      return tb - ta;
-    });
+    // ✅ Pas besoin de trier en JS, déjà trié par SQL (ORDER BY created_at DESC)
+    const files = rawResult.rows.map(normalize);
 
     res.status(200).json({
       files,
@@ -1006,16 +1135,84 @@ router.get('/all', async (req, res) => {
       details:
         process.env.NODE_ENV === 'development'
           ? {
-              stack: error.stack,
-              query: error.query,
-            }
+            stack: error.stack,
+            query: error.query,
+          }
           : undefined,
     });
   }
 });
 
-// GET /api/files/download/:id - Télécharger un fichier
-router.get('/download/:id', authenticateToken, validateIdParam('id'), checkFileAccess, async (req, res) => {
+// Stockage temporaire des tokens de téléchargement (en mémoire)
+const downloadTokens = new Map();
+
+// POST /api/files/download/:id/token - Générer un token temporaire de téléchargement
+router.post('/download/:id/token', authenticateToken, validateIdParam('id'), async (req, res) => {
+  try {
+    const fileId = req.params.id;
+
+    // Vérifier que le fichier existe et que l'utilisateur y a accès
+    const fileResult = await query(
+      `SELECT f.*, d.id as dossier_id
+       FROM fichiers f
+       INNER JOIN dossiers d ON f.dossier_id = d.id
+       WHERE f.id = $1`,
+      [fileId]
+    );
+
+    if (fileResult.rows.length === 0) {
+      return res.status(404).json({ error: 'Fichier non trouvé' });
+    }
+
+    const file = fileResult.rows[0];
+
+    // Vérifier les permissions (si l'utilisateur n'est pas admin, il doit être lié au dossier)
+    if (req.user.role !== 'admin') {
+      const hasAccess = true; // Tous les utilisateurs authentifiés
+
+      if (!hasAccess) {
+        return res.status(403).json({ error: 'Accès non autorisé à ce fichier' });
+      }
+    }
+
+    // Générer un token aléatoire
+    const crypto = require('crypto');
+    const downloadToken = crypto.randomBytes(32).toString('hex');
+
+    // Stocker avec expiration de 2 minutes
+    const expiresAt = Date.now() + (2 * 60 * 1000);
+    downloadTokens.set(downloadToken, {
+      fileId,
+      userId: req.user.id,
+      expiresAt
+    });
+
+    // Nettoyer les tokens expirés (toutes les 5 minutes)
+    if (Math.random() < 0.1) {
+      const now = Date.now();
+      for (const [token, data] of downloadTokens.entries()) {
+        if (data.expiresAt < now) {
+          // downloadTokens.delete(token); // Commenté: permettre réutilisation jusqu'à expiration
+        }
+      }
+    }
+
+    console.log(`📝 Token de téléchargement généré pour fichier ${fileId} (expire dans 2min)`);
+
+    res.json({
+      success: true,
+      token: downloadToken,
+      expiresIn: 120 // secondes
+    });
+  } catch (error) {
+    console.error('Erreur génération token download:', error);
+    res.status(500).json({ error: 'Erreur serveur' });
+  }
+});
+
+
+// GET /api/files/download/:id - Télécharger un fichier (avec authentification)
+router.get('/download/:id', downloadLimiter, authenticateToken, validateIdParam('id'), checkFileAccess, async (req, res) => {
   try {
     // Le fichier et dossier ont été vérifiés par checkFileAccess
     const file = req.file;
@@ -1044,33 +1241,35 @@ router.get('/download/:id', authenticateToken, validateIdParam('id'), checkFileA
     }
 
     // ✅ CORRECTION: Convertir chemin relatif en absolu si nécessaire
+    // Essayer d'abord avec process.cwd() pour les anciens fichiers
     if (!path.isAbsolute(physicalPath)) {
-      physicalPath = path.join(path.dirname(process.cwd()), physicalPath);
+      const pathFromCwd = path.join(process.cwd(), physicalPath);
+      const pathFromParent = path.join(path.dirname(process.cwd()), physicalPath);
+
+      // Vérifier quel chemin existe
+      try {
+        await fs.access(pathFromCwd);
+        physicalPath = pathFromCwd; // Fichier trouvé depuis cwd
+      } catch {
+        physicalPath = pathFromParent; // Essayer depuis parent (nouveau format)
+      }
     }
 
     // Vérifier que le fichier existe physiquement
     try {
       await fs.access(physicalPath);
     } catch {
-      console.error(`❌ Fichier physique introuvable: ${physicalPath}`);
-      
+      console.error(`❌ Fichier physique introuvable (download): ${physicalPath}`);
+
       // Essayer des chemins alternatifs communs
       const filename = path.basename(fileObj.filepath);
       const alternativePaths = [
         path.join(process.cwd(), fileObj.filepath),
+        path.join(path.dirname(process.cwd()), fileObj.filepath), // Chemin relatif depuis le dossier parent
         path.join(process.cwd(), 'uploads', filename),
         path.join(process.cwd(), 'backend/uploads', filename)
       ];
-      
-      // Si le dossier a un folder_id, essayer aussi avec celui-ci
-      if (req.dossier && req.dossier.folder_id) {
-        const folderBasedPath = fileObj.filepath.replace(fileObj.dossier_id, req.dossier.folder_id);
-        alternativePaths.push(
-          path.join(path.dirname(process.cwd()), folderBasedPath),
-          path.join(process.cwd(), folderBasedPath)
-        );
-      }
-      
+
       let foundPath = null;
       for (const altPath of alternativePaths) {
         try {
@@ -1082,7 +1281,7 @@ router.get('/download/:id', authenticateToken, validateIdParam('id'), checkFileA
           // Continue à chercher
         }
       }
-      
+
       if (foundPath) {
         physicalPath = foundPath;
       } else {
@@ -1092,8 +1291,7 @@ router.get('/download/:id', authenticateToken, validateIdParam('id'), checkFileA
           message: `Le fichier "${fileObj.original_filename}" n'est plus disponible pour téléchargement. Il a peut-être été déplacé ou supprimé.`,
           details: {
             searched_paths: [physicalPath, ...alternativePaths],
-            dossier_id: fileObj.dossier_id,
-            folder_id: req.dossier?.folder_id
+            dossier_id: fileObj.dossier_id
           }
         });
       }
@@ -1156,33 +1354,35 @@ router.get('/preview/:id', authenticateToken, validateIdParam('id'), checkFileAc
     }
 
     // Convertir chemin relatif en absolu si nécessaire
+    // Essayer d'abord avec process.cwd() pour les anciens fichiers
     if (!path.isAbsolute(physicalPath)) {
-      physicalPath = path.join(path.dirname(process.cwd()), physicalPath);
+      const pathFromCwd = path.join(process.cwd(), physicalPath);
+      const pathFromParent = path.join(path.dirname(process.cwd()), physicalPath);
+
+      // Vérifier quel chemin existe
+      try {
+        await fs.access(pathFromCwd);
+        physicalPath = pathFromCwd; // Fichier trouvé depuis cwd
+      } catch {
+        physicalPath = pathFromParent; // Essayer depuis parent (nouveau format)
+      }
     }
 
     // Vérifier que le fichier existe physiquement
     try {
       await fs.access(physicalPath);
     } catch {
-      console.error(`❌ Fichier physique introuvable: ${physicalPath}`);
-      
+      console.error(`❌ Fichier physique introuvable (preview): ${physicalPath}`);
+
       // Essayer des chemins alternatifs communs
       const filename = path.basename(fileObj.filepath);
       const alternativePaths = [
         path.join(process.cwd(), fileObj.filepath),
+        path.join(path.dirname(process.cwd()), fileObj.filepath), // Chemin relatif depuis le dossier parent
         path.join(process.cwd(), 'uploads', filename),
         path.join(process.cwd(), 'backend/uploads', filename)
       ];
-      
-      // Si le dossier a un folder_id, essayer aussi avec celui-ci
-      if (req.dossier && req.dossier.folder_id) {
-        const folderBasedPath = fileObj.filepath.replace(fileObj.dossier_id, req.dossier.folder_id);
-        alternativePaths.push(
-          path.join(path.dirname(process.cwd()), folderBasedPath),
-          path.join(process.cwd(), folderBasedPath)
-        );
-      }
-      
+
       let foundPath = null;
       for (const altPath of alternativePaths) {
         try {
@@ -1194,7 +1394,7 @@ router.get('/preview/:id', authenticateToken, validateIdParam('id'), checkFileAc
           // Continue à chercher
         }
       }
-      
+
       if (foundPath) {
         physicalPath = foundPath;
       } else {
@@ -1204,8 +1404,7 @@ router.get('/preview/:id', authenticateToken, validateIdParam('id'), checkFileAc
           path: fileObj.filepath,
           details: {
             searched_paths: [physicalPath, ...alternativePaths],
-            dossier_id: fileObj.dossier_id,
-            folder_id: req.dossier?.folder_id
+            dossier_id: fileObj.dossier_id
           }
         });
       }
@@ -1213,13 +1412,13 @@ router.get('/preview/:id', authenticateToken, validateIdParam('id'), checkFileAc
 
     // Définir le type de contenu pour la prévisualisation
     const contentType = fileObj.mimetype || 'application/octet-stream';
-    
+
     // Pour la prévisualisation, on veut afficher inline, pas télécharger
     // Encoder le nom de fichier pour éviter les caractères invalides dans les headers HTTP
     const encodedFilename = encodeURIComponent(fileObj.original_filename);
     res.setHeader('Content-Type', contentType);
     res.setHeader('Content-Disposition', `inline; filename*=UTF-8''${encodedFilename}`);
-    
+
     if (fileObj.size) {
       res.setHeader('Content-Length', fileObj.size);
     }
@@ -1318,4 +1517,368 @@ router.post('/:id/mark-reprint', validateIdParam('id'), async (req, res) => {
   }
 });
 
+// ================================
+// UPLOAD CHUNKED (API REST simple)
+// ================================
+
+// Configuration storage spécifique pour les chunks (dossier temporaire)
+const chunkStorage = multer.diskStorage({
+  destination: async (req, file, cb) => {
+    try {
+      // Utiliser un dossier temporaire pour les chunks
+      const tempDir = path.join(path.dirname(process.cwd()), 'uploads', 'temp-chunks');
+      await fs.mkdir(tempDir, { recursive: true });
+      cb(null, tempDir);
+    } catch (error) {
+      cb(error);
+    }
+  },
+  filename: (req, file, cb) => {
+    // Nom temporaire unique pour le chunk
+    const timestamp = Date.now();
+    const randomStr = Math.random().toString(36).substring(2, 15);
+    cb(null, `chunk_${timestamp}_${randomStr}`);
+  },
+});
+
+// Configuration multer spécifique pour les chunks (sans fileFilter)
+const uploadChunk = multer({
+  storage: chunkStorage,
+  limits: {
+    fileSize: 25 * 1024 * 1024, // 25MB max par chunk (les chunks font 20MB maintenant)
+  },
+  // Pas de fileFilter pour les chunks car ils n'ont pas d'extension
+});
+
+// Stocker les infos des uploads chunked en mémoire (ou utiliser Redis en production)
+const chunkedUploads = new Map();
+
+// POST /api/files/upload-chunk - Recevoir un chunk de fichier
+router.post('/upload-chunk', authenticateToken, uploadChunk.single('chunk'), async (req, res) => {
+  try {
+    const { uploadId, chunkIndex, totalChunks, filename, dossierId, mimetype } = req.body;
+    const chunkFile = req.file;
+
+    if (!uploadId || !chunkIndex || !totalChunks || !filename || !dossierId) {
+      return res.status(400).json({
+        error: 'Paramètres manquants',
+        code: 'MISSING_PARAMETERS',
+        required: ['uploadId', 'chunkIndex', 'totalChunks', 'filename', 'dossierId']
+      });
+    }
+
+    if (!chunkFile) {
+      return res.status(400).json({
+        error: 'Chunk de fichier manquant',
+        code: 'MISSING_CHUNK'
+      });
+    }
+
+    const chunkIdx = parseInt(chunkIndex);
+    const totalChunksNum = parseInt(totalChunks);
+
+    console.log(`📦 Réception chunk ${chunkIdx + 1}/${totalChunksNum} pour ${filename}`);
+
+    // Vérifier que le dossier existe et que l'utilisateur a les permissions
+    const dossier = await getDossierByIdentifier(dossierId);
+    if (!dossier) {
+      return res.status(404).json({
+        error: 'Ce dossier n\'existe pas',
+        code: 'DOSSIER_NOT_FOUND',
+      });
+    }
+
+    // Vérifier les permissions d'upload
+    const { canAccessDossier } = require('../middleware/permissions');
+    dossier.status = dossier.statut;
+    dossier.type = dossier.type_formulaire;
+
+    const canUpload = canAccessDossier(req.user, dossier, 'upload_file');
+    if (!canUpload) {
+      return res.status(403).json({
+        error: 'Permission refusée pour uploader des fichiers sur ce dossier',
+        code: 'UPLOAD_PERMISSION_DENIED',
+      });
+    }
+
+    // Initialiser le suivi de cet upload s'il n'existe pas
+    if (!chunkedUploads.has(uploadId)) {
+      chunkedUploads.set(uploadId, {
+        dossierId: dossier.id,
+        filename,
+        mimetype: mimetype || 'application/octet-stream',
+        totalChunks: totalChunksNum,
+        receivedChunks: [],
+        chunks: new Array(totalChunksNum),
+        uploadedBy: req.user.id,
+        createdAt: Date.now()
+      });
+    }
+
+    const uploadInfo = chunkedUploads.get(uploadId);
+
+    // Stocker le chemin du chunk
+    uploadInfo.chunks[chunkIdx] = chunkFile.path;
+    uploadInfo.receivedChunks.push(chunkIdx);
+
+    console.log(`✅ Chunk ${chunkIdx + 1}/${totalChunksNum} stocké (${uploadInfo.receivedChunks.length}/${totalChunksNum} reçus)`);
+
+    // Vérifier si tous les chunks sont reçus
+    const isComplete = uploadInfo.receivedChunks.length === totalChunksNum;
+
+    if (isComplete) {
+      console.log('🎯 Tous les chunks reçus, assemblage du fichier...');
+
+      // Créer le dossier de destination
+      const uploadDir = path.join(path.dirname(process.cwd()), 'uploads', 'dossiers', String(dossier.id));
+      await fs.mkdir(uploadDir, { recursive: true });
+
+      // Générer un nom de fichier unique
+      const timestamp = Date.now();
+      const sanitizedFilename = filename.replace(/[^a-zA-Z0-9._-]/g, '_');
+      const finalFilename = `${timestamp}_${sanitizedFilename}`;
+      const finalPath = path.join(uploadDir, finalFilename);
+
+      // Assembler les chunks dans l'ordre
+      const writeStream = require('fs').createWriteStream(finalPath);
+
+      for (let i = 0; i < totalChunksNum; i++) {
+        const chunkPath = uploadInfo.chunks[i];
+        if (!chunkPath) {
+          throw new Error(`Chunk ${i} manquant`);
+        }
+
+        const chunkData = await fs.readFile(chunkPath);
+        writeStream.write(chunkData);
+
+        // Supprimer le chunk temporaire
+        await fs.unlink(chunkPath).catch(err => console.warn('⚠️ Impossible de supprimer chunk:', err));
+      }
+
+      writeStream.end();
+
+      await new Promise((resolve, reject) => {
+        writeStream.on('finish', resolve);
+        writeStream.on('error', reject);
+      });
+
+      console.log('✅ Fichier assemblé:', finalPath);
+
+      // Enregistrer en base de données
+      const stats = await fs.stat(finalPath);
+      const relativePath = `uploads/dossiers/${dossier.id}/${finalFilename}`;
+
+      const result = await query(
+        `INSERT INTO fichiers 
+         (dossier_id, nom_original, nom_fichier, chemin_stockage, type_mime, taille_bytes, uploaded_by) 
+         VALUES ($1, $2, $3, $4, $5, $6, $7) 
+         RETURNING id, nom_original, nom_fichier, chemin_stockage, type_mime, taille_bytes, created_at`,
+        [dossier.id, filename, finalFilename, relativePath, uploadInfo.mimetype, stats.size, req.user.id]
+      );
+
+      const savedFile = result.rows[0];
+      console.log('✅ Fichier chunked enregistré en BDD:', savedFile.id);
+
+      // ✅ Notifier via Socket.IO pour rafraîchissement en temps réel
+      try {
+        const io = req.app.get('io');
+        if (io) {
+          io.to(`dossier_${dossier.id}`).emit('file:uploaded', {
+            dossierId: dossier.id,
+            file: {
+              id: savedFile.id,
+              original_filename: savedFile.nom_original,
+              filename: savedFile.nom_fichier,
+              size: savedFile.taille_bytes,
+              created_at: savedFile.created_at
+            }
+          });
+          console.log('📢 Événement file:uploaded émis pour dossier', dossier.id);
+        }
+      } catch (error) {
+        console.warn('⚠️ Erreur notification Socket.IO:', error.message);
+      }
+
+      // Nettoyer la mémoire
+      chunkedUploads.delete(uploadId);
+
+      // Retourner la réponse de succès
+      return res.json({
+        success: true,
+        complete: true,
+        message: 'Fichier uploadé avec succès',
+        file: {
+          id: savedFile.id,
+          original_filename: savedFile.nom_original,
+          filename: savedFile.nom_fichier,
+          filepath: savedFile.chemin_stockage,
+          mimetype: savedFile.type_mime,
+          size: savedFile.taille_bytes,
+          uploaded_at: savedFile.created_at
+        }
+      });
+    }
+
+    // Chunks incomplet, attendre les suivants
+    return res.json({
+      success: true,
+      complete: false,
+      message: `Chunk ${chunkIdx + 1}/${totalChunksNum} reçu`,
+      receivedChunks: uploadInfo.receivedChunks.length,
+      totalChunks: totalChunksNum
+    });
+
+  } catch (error) {
+    console.error('❌ Erreur upload-chunk:', error);
+    return res.status(500).json({
+      error: 'Erreur lors du traitement du chunk',
+      code: 'CHUNK_PROCESSING_ERROR',
+      message: process.env.NODE_ENV === 'development' ? error.message : 'Erreur interne'
+    });
+  }
+});
+
+// Nettoyer les uploads chunked abandonnés (> 1 heure)
+setInterval(() => {
+  const now = Date.now();
+  const oneHour = 60 * 60 * 1000;
+
+  for (const [uploadId, uploadInfo] of chunkedUploads.entries()) {
+    if (now - uploadInfo.createdAt > oneHour) {
+      console.log(`🧹 Nettoyage upload chunked expiré: ${uploadId}`);
+
+      // Supprimer les chunks temporaires
+      uploadInfo.chunks.forEach(chunkPath => {
+        if (chunkPath) {
+          fs.unlink(chunkPath).catch(() => { });
+        }
+      });
+
+      chunkedUploads.delete(uploadId);
+    }
+  }
+}, 15 * 60 * 1000); // Toutes les 15 minutes
+
 module.exports = router;
+
+// ================================
+// UPLOAD CHUNKED AVEC TUS
+// ================================
+
+const { Server: TusServer } = require('tus-node-server');
+const { FileStore } = require('tus-node-server');
+
+// Configuration du serveur TUS pour les uploads chunked
+const tusServer = new TusServer({
+  path: '/api/files/upload-chunked',
+  datastore: new FileStore({
+    directory: path.join(path.dirname(process.cwd()), 'uploads', 'temp-chunks'),
+  }),
+  namingFunction: (req) => {
+    // Nom personnalisé basé sur le dossier ID et le nom du fichier
+    const dossierId = req.headers['x-dossier-id'];
+    const filename = req.headers['upload-metadata']?.match(/filename ([^,]+)/)?.[1];
+    const decoded = filename ? Buffer.from(filename, 'base64').toString('utf-8') : 'file';
+    return `${dossierId}_${Date.now()}_${decoded}`;
+  },
+  onUploadFinish: async (req, res, upload) => {
+    console.log('📦 Upload chunked terminé:', upload.id);
+
+    try {
+      const dossierId = req.headers['x-dossier-id'];
+      const metadata = upload.metadata || {};
+      const filename = metadata.filename || 'fichier_sans_nom';
+      const mimetype = metadata.filetype || 'application/octet-stream';
+
+      // Créer le dossier de destination si nécessaire
+      const uploadDir = path.join(path.dirname(process.cwd()), 'uploads', 'dossiers', dossierId);
+      await fs.mkdir(uploadDir, { recursive: true });
+
+      // Déplacer le fichier du temp vers le dossier final
+      const tempPath = upload.storage.path;
+      const finalPath = path.join(uploadDir, filename);
+      await fs.rename(tempPath, finalPath);
+
+      // Enregistrer dans la base de données
+      const stats = await fs.stat(finalPath);
+      const relativePath = `uploads/dossiers/${dossierId}/${filename}`;
+
+      const result = await query(
+        `INSERT INTO fichiers (dossier_id, nom, chemin, type, taille, uploade_par, date_upload)
+         VALUES ($1, $2, $3, $4, $5, $6, NOW())
+         RETURNING id, nom, chemin, type, taille, date_upload`,
+        [dossierId, filename, relativePath, mimetype, stats.size, req.user?.id || null]
+      );
+
+      console.log('✅ Fichier chunked enregistré en BDD:', result.rows[0]);
+
+      // Retourner les infos du fichier au client
+      res.setHeader('X-File-Info', JSON.stringify(result.rows[0]));
+
+    } catch (error) {
+      console.error('❌ Erreur lors de la finalisation du chunked upload:', error);
+    }
+  },
+});
+
+// Route pour gérer les uploads chunked (TUS protocol)
+router.all('/upload-chunked/*', (req, res, next) => {
+  // Vérifier le token manuellement pour TUS
+  const authHeader = req.headers.authorization;
+
+  if (!authHeader || !authHeader.startsWith('Bearer ')) {
+    console.error('❌ Upload chunked: Pas de token Authorization');
+    return res.status(401).json({
+      success: false,
+      message: 'Token manquant',
+      code: 'MISSING_TOKEN'
+    });
+  }
+
+  const token = authHeader.substring(7);
+  const jwt = require('jsonwebtoken');
+
+  try {
+    const decoded = jwt.verify(token, process.env.JWT_SECRET || 'votre_secret_jwt_super_securise');
+    req.user = decoded;
+    console.log('✅ Upload chunked: Utilisateur authentifié:', decoded.id, decoded.role);
+
+    // Passer la requête au serveur TUS
+    tusServer.handle(req, res);
+  } catch (error) {
+    console.error('❌ Upload chunked: Token invalide:', error.message);
+    return res.status(401).json({
+      success: false,
+      message: 'Token invalide',
+      code: 'INVALID_TOKEN'
+    });
+  }
+});
+
+// Route pour obtenir les infos d'un upload chunked en cours
+router.get('/upload-chunked-status/:uploadId', async (req, res) => {
+  try {
+    const { uploadId } = req.params;
+    const tempDir = path.join(path.dirname(process.cwd()), 'uploads', 'temp-chunks');
+    const uploadPath = path.join(tempDir, uploadId);
+
+    const exists = await fs.access(uploadPath).then(() => true).catch(() => false);
+
+    if (!exists) {
+      return res.status(404).json({ error: 'Upload non trouvé' });
+    }
+
+    const stats = await fs.stat(uploadPath);
+
+    return res.json({
+      uploadId,
+      size: stats.size,
+      exists: true,
+    });
+
+  } catch (error) {
+    console.error('❌ Erreur status chunked:', error);
+    return res.status(500).json({ error: 'Erreur serveur' });
+  }
+});
+

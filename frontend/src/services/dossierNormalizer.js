@@ -1,4 +1,3 @@
-
 // Mapping des statuts visibles par rôle (à adapter selon votre workflow)
 
 /* eslint-disable prettier/prettier */
@@ -39,6 +38,31 @@ export function normalizeDossier(d) {
       console.warn('⚠️ Impossible de parser data_json:', e);
     }
   }
+
+  // 🔥 FIX CRITIQUE: Préserver explicitement nombre_exemplaires
+  // Vérifier les différentes sources possibles pour la quantité
+  const nombreExemplaires = 
+    dataFormulaire.nombre_exemplaires || 
+    d.nombre_exemplaires || 
+    d.quantite || 
+    dataFormulaire.quantite;
+
+  // Normaliser les données du formulaire avec gestion explicite de la quantité
+  const normalizedDataFormulaire = {
+    ...dataFormulaire,
+    nombre_exemplaires: nombreExemplaires ? String(nombreExemplaires) : '0'
+  };
+
+  // 🔥 FIX CRITIQUE: Préserver le montant avec plusieurs sources possibles
+  const amount = d.amount || d.montant_cfa || d.montant || d.prix;
+
+  console.log('🔍 [normalizeDossier] Normalisation:', {
+    id: extractId(d),
+    quantite_input: nombreExemplaires,
+    quantite_output: normalizedDataFormulaire.nombre_exemplaires,
+    amount_input: amount,
+    hasDataFormulaire: !!d.data_formulaire
+  });
   
   return {
     ...d,
@@ -46,9 +70,11 @@ export function normalizeDossier(d) {
     status: normalizeStatus(d.statut || d.status),
     type: normalizeType(d.type_formulaire || d.type, d.machine),
     numero_commande: d.numero_commande || d.numero || d.numeroCommande || d.numero_cmd || '',
-    created_by:
-      d.created_by || d.createdById || d.preparateur_id || d.created_by_id || d.createdBy || null,
-    data_formulaire: dataFormulaire, // ✅ Ajouter data_formulaire normalisé
+    created_by: d.created_by || d.createdById || d.preparateur_id || d.created_by_id || d.createdBy || null,
+    data_formulaire: normalizedDataFormulaire, // ✅ Utiliser les données normalisées
+    urgent: d.urgent || false, // ✅ Préserver le champ urgent
+    amount: amount, // ✅ Préserver le montant
+    montant_cfa: amount, // ✅ Alias pour compatibilité
   };
 }
 

@@ -8,10 +8,40 @@ const fs = require('fs').promises;
 const { v4: uuidv4 } = require('uuid');
 const db = require('../config/database');
 const { authenticateToken: auth } = require('../middleware/auth');
+
+// ========== CACHE OPTIMISATION ==========
+const dossiersCache = new Map();
+const CACHE_TTL = 30 * 1000; // 30 secondes
+
+function getCachedDossiers(key) {
+  const cached = dossiersCache.get(key);
+  if (cached && Date.now() - cached.timestamp < CACHE_TTL) {
+    console.log(`📦 Cache HIT pour: ${key}`);
+    return cached.data;
+  }
+  console.log(`❌ Cache MISS pour: ${key}`);
+  return null;
+}
+
+function setCachedDossiers(key, data) {
+  dossiersCache.set(key, { data, timestamp: Date.now() });
+  // Nettoyer le cache toutes les 5 minutes
+  if (Math.random() < 0.1) {
+    const now = Date.now();
+    for (const [k, v] of dossiersCache.entries()) {
+      if (now - v.timestamp > CACHE_TTL * 2) {
+        dossiersCache.delete(k);
+      }
+    }
+  }
+}
+// ========================================
+
 const { isValidId, validateIdParam } = require('../utils/validators');
 const { checkDossierPermission, getDossierByIdentifier, logDossierActivity, canAccessDossier } = require('../middleware/permissions');
 const socketService = require('../services/socketService');
 const { getAvailableActions } = require('../services/workflow-adapter');
+const { validateDossierData } = require('../middleware/validateSections'); // ✅ NOUVEAU
 
 // 🆕 Import du système centralisé de mapping des statuts
 const {
@@ -37,35 +67,35 @@ const normalizeStatusForWorkflow = (status) => {
 // Fonction unifiée pour vérifier l'accès d'un utilisateur à un dossier
 const checkUserAccess = (dossier, user) => {
   if (!dossier || !user) return { allowed: false, reason: 'Données manquantes' };
-  
+
   // Admin a accès à tout
   if (user.role === 'admin') {
     return { allowed: true, reason: 'Admin - accès complet' };
   }
-  
+
   // Préparateur: accès à ses propres dossiers
   if (user.role === 'preparateur') {
-    const isOwner = dossier.created_by === user.id || 
-                   dossier.preparateur_id === user.id ||
-                   dossier.createdBy === user.id;
+    const isOwner = dossier.created_by === user.id ||
+      dossier.preparateur_id === user.id ||
+      dossier.createdBy === user.id;
     return {
       allowed: isOwner,
       reason: isOwner ? 'Propriétaire du dossier' : 'Vous n\'êtes pas le créateur de ce dossier'
     };
   }
-  
+
   // Imprimeurs: accès selon la machine et le statut
   if (user.role === 'imprimeur_roland' || user.role === 'imprimeur_xerox') {
     const machineType = (dossier.type_formulaire || dossier.machine || dossier.type || '').toLowerCase();
     const requiredMachine = user.role === 'imprimeur_roland' ? 'roland' : 'xerox';
-    
+
     if (!machineType.includes(requiredMachine)) {
-      return { 
-        allowed: false, 
-        reason: `Ce dossier est pour machine ${machineType}, vous gérez les ${requiredMachine}` 
+      return {
+        allowed: false,
+        reason: `Ce dossier est pour machine ${machineType}, vous gérez les ${requiredMachine}`
       };
     }
-    
+
     // Vérifier le statut (doit être prêt pour impression ou en cours d'impression)
     const status = dossier.statut || dossier.status || '';
     const allowedStatuses = [
@@ -73,14 +103,14 @@ const checkUserAccess = (dossier, user) => {
       'pret_impression', 'en_impression', 'imprime', 'termine',
       'En cours', 'en_cours' // Parfois les imprimeurs voient les dossiers en cours
     ];
-    
+
     const hasAccess = allowedStatuses.some(s => status.includes(s) || s.includes(status));
     return {
       allowed: hasAccess,
       reason: hasAccess ? 'Dossier accessible pour impression' : `Statut "${status}" non accessible aux imprimeurs`
     };
   }
-  
+
   // Livreur: accès aux dossiers terminés et en livraison
   if (user.role === 'livreur') {
     const status = dossier.statut || dossier.status || '';
@@ -92,15 +122,70 @@ const checkUserAccess = (dossier, user) => {
       'Livré', 'livre',
       'Terminé', 'termine'
     ];
-    
+
     const hasAccess = allowedStatuses.some(s => status.includes(s) || s.includes(status));
     return {
       allowed: hasAccess,
       reason: hasAccess ? 'Dossier accessible pour livraison' : `Statut \"${status}\" non accessible aux livreurs`
     };
   }
-  
+
   return { allowed: false, reason: `Rôle "${user.role}" non reconnu` };
+};
+
+// 🆕 Fonction pour filtrer les champs sensibles selon le rôle utilisateur
+const filterSensitiveFields = (dossier, userRole) => {
+  if (!dossier) return dossier;
+
+  const filtered = { ...dossier };
+
+  // Gestion du champ telephone_client selon les permissions
+  switch (userRole) {
+    case 'admin':
+      // Admin voit tout
+      break;
+    case 'preparateur':
+    case 'livreur':
+      // preparateur et livreur voient le téléphone
+      break;
+    case 'imprimeur_roland':
+    case 'imprimeur_xerox':
+      // Les imprimeurs ne voient pas le téléphone client
+      delete filtered.telephone_client;
+      // ✅ NOUVEAU: Les imprimeurs ne voient pas le montant
+      delete filtered.amount;
+      delete filtered.montant_cfa;
+      break;
+    default:
+      // Par défaut, on cache le téléphone
+      delete filtered.telephone_client;
+      break;
+  }
+
+  // ✅ NOUVEAU: S'assurer que sections et supports sont toujours des tableaux
+  if (filtered.sections && typeof filtered.sections === 'string') {
+    try {
+      filtered.sections = JSON.parse(filtered.sections);
+    } catch {
+      filtered.sections = [];
+    }
+  }
+  if (!Array.isArray(filtered.sections)) {
+    filtered.sections = [];
+  }
+
+  if (filtered.supports && typeof filtered.supports === 'string') {
+    try {
+      filtered.supports = JSON.parse(filtered.supports);
+    } catch {
+      filtered.supports = [];
+    }
+  }
+  if (!Array.isArray(filtered.supports)) {
+    filtered.supports = [];
+  }
+
+  return filtered;
 };
 
 // Configuration upload Multer avec structure par dossier (utilise folder_id)
@@ -185,7 +270,7 @@ router.put('/:id/autoriser-modification', auth, checkRole(['admin']), validateId
     const updateQuery = `
       UPDATE dossiers SET valide_preparateur = false, statut = $1, date_validation_preparateur = NULL WHERE id = $2 RETURNING *
     `;
-    const result = await db.query(updateQuery, [DB_STATUTS.EN_COURS, dossier.id]);
+    const result = await db.query(updateQuery, ['en_cours', dossier.id]);
     const updated = result.rows[0];
     // Socket.IO (optionnel)
     const io = req.app.get('io');
@@ -214,31 +299,31 @@ router.put('/:id/autoriser-modification', auth, checkRole(['admin']), validateId
 // 📊 Filtrage des dossiers selon le rôle utilisateur - Version robuste (compat schémas)
 const filterDossiersByRole = (user, baseQuery = '', paramOffset = 0) => {
   // Helper: expression SQL pour type/machine normalisée
-  const machineExpr = 'LOWER(COALESCE(d.type_formulaire, d.machine))';
+  const machineExpr = 'LOWER(d.type_formulaire)';
   switch (user.role) {
     case 'preparateur': {
       const idx = paramOffset + 1;
       // Préparateur: voit tous ses dossiers (quel que soit le statut)
-      const condition = `(d.preparateur_id = $${idx} OR d.created_by = $${idx})`;
+      const condition = `d.preparateur_id = $${idx}`;
       return baseQuery.toUpperCase().includes('WHERE')
         ? `${baseQuery} AND (${condition})`
         : `${baseQuery} WHERE ${condition}`;
     }
     case 'imprimeur_roland': {
       // Imprimeur Roland: voit dossiers Roland aux statuts de production
-      const condition = `${machineExpr} LIKE 'roland%' AND d.statut IN ('Prêt impression','En impression','Imprimé','pret_impression','en_impression','imprime','termine')`;
+      const condition = `${machineExpr} LIKE 'roland%' AND d.statut IN ('pret_impression','en_impression','imprime','termine')`;
       return baseQuery.toUpperCase().includes('WHERE')
         ? `${baseQuery} AND (${condition})`
         : `${baseQuery} WHERE ${condition}`;
     }
     case 'imprimeur_xerox': {
-      const condition = `${machineExpr} LIKE 'xerox%' AND d.statut IN ('Prêt impression','En impression','Imprimé','pret_impression','en_impression','imprime','termine')`;
+      const condition = `${machineExpr} LIKE 'xerox%' AND d.statut IN ('pret_impression','en_impression','imprime','termine')`;
       return baseQuery.toUpperCase().includes('WHERE')
         ? `${baseQuery} AND (${condition})`
         : `${baseQuery} WHERE ${condition}`;
     }
     case 'livreur': {
-      const condition = `d.statut IN ('Imprimé','Prêt livraison','En livraison','Livré','Terminé','imprime','pret_livraison','en_livraison','livre','termine')`;
+      const condition = `d.statut IN ('imprime','pret_livraison','en_livraison','livre','termine')`;
       return baseQuery.toUpperCase().includes('WHERE')
         ? `${baseQuery} AND (${condition})`
         : `${baseQuery} WHERE ${condition}`;
@@ -276,11 +361,12 @@ router.get('/', auth, async (req, res) => {
     // Accept both backend-native params and frontend aliases
     const {
       page = 1,
-      limit = 50,
+      limit = 200,
       statut: statutParam,
       machine: machineRaw,
       type: typeRaw,
       search,
+      urgent, // Ajout du paramètre urgent
     } = req.query;
 
     // Map app status codes to backend French labels if needed
@@ -306,34 +392,45 @@ router.get('/', auth, async (req, res) => {
     const offset = (page - 1) * limit;
 
     let baseQuery = `
-      SELECT d.*, d.valide_preparateur, u.nom as preparateur_name, u.email as preparateur_email,
-        (SELECT COUNT(*) FROM fichiers WHERE dossier_id = d.id) as nb_fichiers
+      SELECT d.id, d.numero, d.client, d.type_formulaire, d.statut, d.urgent,
+        d.created_at, d.updated_at,
+        d.preparateur_id, d.imprimeur_id, d.livreur_id,
+        d.mode_paiement, d.montant_cfa, d.statut_paiement, d.mode_paiement_final,
+        d.date_livraison, d.date_livraison_reelle, d.date_livraison_prevue,
+        d.adresse_livraison, d.telephone_client, d.description,
+        u.nom as preparateur_name, u.email as preparateur_email,
+        -- (SELECT COUNT(*) FROM fichiers WHERE dossier_id = d.id) as nb_fichiers, -- Désactivé pour optimisation
+        0 as nb_fichiers,  -- Sera chargé à la demande
+        p.created_at as date_approbation_paiement
       FROM dossiers d
       LEFT JOIN users u ON d.preparateur_id = u.id
+      LEFT JOIN paiements p ON p.dossier_id = d.id AND p.statut = 'approuve'
     `;
 
     const conditions = [];
     const params = [];
     let paramIndex = 1;
 
-    // N'appliquer un filtre statut que si ce n'est pas un imprimeur (les rôles imprimeurs imposent déjà leurs statuts)
-    if (statut && !['imprimeur_roland', 'imprimeur_xerox'].includes(req.user.role)) {
-      conditions.push(`d.statut = $${paramIndex++}`);
-      params.push(statut);
-    }
-
     // Filtrer par machine de manière robuste (type_formulaire OU machine)
-    if (machine) {
-      conditions.push(`LOWER(COALESCE(d.type_formulaire, d.machine)) LIKE $${paramIndex++}`);
+    // Ne pas appliquer si imprimeur (le rôle impose déjà le type)
+    if (machine && !['imprimeur_roland', 'imprimeur_xerox'].includes(req.user.role)) {
+      conditions.push(`LOWER(d.type_formulaire) LIKE $${paramIndex++}`);
       const m = String(machine).toLowerCase();
       params.push(m.startsWith('roland') ? 'roland%' : m.startsWith('xerox') ? 'xerox%' : `%${m}%`);
     }
 
     if (search) {
       conditions.push(
-        `(d.client ILIKE $${paramIndex++} OR d.numero_commande ILIKE $${paramIndex++} OR d.description ILIKE $${paramIndex++})`
+        `(d.client ILIKE $${paramIndex++} OR d.numero ILIKE $${paramIndex++} OR d.description ILIKE $${paramIndex++})`
       );
       params.push(`%${search}%`, `%${search}%`, `%${search}%`);
+    }
+
+    // Filtre urgent
+    if (urgent !== undefined && urgent !== '') {
+      const urgentValue = urgent === 'true' || urgent === true;
+      conditions.push(`d.urgent = $${paramIndex++}`);
+      params.push(urgentValue);
     }
 
     // Ajout des conditions de rôle AVANT la construction finale de la requête
@@ -342,23 +439,68 @@ router.get('/', auth, async (req, res) => {
     // Ajouter les conditions de rôle selon le type d'utilisateur
     switch (req.user.role) {
       case 'preparateur':
-        conditions.push(`(d.preparateur_id = $${paramIndex++} OR d.created_by = $${paramIndex++})`);
-        listParams.push(req.user.id, req.user.id);
+        conditions.push(`d.preparateur_id = $${paramIndex++}`);
+        listParams.push(req.user.id);
         break;
       case 'imprimeur_roland':
-        conditions.push(
-          `LOWER(COALESCE(d.type_formulaire, d.machine)) LIKE 'roland%' AND d.statut IN ('Prêt impression','En impression','Imprimé','pret_impression','en_impression','imprime','termine')`
-        );
+        // Statuts autorisés pour imprimeur roland
+        const rolandStatuts = ['pret_impression', 'en_impression', 'imprime', 'termine'];
+        if (statut && rolandStatuts.includes(statut)) {
+          // Si un statut spécifique est demandé et qu'il est autorisé
+          conditions.push(
+            `LOWER(d.type_formulaire) LIKE 'roland%' AND d.statut = $${paramIndex++}`
+          );
+          listParams.push(statut);
+        } else {
+          // Sinon, tous les statuts autorisés
+          conditions.push(
+            `LOWER(d.type_formulaire) LIKE 'roland%' AND d.statut IN ('pret_impression','en_impression','imprime','termine')`
+          );
+        }
         break;
       case 'imprimeur_xerox':
-        conditions.push(
-          `LOWER(COALESCE(d.type_formulaire, d.machine)) LIKE 'xerox%' AND d.statut IN ('Prêt impression','En impression','Imprimé','pret_impression','en_impression','imprime','termine')`
-        );
+        // Statuts autorisés pour imprimeur xerox
+        const xeroxStatuts = ['pret_impression', 'en_impression', 'imprime', 'termine'];
+        if (statut && xeroxStatuts.includes(statut)) {
+          // Si un statut spécifique est demandé et qu'il est autorisé
+          conditions.push(
+            `LOWER(d.type_formulaire) LIKE 'xerox%' AND d.statut = $${paramIndex++}`
+          );
+          listParams.push(statut);
+        } else {
+          // Sinon, tous les statuts autorisés
+          conditions.push(
+            `LOWER(d.type_formulaire) LIKE 'xerox%' AND d.statut IN ('pret_impression','en_impression','imprime','termine')`
+          );
+        }
         break;
       case 'livreur':
-        conditions.push(
-          `d.statut IN ('Imprimé','Prêt livraison','En livraison','Livré','Terminé','imprime','pret_livraison','en_livraison','livre','termine')`
-        );
+        // Livreur voit tous les dossiers en livraison
+        // + dossiers livrés NON PAYÉS (toujours visibles, pas de limite de temps)
+        // + dossiers livrés PAYÉS (masqués 24h après approbation du paiement)
+        const livreurStatuts = ['imprime', 'pret_livraison', 'en_livraison', 'livre', 'termine'];
+        if (statut && livreurStatuts.includes(statut)) {
+          // Si un statut spécifique est demandé et qu'il est autorisé
+          conditions.push(
+            `d.statut = $${paramIndex++}
+            AND (
+              d.statut != 'livre' 
+              OR (d.statut_paiement IS NULL OR d.statut_paiement != 'paye')
+              OR (d.statut_paiement = 'paye' AND COALESCE(p.date_approbation, d.updated_at) >= NOW() - INTERVAL '24 hours')
+            )`
+          );
+          listParams.push(statut);
+        } else {
+          // Sinon, tous les statuts autorisés
+          conditions.push(
+            `d.statut IN ('imprime','pret_livraison','en_livraison','livre','termine')
+            AND (
+              d.statut != 'livre' 
+              OR (d.statut_paiement IS NULL OR d.statut_paiement != 'paye')
+              OR (d.statut_paiement = 'paye' AND COALESCE(p.date_approbation, d.updated_at) >= NOW() - INTERVAL '24 hours')
+            )`
+          );
+        }
         break;
       case 'admin':
         // Admin voit tout, pas de condition
@@ -373,9 +515,15 @@ router.get('/', auth, async (req, res) => {
       baseQuery += ` WHERE ${conditions.join(' AND ')}`;
     }
 
+    // Tri : les dossiers urgents NON LIVRÉS en premier (sauf pour le préparateur)
+    // Un dossier livré retourne à sa place normale même s'il était urgent
+    const orderByClause = req.user.role === 'preparateur'
+      ? 'ORDER BY d.created_at DESC'
+      : 'ORDER BY (CASE WHEN d.urgent = true AND d.statut != \'livre\' THEN 1 ELSE 2 END), d.created_at DESC';
+
     const finalQuery = `
       ${baseQuery}
-      ORDER BY d.created_at DESC
+      ${orderByClause}
       LIMIT $${listParams.length + 1} OFFSET $${listParams.length + 2}
     `;
 
@@ -415,30 +563,41 @@ router.get('/', auth, async (req, res) => {
     const dossiers = result.rows.map(d => {
       const normalizedDossier = {
         ...d,
-        type: d.type_formulaire || d.machine || null,
+        type: d.type_formulaire || null,
         statut: normalizeStatusForFrontend(d.statut), // Normaliser le statut
       };
-      
+
       // Calculer les actions disponibles pour ce dossier
       const availableActions = getAvailableActions(req.user, {
         ...normalizedDossier,
         status: normalizedDossier.statut,
       });
-      
+
+      // Appliquer le filtre des champs sensibles selon le rôle
+      const filteredDossier = filterSensitiveFields(normalizedDossier, req.user.role);
+
       return {
-        ...normalizedDossier,
+        ...filteredDossier,
         available_actions: availableActions,
       };
     });
 
     // Requête de count avec les mêmes conditions que la requête principale
-    let countQuery = `SELECT COUNT(*) FROM dossiers d`;
+    let countQuery = `SELECT 
+      COUNT(*) as count,
+      SUM(CASE WHEN d.statut IN ('en_cours', 'a_revoir', 'a_creer', 'nouveau', 'pret_impression') THEN 1 ELSE 0 END) as prepa_count,
+      SUM(CASE WHEN d.statut = 'en_impression' THEN 1 ELSE 0 END) as impr_count,
+      SUM(CASE WHEN d.statut IN ('pret_livraison', 'imprime', 'termine') THEN 1 ELSE 0 END) as liv_count
+    FROM dossiers d LEFT JOIN paiements p ON p.dossier_id = d.id AND p.statut = 'approuve'`;
     const countParams = [...listParams];
     if (conditions.length > 0) {
       countQuery += ` WHERE ${conditions.join(' AND ')}`;
     }
     const countResult = await db.query(countQuery, countParams);
     const total = parseInt(countResult.rows[0].count, 10);
+    const prepa_count = parseInt(countResult.rows[0].prepa_count || 0, 10);
+    const impr_count = parseInt(countResult.rows[0].impr_count || 0, 10);
+    const liv_count = parseInt(countResult.rows[0].liv_count || 0, 10);
     const pages = Math.ceil(total / limit);
     res.json({
       success: true,
@@ -451,6 +610,9 @@ router.get('/', auth, async (req, res) => {
         // Champs additionnels pour compatibilité frontend
         total_pages: pages,
         total_items: total,
+        prepa_count,
+        impr_count,
+        liv_count
       },
       user_role: req.user.role,
     });
@@ -526,7 +688,7 @@ router.get('/:id', auth, checkDossierPermission('view'), async (req, res) => {
             if (kl.includes('papier') && kl.includes('autre')) addKV('type_papier_autre', v);
           }
         }
-      } catch (_) {}
+      } catch (_) { }
       if (inferred && Object.keys(inferred).length > 0) {
         formDetails = { type_formulaire: machine, details: inferred, date_saisie: new Date() };
       }
@@ -537,20 +699,79 @@ router.get('/:id', auth, checkDossierPermission('view'), async (req, res) => {
       FROM fichiers f
       LEFT JOIN users u ON f.uploaded_by = u.id
       WHERE f.dossier_id = $1
-      ORDER BY f.uploaded_at DESC
+      ORDER BY f.created_at DESC, f.id DESC
     `;
 
     const filesResult = await db.query(filesQuery, [dossier.id]);
 
-    const historyQuery = `
-      SELECT h.*, u.nom as changed_by_name
-      FROM dossier_status_history h
-      LEFT JOIN users u ON h.changed_by = u.id
-      WHERE h.dossier_id = $1
-      ORDER BY h.changed_at DESC
-    `;
+    // Historique: essayer la table moderne, puis basculer vers l'ancienne si absente
+    let historyResult;
+    try {
+      const historyQuery = `
+        SELECT h.*, u.nom as changed_by_name
+        FROM dossier_status_history h
+        LEFT JOIN users u ON h.changed_by = u.id
+        WHERE h.dossier_id = $1
+        ORDER BY h.changed_at DESC
+      `;
+      historyResult = await db.query(historyQuery, [dossier.id]);
 
-    const historyResult = await db.query(historyQuery, [dossier.id]);
+      // Nouveau: forcer fallback si table moderne vide mais legacy non vide
+      if (historyResult.rows.length === 0) {
+        // Vérifier rapidement si la table legacy a des données pour ce dossier
+        const legacyCheck = await db.query('SELECT COUNT(*) FROM historique_statuts WHERE dossier_id = $1', [dossier.id]);
+        if (legacyCheck.rows[0].count > 0) {
+          // Forcer le fallback vers legacy
+          throw new Error('Force fallback to legacy table');
+        }
+      }
+    } catch (e) {
+      // 42P01 = relation does not exist OU force fallback
+      if (e && (e.code === '42P01' || /relation .* does not exist/i.test(e.message) || e.message.includes('Force fallback'))) {
+        try {
+          const legacyHistoryQuery = `
+            SELECT 
+              h.id,
+              h.dossier_id,
+              h.ancien_statut as ancien_statut,
+              h.nouveau_statut as nouveau_statut,
+              h.user_id as changed_by,
+              u.nom as changed_by_name,
+              h.commentaire as commentaire,
+              h.created_at as changed_at
+            FROM historique_statuts h
+            LEFT JOIN users u ON h.user_id = u.id
+            WHERE h.dossier_id = $1
+            ORDER BY h.created_at DESC
+          `;
+          historyResult = await db.query(legacyHistoryQuery, [dossier.id]);
+        } catch (e2) {
+          // En dernier recours, pas d'historique
+          historyResult = { rows: [] };
+        }
+      } else {
+        throw e;
+      }
+    }
+
+
+    // Récupérer les logs d'activité (modifications de dossier)
+    let activityLogs = [];
+    try {
+      const activityQuery = `
+        SELECT l.*, u.nom as user_name
+        FROM dossier_activity_log l
+        LEFT JOIN users u ON l.user_id = u.id
+        WHERE l.dossier_id = $1
+        ORDER BY l.created_at DESC
+      `;
+      const activityResult = await db.query(activityQuery, [dossier.id]);
+      activityLogs = activityResult.rows;
+      console.log(`📋 Activity logs pour dossier ${dossier.id}:`, activityLogs.length, 'entrées');
+    } catch (e) {
+      console.error('Erreur récupération activity log:', e);
+      activityLogs = [];
+    }
 
     // Déduire un commentaire de révision si manquant, à partir de l'historique (dernier passage "À revoir")
     let derivedRevisionComment = dossier.commentaire_revision ?? null;
@@ -570,25 +791,53 @@ router.get('/:id', auth, checkDossierPermission('view'), async (req, res) => {
       type: dossier.type_formulaire || dossier.machine || dossier.type,
     });
 
+    // Construire l'objet dossier complet
+    const fullDossier = {
+      ...dossier,
+      id: dossier.id,
+      statut: normalizeStatusForFrontend(dossier.statut), // Normaliser le statut pour le frontend
+      ...(formDetails
+        ? { data_formulaire: formDetails.details, type_formulaire: formDetails.type_formulaire }
+        : {}),
+      // Rendre le commentaire de révision facilement accessible aux consommateurs
+      commentaire_revision: derivedRevisionComment,
+      revision_comment: derivedRevisionComment,
+      // Alias large compat: si pas de commentaire(s) fournis ailleurs, renvoyer le commentaire de révision
+      commentaire: dossier.commentaire ?? dossier.commentaires ?? derivedRevisionComment ?? null,
+      fichiers: filesResult.rows,
+      historique: historyResult.rows,
+      statut_history: [
+        // Changements de statut
+        ...historyResult.rows.map(h => ({
+          type: 'status_change',
+          ancien_statut: h.ancien_statut || h.old_status,
+          nouveau_statut: h.nouveau_statut || h.new_status,
+          user_name: h.changed_by_name || null,
+          user_id: h.changed_by || h.user_id,
+          commentaire: h.commentaire || h.comment,
+          created_at: h.changed_at || h.created_at,
+          date_changement: h.changed_at || h.created_at,
+        })),
+        // Modifications de dossier
+        ...activityLogs.map(log => ({
+          type: 'activity',
+          action: log.action,
+          details: log.details,
+          user_name: log.user_name,
+          user_id: log.user_id,
+          created_at: log.created_at,
+          date_changement: log.created_at,
+        }))
+      ].sort((a, b) => new Date(b.created_at) - new Date(a.created_at)), // Trier par date décroissante
+      available_actions: availableActions, // 🎯 Actions disponibles selon rôle et statut
+
+    // Appliquer le filtre des champs sensibles selon le rôle
+    };
+    const filteredDossier = filterSensitiveFields(fullDossier, req.user.role);
+
     res.json({
       success: true,
-      dossier: {
-        ...dossier,
-        id: dossier.folder_id, // Utiliser folder_id comme ID principal pour le frontend
-        legacy_id: dossier.id, // Garder l'ID integer pour référence
-        statut: normalizeStatusForFrontend(dossier.statut), // Normaliser le statut pour le frontend
-        ...(formDetails
-          ? { data_formulaire: formDetails.details, type_formulaire: formDetails.type_formulaire }
-          : {}),
-        // Rendre le commentaire de révision facilement accessible aux consommateurs
-        commentaire_revision: derivedRevisionComment,
-        revision_comment: derivedRevisionComment,
-        // Alias large compat: si pas de commentaire(s) fournis ailleurs, renvoyer le commentaire de révision
-        commentaire: dossier.commentaire ?? dossier.commentaires ?? derivedRevisionComment ?? null,
-        fichiers: filesResult.rows,
-        historique: historyResult.rows,
-        available_actions: availableActions, // 🎯 Actions disponibles selon rôle et statut
-      },
+      dossier: filteredDossier,
     });
   } catch (error) {
     console.error('Erreur GET /dossiers/:id:', error);
@@ -602,7 +851,7 @@ router.get('/:id', auth, checkDossierPermission('view'), async (req, res) => {
 
 // 🆕 POST /dossiers - Créer un nouveau dossier (Préparateur et Admin)
 // Nouvelle route POST /dossiers avec gestion UUID et structure conforme au cahier des charges
-router.post('/', auth, checkRole(['preparateur', 'admin']), async (req, res) => {
+router.post('/', auth, checkRole(['preparateur', 'admin']), validateDossierData, async (req, res) => {
   try {
     const {
       client,
@@ -629,30 +878,46 @@ router.post('/', auth, checkRole(['preparateur', 'admin']), async (req, res) => 
       });
     }
 
+    // Extraction des nouveaux champs
+    const { description, telephone_client, urgent } = req.body;
+
+    // Description est maintenant facultative - pas de validation
+
     // Génération du numéro unique
     const numero = await generateNumeroCommande();
 
-    // Création du dossier avec preparateur_id et folder_id UUID
-    const folderId = uuidv4(); // Générer UUID pour folder_id
+    // ✅ NOUVEAU: Extraire sections et supports du body
+    const { amount, sections = [], supports = [] } = req.body;
+
+    // ✅ NOUVEAU: Valider et normaliser sections/supports
+    const normalizedSections = Array.isArray(sections) ? sections : [];
+    const normalizedSupports = Array.isArray(supports) ? supports : [];
+
+    // Création du dossier avec preparateur_id et champ urgent + NOUVEAUX CHAMPS
     const dossierQuery = `
       INSERT INTO dossiers (
-        folder_id, numero, client, type_formulaire, statut, preparateur_id, data_formulaire, commentaire, quantite, date_livraison, mode_paiement, montant_cfa
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+        numero, client, type_formulaire, statut, preparateur_id, data_formulaire, commentaire, date_livraison, mode_paiement, montant_cfa, description, telephone_client, urgent, amount, sections, supports, schema_version
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
       RETURNING *
     `;
     const values = [
-      folderId,
       numero,
       client,
       type_formulaire,
-      DB_STATUTS.EN_COURS, // Utiliser le statut DB correct depuis le mapping
+      'en_cours', // Statut en snake_case pour respecter le constraint DB
       req.user.id,
       data_formulaire,
       commentaire,
-      quantite,
       date_livraison,
       mode_paiement,
       montant_cfa,
+      description?.trim() || null,
+      telephone_client?.trim() || null,
+      urgent === true, // Convertir en booléen strict
+      amount || null, // ✅ NOUVEAU: Montant facultatif
+      JSON.stringify(normalizedSections), // ✅ NOUVEAU: Sections en JSONB
+      JSON.stringify(normalizedSupports), // ✅ NOUVEAU: Supports Roland en JSONB
+      normalizedSections.length > 0 || normalizedSupports.length > 0 ? 2 : 1, // ✅ NOUVEAU: Version schéma
     ];
     const result = await db.query(dossierQuery, values);
     const dossier = result.rows[0];
@@ -673,21 +938,23 @@ router.post('/', auth, checkRole(['preparateur', 'admin']), async (req, res) => 
 
     // Synchronisation Socket.IO via le service centralisé
     socketService.emitDossierCreated(dossier);
-    
+
     // Logger l'activité
-    await logDossierActivity(dossier.folder_id, req.user.id, 'created', {
+    await logDossierActivity(dossier.id, req.user.id, 'created', {
       numero,
       client,
       type_formulaire,
     });
 
+    // Appliquer le filtre des champs sensibles selon le rôle
+    const filteredDossier = filterSensitiveFields(dossier, req.user.role);
+
     res.status(201).json({
       success: true,
       message: `Dossier ${numero} créé avec succès`,
       dossier: {
-        ...dossier,
-        id: dossier.folder_id, // Retourner folder_id comme ID principal
-        legacy_id: dossier.id,
+        ...filteredDossier,
+        id: dossier.id,
       },
     });
   } catch (error) {
@@ -701,9 +968,10 @@ router.post('/', auth, checkRole(['preparateur', 'admin']), async (req, res) => 
 });
 
 // ✏️ PUT /dossiers/:id - Modifier un dossier (supporte folder_id UUID)
-router.put('/:id', auth, checkDossierPermission('update'), async (req, res) => {
+router.put('/:id', auth, checkDossierPermission('update'), validateDossierData, async (req, res) => {
   try {
     const { id } = req.params;
+    console.log(`🔍 PUT /dossiers/${id} - Body:`, JSON.stringify(req.body, null, 2));
     const {
       client,
       machine,
@@ -727,7 +995,7 @@ router.put('/:id', auth, checkDossierPermission('update'), async (req, res) => {
 
     // Normaliser le statut pour gérer les différents formats
     const statutNormalise = dossier.statut.toLowerCase().replace(/\s+/g, '_');
-    
+
     const canModify =
       req.user.role === 'admin' ||
       (req.user.role === 'preparateur' &&
@@ -773,7 +1041,7 @@ router.put('/:id', auth, checkDossierPermission('update'), async (req, res) => {
     }
 
     if (client_telephone !== undefined) {
-      updates.push(`client_telephone = $${paramIndex++}`);
+      updates.push(`telephone_client = $${paramIndex++}`);
       values.push(client_telephone);
     }
 
@@ -785,6 +1053,54 @@ router.put('/:id', auth, checkDossierPermission('update'), async (req, res) => {
     if (commentaires !== undefined) {
       updates.push(`commentaires = $${paramIndex++}`);
       values.push(commentaires);
+    }
+
+    // ✅ NOUVEAU: Support de amount
+    if (req.body.amount !== undefined) {
+      updates.push(`amount = $${paramIndex++}`);
+      values.push(req.body.amount || null);
+    }
+
+    // ✅ NOUVEAU: Support de data_formulaire
+    if (req.body.data_formulaire !== undefined) {
+      updates.push(`data_formulaire = $${paramIndex++}`);
+      values.push(req.body.data_formulaire);
+    }
+
+    // ✅ NOUVEAU: Support de urgent
+    if (req.body.urgent !== undefined) {
+      updates.push(`urgent = $${paramIndex++}`);
+      values.push(req.body.urgent);
+    }
+
+    // ✅ NOUVEAU: Support de telephone_client
+    if (req.body.telephone_client !== undefined && !req.body.client_telephone) {
+      updates.push(`telephone_client = $${paramIndex++}`);
+      values.push(req.body.telephone_client);
+    }
+
+    // ✅ NOUVEAU: Support de sections (Xerox)
+    if (req.body.sections !== undefined) {
+      const normalizedSections = Array.isArray(req.body.sections) ? req.body.sections : [];
+      updates.push(`sections = $${paramIndex++}`);
+      values.push(JSON.stringify(normalizedSections));
+      // Mettre à jour schema_version si sections non vides
+      if (normalizedSections.length > 0) {
+        updates.push(`schema_version = $${paramIndex++}`);
+        values.push(2);
+      }
+    }
+
+    // ✅ NOUVEAU: Support de supports (Roland)
+    if (req.body.supports !== undefined) {
+      const normalizedSupports = Array.isArray(req.body.supports) ? req.body.supports : [];
+      updates.push(`supports = $${paramIndex++}`);
+      values.push(JSON.stringify(normalizedSupports));
+      // Mettre à jour schema_version si supports non vides
+      if (normalizedSupports.length > 0) {
+        updates.push(`schema_version = $${paramIndex++}`);
+        values.push(2);
+      }
     }
 
     if (updates.length === 0) {
@@ -802,6 +1118,8 @@ router.put('/:id', auth, checkDossierPermission('update'), async (req, res) => {
       WHERE id = $${paramIndex}
       RETURNING *
     `;
+    console.log("🔍 UPDATE Query:", updateQuery);
+    console.log("🔍 UPDATE Values:", values);
 
     const result = await db.query(updateQuery, values);
     const updatedDossier = result.rows[0];
@@ -809,12 +1127,16 @@ router.put('/:id', auth, checkDossierPermission('update'), async (req, res) => {
     // Enregistrer un snapshot des détails si form_data/type_formulaire fournis
     try {
       const body = req.body || {};
-      let formData = body.form_data || body.data_formulaire || null;
-      const tfRaw = body.type_formulaire || body.machine || updatedDossier?.machine || null;
+      // ✅ FIX: Utiliser updatedDossier.data_formulaire en priorité car il contient les valeurs mises à jour
+      let formData = body.form_data || body.data_formulaire || updatedDossier.data_formulaire || null;
+      const tfRaw = body.type_formulaire || body.machine || updatedDossier?.type_formulaire || null;
+      console.log(`🔍 dossier_formulaires - formData:`, formData);
+      console.log(`🔍 dossier_formulaires - tfRaw:`, tfRaw);
       // Fallback: si formData non fourni mais certains champs ont changé, tenter de déduire minimal
       if (!formData) {
         const desc = (description !== undefined ? description : updatedDossier?.description) || '';
-        const qtyVal = (quantite !== undefined ? quantite : updatedDossier?.quantite) || null;
+        // ✅ FIX: Utiliser updatedDossier.quantite directement car il contient la valeur mise à jour
+        const qtyVal = updatedDossier?.quantite || null;
         if (
           String(tfRaw || '')
             .toLowerCase()
@@ -841,6 +1163,14 @@ router.put('/:id', auth, checkDossierPermission('update'), async (req, res) => {
             ? 'Xerox'
             : null;
         if (tf) {
+          console.log(`✅ Mise à jour dossier_formulaires pour dossier ${id}`, { tf, formData });
+          
+          // ✅ FIX: DELETE + INSERT au lieu de juste INSERT pour éviter les doublons
+          await db.query(
+            `DELETE FROM dossier_formulaires WHERE dossier_id = $1`,
+            [id]
+          );
+          
           await db.query(
             `INSERT INTO dossier_formulaires (dossier_id, type_formulaire, details) VALUES ($1, $2, $3)`,
             [id, tf, formData]
@@ -851,23 +1181,61 @@ router.put('/:id', auth, checkDossierPermission('update'), async (req, res) => {
       console.warn("⚠️ Impossible d'enregistrer form_data lors du PUT:", e.message);
     }
 
-    // Émission Socket.IO avec le service centralisé
+    // 🎯 Détection intelligente des changements pour TOUS les champs modifiables
+    const TRACKABLE_FIELDS = [
+      'client', 'machine', 'description', 'quantite',
+      'client_email', 'telephone_client', 'date_livraison_prevue',
+      'commentaires', 'amount', 'urgent', 'data_formulaire'
+    ];
+
     const changes = {};
-    if (client !== undefined) changes.client = { old: oldData.client, new: client };
-    if (machine !== undefined) changes.machine = { old: oldData.machine, new: machine };
-    if (description !== undefined) changes.description = { old: oldData.description, new: description };
+    TRACKABLE_FIELDS.forEach(field => {
+      let newValue = req.body[field];
+      
+      // Mapper les variables locales extraites
+      if (field === 'client' && client !== undefined) newValue = client;
+      if (field === 'machine' && machine !== undefined) newValue = machine;
+      if (field === 'description' && description !== undefined) newValue = description;
+      if (field === 'quantite' && quantite !== undefined) newValue = quantite;
+      if (field === 'telephone_client' && client_telephone !== undefined) newValue = client_telephone;
+      if (field === 'date_livraison_prevue' && date_livraison_prevue !== undefined) newValue = date_livraison_prevue;
+      if (field === 'commentaires' && commentaires !== undefined) newValue = commentaires;
+      
+      if (newValue !== undefined) {
+        const oldValue = oldData[field];
+        
+        // Comparaison spéciale pour les objets JSON
+        if (field === 'data_formulaire') {
+          const oldJson = JSON.stringify(oldValue || {});
+          const newJson = JSON.stringify(newValue || {});
+          if (oldJson !== newJson) {
+            changes[field] = { old: oldValue, new: newValue };
+          }
+        } else {
+          changes[field] = { old: oldValue, new: newValue };
+        }
+      }
+    });
+
+    // Émission Socket.IO avec le service centralisé
     socketService.emitDossierUpdated(updatedDossier, changes);
-    
-    // Logger l'activité
-    await logDossierActivity(updatedDossier.folder_id, req.user.id, 'updated', changes);
+
+
+    // Logger l'activité SEULEMENT s'il y a de vrais changements
+    const realChanges = Object.fromEntries(
+      Object.entries(changes).filter(([_, change]) => change.old !== change.new)
+    );
+    if (Object.keys(realChanges).length > 0) {
+      console.log('📝 Logging activity for dossier:', updatedDossier.id, 'user:', req.user.id, 'changes:', realChanges);
+      await logDossierActivity(updatedDossier.id, req.user.id, 'updated', realChanges);
+    }
 
     res.json({
       success: true,
       message: 'Dossier modifié avec succès',
       dossier: {
         ...updatedDossier,
-        id: updatedDossier.folder_id,
-        legacy_id: updatedDossier.id,
+        id: updatedDossier.id,
       },
     });
   } catch (error) {
@@ -957,7 +1325,7 @@ async function changeStatutCore(req, res) {
       // Normaliser les statuts pour la comparaison
       const current = normalizeStatusForWorkflow(dossier.statut);
       const target = normalizeStatusForWorkflow(nouveau_statut);
-      
+
       switch (req.user.role) {
         case 'admin': {
           // Admin: toutes transitions raisonnées
@@ -974,32 +1342,51 @@ async function changeStatutCore(req, res) {
           };
           return (adminTransitions[current] || []).includes(target);
         }
-        case 'preparateur':
-          // Le préparateur corrige depuis "À revoir" → "En cours"
-          return (
-            dossier.created_by === parseInt(req.user.id) &&
-            current === 'À revoir' &&
-            target === 'En cours'
-          );
+        case 'preparateur': {
+          // Le préparateur peut VALIDER ses dossiers : nouveau/en_cours/a_revoir → pret_impression
+          if (dossier.created_by !== parseInt(req.user.id)) return false; // Seulement ses propres dossiers
+
+          const validationTransitions = {
+            'Nouveau': ['Prêt impression'],
+            'En cours': ['Prêt impression'],
+            'À revoir': ['Prêt impression'],
+          };
+
+          return (validationTransitions[current] || []).includes(target);
+        }
         case 'imprimeur_roland':
         case 'imprimeur_xerox': {
-          // Imprimeur: prépare ou imprime
+          // Imprimeur: workflow impression selon le document de référence
           const printTransitions = {
-            'En cours': ['À revoir', 'En impression'], // compat legacy
+            // Étape 1: Recevoir dossier prêt → démarrer ou demander révision
             'Prêt impression': ['En impression', 'À revoir'],
-            'En impression': ['Imprimé', 'À revoir', 'Prêt livraison'],
+
+            // Étape 2: En cours d'impression → terminer ou demander révision
+            // SELON DOCUMENT: en_impression → imprime (pas direct vers pret_livraison)
+            // MAIS le frontend skip "imprime", donc on autorise les 2 chemins
+            'En impression': ['Imprimé', 'Prêt livraison', 'À revoir'],
+
+            // Étape 3: Impression terminée → prêt pour livraison
             'Imprimé': ['Prêt livraison', 'À revoir'],
           };
           return (printTransitions[current] || []).includes(target);
         }
         case 'livreur': {
-          // Livreur: de prêt à en livraison puis Terminé (final)
+          // Livreur: workflow complet de livraison
+          // 1. Depuis "Imprimé" ou "Prêt livraison" → programmer ou livrer
+          if (current === 'Imprimé' && target === 'Prêt livraison') return true;
+          if (current === 'Imprimé' && target === 'En livraison') return true;
+          if (current === 'Imprimé' && target === 'Livré') return true;
           if (current === 'Prêt livraison' && target === 'En livraison') return true;
-          if (
-            current === 'En livraison' &&
-            (target === 'Terminé' || target === 'Livré')
-          )
-            return true; // accepter 'Livré' en alias
+          if (current === 'Prêt livraison' && target === 'Livré') return true; // livraison directe
+
+          // 2. Depuis "En livraison" → marquer livré ou terminé
+          if (current === 'En livraison' && target === 'Livré') return true;
+          if (current === 'En livraison' && target === 'Terminé') return true;
+
+          // 3. Depuis "Livré" → marquer terminé (finalisation)
+          if (current === 'Livré' && target === 'Terminé') return true;
+
           return false;
         }
         default:
@@ -1054,12 +1441,14 @@ async function changeStatutCore(req, res) {
     // 🔧 Normaliser le statut vers le format DB avant de persister
     // Utiliser le système centralisé pour garantir la cohérence
     let statutToPersist = normalizeToDb(nouveau_statut);
-    
+
     // Cas spécial : Livré = Terminé en DB
     if (nouveau_statut === 'Livré' || nouveau_statut === 'livre') {
-      statutToPersist = DB_STATUTS.TERMINE;
+      statutToPersist = 'termine';
+      // Retirer automatiquement le flag urgent quand un dossier est livré
+      setClauses.push('urgent = FALSE');
     }
-    
+
     // Vérifier que le statut est valide pour la DB
     if (!isValidDbStatus(statutToPersist)) {
       console.warn(`⚠️  Statut non valide pour la DB: "${statutToPersist}" (depuis "${nouveau_statut}")`);
@@ -1092,16 +1481,21 @@ async function changeStatutCore(req, res) {
       );
     }
 
+    // ℹ️ NOTA: La création de paiement se fait maintenant via l'interface livreur
+    // Le livreur encaisse directement via POST /paiements/encaisser-livraison
+    // avec statut 'encaisse_livreur', puis l'admin approuve → statut 'paye'
+    // Cette logique remplace l'ancienne création automatique de paiement
+
     // Émission Socket.IO via service centralisé
     socketService.emitStatusChanged(
-      updatedDossier.folder_id, 
-      dossier.statut, 
-      statutToPersist, 
+      updatedDossier.id,
+      dossier.statut,
+      statutToPersist,
       updatedDossier
     );
-    
+
     // Logger l'activité
-    await logDossierActivity(updatedDossier.folder_id, req.user.id, 'status_changed', {
+    await logDossierActivity(updatedDossier.id, req.user.id, 'status_changed', {
       old_status: dossier.statut,
       new_status: statutToPersist,
       commentaire,
@@ -1112,8 +1506,7 @@ async function changeStatutCore(req, res) {
       message: `Statut changé: ${dossier.statut} → ${nouveau_statut}`,
       dossier: {
         ...updatedDossier,
-        id: updatedDossier.folder_id,
-        legacy_id: updatedDossier.id,
+        id: updatedDossier.id,
         // Exposer explicitement le commentaire de révision pour compat frontend
         commentaire_revision: updatedDossier.commentaire_revision ?? null,
         revision_comment: updatedDossier.commentaire_revision ?? null,
@@ -1133,99 +1526,117 @@ async function changeStatutCore(req, res) {
 
 // Fonction de changement de statut utilisant le dossier déjà chargé par le middleware
 async function changeStatutCoreFixed(req, res) {
-    // Garde stricte : interdit à un imprimeur de passer un dossier en 'Terminé'
-    // Priorité au champ 'status' (snake_case) envoyé par le frontend
-    let nouveau_statut = req.body?.status || req.body?.nouveau_statut || '';
-    nouveau_statut = String(nouveau_statut).trim();
-    // Si le statut est en snake_case, le mapper vers le label français pour la validation
-    const snakeToFr = {
-      'en_cours': 'En cours',
-      'a_revoir': 'À revoir',
-      'en_impression': 'En impression',
-      'pret_impression': 'Prêt impression',
-      'imprime': 'Imprimé',
-      'pret_livraison': 'Prêt livraison',
-      'en_livraison': 'En livraison',
-      'livre': 'Livré',
-      'termine': 'Terminé',
-    };
-    const validationStatut = snakeToFr[nouveau_statut] || nouveau_statut;
-    const requestedStatusKey = nouveau_statut.toLowerCase();
-    if ((req.user.role === 'imprimeur_roland' || req.user.role === 'imprimeur_xerox') && (requestedStatusKey === 'termine' || requestedStatusKey === 'terminé')) {
-      return res.status(403).json({
+  // Garde stricte : interdit à un imprimeur de passer un dossier en 'Terminé'
+  // Priorité au champ 'status' (snake_case) envoyé par le frontend
+  let nouveau_statut = req.body?.status || req.body?.nouveau_statut || '';
+  nouveau_statut = String(nouveau_statut).trim();
+
+  // Mapping snake_case -> français pour validation et historique
+  const snakeToFr = {
+    'en_cours': 'En cours',
+    'a_revoir': 'À revoir',
+    'en_impression': 'En impression',
+    'pret_impression': 'Prêt impression',
+    'imprime': 'Imprimé',
+    'pret_livraison': 'Prêt livraison',
+    'en_livraison': 'En livraison',
+    'livre': 'Livré',
+    'termine': 'Terminé',
+  };
+
+  // Normaliser vers snake_case pour la DB (le CHECK constraint n'accepte que snake_case)
+  const frToSnake = {
+    'En cours': 'en_cours',
+    'À revoir': 'a_revoir',
+    'En impression': 'en_impression',
+    'Prêt impression': 'pret_impression',
+    'Imprimé': 'imprime',
+    'Prêt livraison': 'pret_livraison',
+    'En livraison': 'en_livraison',
+    'Livré': 'livre',
+    'Terminé': 'termine',
+  };
+
+  // Déterminer le statut pour validation (français) et pour DB (snake_case)
+  const validationStatut = snakeToFr[nouveau_statut] || nouveau_statut;
+  const statutForDb = frToSnake[nouveau_statut] || nouveau_statut;
+
+  const requestedStatusKey = nouveau_statut.toLowerCase();
+  if ((req.user.role === 'imprimeur_roland' || req.user.role === 'imprimeur_xerox') && (requestedStatusKey === 'termine' || requestedStatusKey === 'terminé')) {
+    return res.status(403).json({
+      success: false,
+      message: "Un imprimeur ne peut pas clore un dossier en 'Terminé'.",
+      code: 'FORBIDDEN_IMPRIMEUR_TERMINE',
+      details: { role: req.user.role, requestedStatusKey }
+    });
+  }
+  try {
+    // Log complet du payload reçu pour diagnostic
+    try {
+      const currentStat = req.dossier?.statut;
+      const requested = nouveau_statut;
+      console.log('[CHANGE_STATUS DEBUG]', {
+        user: { id: req.user?.id, role: req.user?.role },
+        param: req.params?.id,
+        hasDossier: !!req.dossier,
+        currentStat,
+        requested,
+        body: req.body
+      });
+    } catch (dbg) { }
+
+    // Le dossier a déjà été chargé par checkDossierPermission et est dans req.dossier
+    const dossier = req.dossier;
+    const commentaire = req.body?.commentaire ?? req.body?.comment ?? null;
+
+    // Champs optionnels pour la livraison/paiement
+    const date_livraison_prevue = req.body?.date_livraison_prevue ?? undefined;
+    const date_livraison = req.body?.date_livraison ?? undefined;
+    const mode_paiement = req.body?.mode_paiement ?? undefined;
+    const montant_cfa =
+      req.body?.montant_cfa !== undefined
+        ? req.body.montant_cfa
+        : req.body?.montant_paye !== undefined
+          ? req.body.montant_paye
+          : undefined;
+
+    // États étendus selon le cahier des charges
+    const statusAllowed = [
+      'Nouveau',
+      'En préparation',
+      'En cours',
+      'À revoir',
+      'Prêt impression',
+      'En impression',
+      'Imprimé',
+      'Prêt livraison',
+      'En livraison',
+      'Livré',
+      'Terminé',
+    ];
+
+    if (!statusAllowed.includes(validationStatut)) {
+      return res.status(400).json({
         success: false,
-        message: "Un imprimeur ne peut pas clore un dossier en 'Terminé'.",
-        code: 'FORBIDDEN_IMPRIMEUR_TERMINE',
-        details: { role: req.user.role, requestedStatusKey }
+        message: `Statut invalide. Autorisés: ${statusAllowed.join(', ')}`,
       });
     }
-    try {
-      // Log complet du payload reçu pour diagnostic
-      try {
-        const currentStat = req.dossier?.statut;
-        const requested = nouveau_statut;
-        console.log('[CHANGE_STATUS DEBUG]', {
-          user: { id: req.user?.id, role: req.user?.role },
-          param: req.params?.id,
-          hasDossier: !!req.dossier,
-          currentStat,
-          requested,
-          body: req.body
-        });
-      } catch (dbg) {}
 
-      // Le dossier a déjà été chargé par checkDossierPermission et est dans req.dossier
-      const dossier = req.dossier;
-      const commentaire = req.body?.commentaire ?? req.body?.comment ?? null;
-
-      // Champs optionnels pour la livraison/paiement
-      const date_livraison_prevue = req.body?.date_livraison_prevue ?? undefined;
-      const date_livraison = req.body?.date_livraison ?? undefined;
-      const mode_paiement = req.body?.mode_paiement ?? undefined;
-      const montant_cfa =
-        req.body?.montant_cfa !== undefined
-          ? req.body.montant_cfa
-          : req.body?.montant_paye !== undefined
-            ? req.body.montant_paye
-            : undefined;
-
-      // États étendus selon le cahier des charges
-      const statusAllowed = [
-        'Nouveau',
-        'En préparation',
-        'En cours',
-        'À revoir',
-        'Prêt impression',
-        'En impression',
-        'Imprimé',
-        'Prêt livraison',
-        'En livraison',
-        'Livré',
-        'Terminé',
-      ];
-
-      if (!statusAllowed.includes(validationStatut)) {
-        return res.status(400).json({
-          success: false,
-          message: `Statut invalide. Autorisés: ${statusAllowed.join(', ')}`,
-        });
-      }
-
-      // Règle: "À revoir" nécessite un commentaire
-      const targetStatutNormaliseFixed = nouveau_statut.toLowerCase().replace(/\s+/g, '_');
-      if (targetStatutNormaliseFixed === 'a_revoir' && (!commentaire || !String(commentaire).trim())) {
-        return res.status(400).json({
-          success: false,
-          message: 'Un commentaire est requis pour passer un dossier en "À revoir"',
-          code: 'COMMENT_REQUIRED',
-        });
-      }
+    // Règle: "À revoir" nécessite un commentaire
+    const targetStatutNormaliseFixed = nouveau_statut.toLowerCase().replace(/\s+/g, '_');
+    if (targetStatutNormaliseFixed === 'a_revoir' && (!commentaire || !String(commentaire).trim())) {
+      return res.status(400).json({
+        success: false,
+        message: 'Un commentaire est requis pour passer un dossier en "À revoir"',
+        code: 'COMMENT_REQUIRED',
+      });
+    }
 
     // Validation des transitions selon les rôles
     const canChangeStatus = () => {
       const current = normalizeStatusForWorkflow(dossier.statut);
       const target = normalizeStatusForWorkflow(nouveau_statut);
-      
+
       // If admin, allow all transitions (short-circuit). Administrators need full control.
       if (req.user.role === 'admin') return true;
 
@@ -1272,7 +1683,8 @@ async function changeStatutCoreFixed(req, res) {
             'Imprimé': ['Prêt livraison'],
             'Prêt livraison': ['En livraison', 'Imprimé'],
             'En livraison': ['Terminé', 'Livré', 'Prêt livraison'],
-            'Livré': ['Terminé'],
+            'Livré': ['Terminé', 'Livré'],  // ✅ Permettre Livré → Livré (idempotent)
+            'Terminé': ['En livraison', 'Livré', 'Prêt livraison'],  // ✅ Permettre de réactiver un dossier terminé
           };
           return (deliveryTransitions[current] || []).includes(target);
         }
@@ -1290,12 +1702,17 @@ async function changeStatutCoreFixed(req, res) {
 
     // Mise à jour avec les champs optionnels
     let updateFields = ['statut = $1', 'updated_at = CURRENT_TIMESTAMP'];
-    let values = [nouveau_statut];
+    let values = [statutForDb]; // Utiliser la version snake_case pour la DB
     let paramIndex = 2;
 
-    // Si un commentaire est fourni, le persister comme commentaire de révision
+    // Si le statut est "livre" ou "termine", mettre urgent à false
+    if (statutForDb === 'livre' || statutForDb === 'termine') {
+      updateFields.push('urgent = false');
+    }
+
+    // Si un commentaire est fourni, le persister dans le champ commentaire existant
     if (commentaire && String(commentaire).trim() !== '') {
-      updateFields.push(`commentaire_revision = $${paramIndex}`);
+      updateFields.push(`commentaire = $${paramIndex}`);
       values.push(commentaire);
       paramIndex++;
     }
@@ -1332,49 +1749,117 @@ async function changeStatutCoreFixed(req, res) {
     const result = await db.query(updateQuery, values);
     const updatedDossier = result.rows[0];
 
-    // Ajouter commentaire si fourni
-    if (commentaire) {
+    // Ajouter une entrée dans l'historique des statuts avec fallback vers historique_statuts
+    // Utiliser validationStatut (français) pour l'historique lisible par humain
+    try {
       await db.query(
-        `
-        UPDATE dossier_status_history 
-        SET commentaire = $1 
-        WHERE id = (
-          SELECT id FROM dossier_status_history 
-          WHERE dossier_id = $2 AND nouveau_statut = $3 AND commentaire IS NULL
-          ORDER BY changed_at DESC LIMIT 1
-        )
-      `,
-        [commentaire, dossier.id, nouveau_statut]
+        `INSERT INTO dossier_status_history (dossier_id, old_status, new_status, changed_by, comment)
+         VALUES ($1, $2, $3, $4, $5)`,
+        [dossier.id, dossier.statut, validationStatut, req.user.id, commentaire]
       );
+    } catch (histErr) {
+      // Fallback vers historique_statuts si dossier_status_history n'existe pas
+      if (histErr && (histErr.code === '42P01' || /relation .* does not exist/i.test(histErr.message))) {
+        try {
+          await db.query(
+            `INSERT INTO historique_statuts (dossier_id, ancien_statut, nouveau_statut, user_id, commentaire)
+             VALUES ($1, $2, $3, $4, $5)`,
+            [dossier.id, dossier.statut, validationStatut, req.user.id, commentaire]
+          );
+        } catch (legacyErr) {
+          console.warn('⚠️ Historique non enregistré:', legacyErr.message);
+        }
+      } else {
+        console.warn('⚠️ Historique non enregistré:', histErr.message);
+      }
     }
 
     // Émission Socket.IO via service centralisé
     socketService.emitStatusChanged(
-      updatedDossier.folder_id, 
-      dossier.statut, 
-      nouveau_statut, 
+      updatedDossier.id,
+      dossier.statut,
+      statutForDb,
       updatedDossier
     );
+
+    // 🔔 Envoyer notification sonore via le service de notifications
+    if (global.notificationService) {
+      global.notificationService.notifyStatusChange(
+        updatedDossier,
+        dossier.statut,
+        statutForDb,
+        req.user,
+        commentaire
+      );
+    }
+
+    // 🔔 Notifications sonores ciblées par Rôle
+    // Si le dossier est marqué "prêt impression", notifier tous les imprimeurs de la machine ciblée
+    if (statutForDb === 'pret_impression') {
+      const targetRole = updatedDossier.machine === 'Xerox' ? 'imprimeur_xerox' : 'imprimeur_roland';
+      socketService.emitNotificationToRole(
+        targetRole,
+        'sound_alert',
+        `Nouveau dossier prêt pour impression: ${updatedDossier.numero || updatedDossier.id}`,
+        {
+          dossierId: updatedDossier.id,
+          numero: updatedDossier.numero,
+          client: updatedDossier.client,
+          action: 'pret_impression',
+          soundType: 'new_work'
+        }
+      );
+    }
     
+    // Si le dossier est marqué "prêt pour livraison", notifier les livreurs
+    if (statutForDb === 'pret_livraison') {
+      socketService.emitNotificationToRole(
+        'livreur',
+        'sound_alert',
+        `Nouveau dossier à livrer: ${updatedDossier.numero || updatedDossier.id}`,
+        {
+          dossierId: updatedDossier.id,
+          numero: updatedDossier.numero,
+          client: updatedDossier.client,
+          action: 'pret_livraison',
+          soundType: 'new_work'
+        }
+      );
+    }
+
+    // Si le dossier est marqué "à revoir", notifier le préparateur spécifique qui a créé/traité ce dossier
+    if (statutForDb === 'a_revoir' && updatedDossier.preparateur_id) {
+      socketService.emitNotification(
+        updatedDossier.preparateur_id,
+        'sound_alert',
+        `Dossier à revoir: ${updatedDossier.numero || updatedDossier.id}`,
+        {
+          dossierId: updatedDossier.id,
+          numero: updatedDossier.numero,
+          client: updatedDossier.client,
+          commentaire: commentaire,
+          action: 'a_revoir',
+          soundType: 'needs_attention'
+        }
+      );
+    }
+
     // Logger l'activité
-    await logDossierActivity(updatedDossier.folder_id, req.user.id, 'status_changed', {
+    await logDossierActivity(updatedDossier.id, req.user.id, 'status_changed', {
       old_status: dossier.statut,
-      new_status: nouveau_statut,
+      new_status: statutForDb,
       commentaire,
     });
 
     return res.json({
       success: true,
-      message: `Statut changé: ${dossier.statut} → ${nouveau_statut}`,
+      message: `Statut changé: ${dossier.statut} → ${statutForDb}`,
       dossier: {
         ...updatedDossier,
-        id: updatedDossier.folder_id,
+        id: updatedDossier.id,
         legacy_id: updatedDossier.id,
-        // Exposer explicitement le commentaire de révision pour compat frontend
-        commentaire_revision: updatedDossier.commentaire_revision ?? null,
-        revision_comment: updatedDossier.commentaire_revision ?? null,
-        // Alias large compat: si pas de commentaire(s), fournir le commentaire de révision
-        commentaire: updatedDossier.commentaire ?? updatedDossier.commentaires ?? updatedDossier.commentaire_revision ?? null,
+        // Exposer le commentaire pour compat frontend
+        commentaire: updatedDossier.commentaire ?? null,
       },
     });
   } catch (error) {
@@ -1392,7 +1877,171 @@ router.put('/:id/statut', auth, checkDossierPermission('change_status'), async (
   return changeStatutCoreFixed(req, res);
 });
 
-// 🔁 ALIAS PATCH /dossiers/:id/status - Payload { status, comment } (compat guide)
+// � PATCH /dossiers/:id/programmer-livraison - Pour livreurs seulement
+router.patch('/:id/programmer-livraison', auth, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { date_livraison_prevue, adresse_livraison, notes_livraison } = req.body;
+
+    // Vérifier que l'utilisateur est un livreur
+    if (req.user.role !== 'livreur') {
+      return res.status(403).json({
+        success: false,
+        message: 'Seuls les livreurs peuvent programmer une livraison'
+      });
+    }
+
+    // Vérifier que la date est fournie
+    if (!date_livraison_prevue) {
+      return res.status(400).json({
+        success: false,
+        message: 'La date de livraison est requise'
+      });
+    }
+
+    // Mettre à jour uniquement les champs de livraison, PAS le statut
+    const updateQuery = `
+      UPDATE dossiers 
+      SET date_livraison_prevue = $1,
+          adresse_livraison = $2,
+          notes_livraison = $3,
+          updated_at = CURRENT_TIMESTAMP
+      WHERE id = $4
+      RETURNING *
+    `;
+
+    const result = await db.query(updateQuery, [
+      date_livraison_prevue,
+      adresse_livraison || null,
+      notes_livraison || null,
+      id
+    ]);
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({
+        success: false,
+        message: 'Dossier non trouvé'
+      });
+    }
+
+    const updatedDossier = result.rows[0];
+
+    // Émettre un événement Socket pour la mise à jour
+    socketService.emitDossierUpdated(updatedDossier, {
+      date_livraison_prevue: { old: null, new: date_livraison_prevue }
+    });
+
+    res.json({
+      success: true,
+      message: 'Livraison programmée avec succès',
+      dossier: updatedDossier
+    });
+  } catch (error) {
+    console.error('Erreur programmer-livraison:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Erreur lors de la programmation',
+      error: error.message
+    });
+  }
+});
+
+// �🔁 ALIAS PATCH /dossiers/:id/status - Payload { status, comment } (compat guide)
+
+// 📦 PATCH /dossiers/:id/valider-livraison - Valider une livraison (livreurs uniquement)
+router.patch('/:id/valider-livraison', auth, validateIdParam('id'), async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    console.log(`📦 [VALIDER LIVRAISON] Début - Dossier ${id}, User ${req.user.id} (${req.user.role})`);
+
+    // Vérifier que l'utilisateur est un livreur
+    if (req.user.role !== 'livreur') {
+      console.log(`📦 [VALIDER LIVRAISON] Accès refusé - Role: ${req.user.role}`);
+      return res.status(403).json({
+        success: false,
+        message: 'Seuls les livreurs peuvent valider une livraison'
+      });
+    }
+
+    // Vérifier que le dossier existe
+    const checkResult = await db.query('SELECT * FROM dossiers WHERE id = $1', [id]);
+
+    if (checkResult.rows.length === 0) {
+      return res.status(404).json({
+        success: false,
+        message: 'Dossier introuvable'
+      });
+    }
+
+    const dossier = checkResult.rows[0];
+    console.log(`📦 [VALIDER LIVRAISON] Dossier trouvé - Statut actuel: ${dossier.statut}`);
+
+    // Mettre à jour le statut à "livre" et enregistrer la date de livraison réelle
+    const updateResult = await db.query(
+      `UPDATE dossiers 
+       SET statut = $1, 
+           date_livraison_reelle = CURRENT_TIMESTAMP,
+           updated_at = CURRENT_TIMESTAMP 
+       WHERE id = $2 
+       RETURNING *`,
+      ['livre', id]
+    );
+
+    const dossierMisAJour = updateResult.rows[0];
+    console.log(`📦 [VALIDER LIVRAISON] Statut mis à jour: ${dossier.statut} → livre`);
+
+    // Enregistrer dans l'historique
+    try {
+      await db.query(
+        `INSERT INTO historique_statuts 
+         (dossier_id, ancien_statut, nouveau_statut, user_id, commentaire) 
+         VALUES ($1, $2, $3, $4, $5)`,
+        [
+          id,
+          dossier.statut,
+          'Livré',
+          req.user.id,
+          'Livraison validée par le livreur'
+        ]
+      );
+      console.log(`📦 [VALIDER LIVRAISON] Historique enregistré`);
+    } catch (histErr) {
+      console.warn('⚠️ Erreur insertion historique:', histErr.message);
+    }
+
+    console.log(`📦 Livraison du dossier ${id} validée par ${req.user.nom}`);
+
+    // Émettre une notification Socket.IO
+    try {
+      const socketService = require('../services/socketService');
+      socketService.emitDossierUpdated(dossierMisAJour);
+      socketService.emitStatusChanged(
+        dossierMisAJour.folder_id,
+        dossier.statut,
+        'livre',
+        dossierMisAJour
+      );
+    } catch (socketError) {
+      console.warn('Erreur notification validation livraison:', socketError.message);
+    }
+
+    return res.json({
+      success: true,
+      message: 'Livraison validée avec succès',
+      dossier: dossierMisAJour
+    });
+
+  } catch (error) {
+    console.error('❌ [VALIDER LIVRAISON] Erreur:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Erreur lors de la validation de la livraison',
+      error: error.message
+    });
+  }
+});
+
 router.patch('/:id/status', auth, checkDossierPermission('change_status'), async (req, res) => {
   try {
     const mapAppToFr = {
@@ -1441,39 +2090,52 @@ router.put('/:id/remettre-en-impression', auth, checkRole(['admin']), validateId
     const userId = parseInt(req.user.id);
 
     // 2. Vérifier que le dossier est dans un état "terminé" ou "imprimé"
-    const statutsAutorises = ['Terminé', 'Imprimé', 'Livré'];
+    const statutsAutorises = ['termine', 'imprime', 'livre'];
     if (!statutsAutorises.includes(d.statut)) {
-      return res.status(400).json({ 
-        success: false, 
-        message: `Impossible de remettre en impression depuis l'état "${d.statut}". États autorisés: ${statutsAutorises.join(', ')}` 
+      return res.status(400).json({
+        success: false,
+        message: `Impossible de remettre en impression depuis l'état "${d.statut}". États autorisés: ${statutsAutorises.join(', ')}`
       });
     }
 
-    // 3. Définir le nouveau statut
-    const statutPersist = 'En impression';  // Format attendu en DB
-    const statutLabelFr = 'En impression';  // Pour l'historique et les logs
+    // 3. Définir le nouveau statut (snake_case pour DB)
+    const statutPersist = 'en_impression';
+    const statutLabelFr = 'En impression';  // Label français pour l'historique
     const statutCodeNormalise = 'en_impression';  // Code normalisé pour le frontend
 
     // 4. Mettre à jour le dossier
     const updateQuery = `
       UPDATE dossiers
       SET statut = $2, updated_at = NOW(),
-          commentaire_revision = COALESCE($3, commentaire_revision)
+          commentaire = COALESCE($3, commentaire)
       WHERE id = $1
       RETURNING *
     `;
     const updateResult = await db.query(updateQuery, [id, statutPersist, commentaire]);
     const dossier = updateResult.rows[0];
 
-    // 5. Insérer dans l'historique
+    // 5. Insérer dans l'historique avec fallback
     try {
       await db.query(
-        `INSERT INTO dossier_status_history (dossier_id, ancien_statut, nouveau_statut, changed_by, commentaire)
+        `INSERT INTO dossier_status_history (dossier_id, old_status, new_status, changed_by, comment)
          VALUES ($1, $2, $3, $4, $5)`,
         [id, d.statut, statutLabelFr, userId, commentaire || 'Remise en impression par admin']
       );
     } catch (e) {
-      console.warn('⚠️ Historique non enregistré:', e.message);
+      // Fallback vers historique_statuts
+      if (e && (e.code === '42P01' || /relation .* does not exist/i.test(e.message))) {
+        try {
+          await db.query(
+            `INSERT INTO historique_statuts (dossier_id, ancien_statut, nouveau_statut, user_id, commentaire)
+             VALUES ($1, $2, $3, $4, $5)`,
+            [id, d.statut, statutLabelFr, userId, commentaire || 'Remise en impression par admin']
+          );
+        } catch (legacyErr) {
+          console.warn('⚠️ Historique non enregistré:', legacyErr.message);
+        }
+      } else {
+        console.warn('⚠️ Historique non enregistré:', e.message);
+      }
     }
 
     // 6. Notifications temps réel
@@ -1482,7 +2144,7 @@ router.put('/:id/remettre-en-impression', auth, checkRole(['admin']), validateId
       io.emit('dossier_status_changed', {
         dossier,
         ancien_statut: d.statut,
-        nouveau_statut: statutLabelFr,
+        nouveau_statut: statutPersist,
         changed_by: req.user.nom,
         commentaire: commentaire || 'Remise en impression par admin',
         message: `Dossier ${dossier.numero_commande || dossier.numero || dossier.id} remis en impression par ${req.user.nom}`
@@ -1490,16 +2152,16 @@ router.put('/:id/remettre-en-impression', auth, checkRole(['admin']), validateId
     }
 
     // 7. Log pour audit
-    console.log(`✅ ADMIN REPRINT: Dossier ${id} remis en impression: ${d.statut} → ${statutLabelFr} par ${req.user.nom}`);
+    console.log(`✅ ADMIN REPRINT: Dossier ${id} remis en impression: ${d.statut} → ${statutPersist} par ${req.user.nom}`);
 
     // 8. Réponse
     res.json({
       success: true,
-      message: `Dossier remis en impression avec succès: ${d.statut} → ${statutLabelFr}`,
+      message: `Dossier remis en impression avec succès: ${d.statut} → ${statutPersist}`,
       dossier,
       statut_code: statutCodeNormalise,
       ancien_statut: d.statut,
-      nouveau_statut: statutLabelFr,
+      nouveau_statut: statutPersist,
       commentaire: commentaire || 'Remise en impression par admin'
     });
 
@@ -1517,7 +2179,7 @@ router.put('/:id/remettre-en-impression', auth, checkRole(['admin']), validateId
 router.post('/:id/fichiers', auth, checkDossierPermission('upload_file'), upload.array('files', 10), async (req, res) => {
   try {
     const { id: dossierId } = req.params;
-    
+
     // Le dossier a déjà été chargé et vérifié par checkDossierPermission
     const dossier = req.dossier;
 
@@ -1540,7 +2202,7 @@ router.post('/:id/fichiers', auth, checkDossierPermission('upload_file'), upload
           message: 'Upload interdit: dossier validé et figé. Disponible uniquement si remis "À revoir"',
         });
       }
-      
+
       if (!allowedStatuses.includes(dossier.statut)) {
         return res.status(403).json({
           success: false,
@@ -1561,7 +2223,7 @@ router.post('/:id/fichiers', auth, checkDossierPermission('upload_file'), upload
     for (const file of req.files) {
       try {
         const fileExtension = path.extname(file.originalname).toLowerCase();
-        const relativePath = `uploads/${dossier.folder_id || dossierId}/${file.filename}`;
+        const relativePath = `uploads/${dossier.id || dossierId}/${file.filename}`;
 
         const fileBuffer = await fs.readFile(file.path);
         const crypto = require('crypto');
@@ -1613,8 +2275,8 @@ router.post('/:id/fichiers', auth, checkDossierPermission('upload_file'), upload
 
     // Émission Socket.IO pour chaque fichier
     for (const file of uploadedFiles) {
-      socketService.emitFileUploaded(dossier.folder_id, file);
-      await logDossierActivity(dossier.folder_id, req.user.id, 'file_uploaded', {
+      socketService.emitFileUploaded(dossier.id, file);
+      await logDossierActivity(dossier.id, req.user.id, 'file_uploaded', {
         file_name: file.nom,
         file_size: file.taille,
       });
@@ -1646,7 +2308,7 @@ router.get('/:id/fichiers', auth, checkDossierPermission('view'), async (req, re
       FROM fichiers f
       LEFT JOIN users u ON f.uploaded_by = u.id
       WHERE f.dossier_id = $1
-      ORDER BY f.uploaded_at DESC
+      ORDER BY f.created_at DESC, f.id DESC
     `;
 
     const filesResult = await db.query(filesQuery, [dossier.id]);
@@ -1844,7 +2506,7 @@ router.delete('/fichiers/:id', auth, async (req, res) => {
     // Récupérer le dossier pour avoir le folder_id
     const dossierResult = await db.query('SELECT folder_id FROM dossiers WHERE id = $1', [file.dossier_id]);
     const folderId = dossierResult.rows[0]?.folder_id;
-    
+
     if (folderId) {
       socketService.emitFileDeleted(folderId, fileId, file.nom);
       await logDossierActivity(folderId, req.user.id, 'file_deleted', {
@@ -1879,26 +2541,35 @@ router.delete('/:id', auth, checkDossierPermission('delete'), async (req, res) =
     }
     const dossier = dossierResult.rows[0];
 
-    // Autorisation: admin OU préparateur propriétaire du dossier (statuts En cours/À revoir)
+    // Autorisation corrigée selon spécifications :
+    // - Admin : peut tout supprimer
+    // - Préparateur : peut supprimer UNIQUEMENT si :
+    //   1. NON validé (valide_preparateur = false)
+    //   2. ET statut != 'a_revoir' (un dossier renvoyé "à revoir" ne peut plus être supprimé)
     const isAdmin = user.role === 'admin';
-    // Normaliser le statut pour gérer les différents formats
     const statutNormalise = dossier.statut.toLowerCase().replace(/\s+/g, '_');
+
     const isPreparateurOwner =
       user.role === 'preparateur' &&
       dossier.created_by === parseInt(user.id) &&
-      (statutNormalise === 'en_cours' || statutNormalise === 'a_revoir');
+      !dossier.valide_preparateur &&
+      statutNormalise !== 'a_revoir';
+
     if (!isAdmin && !isPreparateurOwner) {
-      return res.status(403).json({ success: false, message: 'Suppression non autorisée' });
+      return res.status(403).json({
+        success: false,
+        message: 'Suppression non autorisée. Les dossiers validés ou renvoyés "à revoir" ne peuvent pas être supprimés par le préparateur.'
+      });
     }
 
     // Supprimer les fichiers physiques et en base
     const filesResult = await db.query('SELECT * FROM fichiers WHERE dossier_id = $1', [dossierId]);
     for (const file of filesResult.rows) {
-      const fullPath = path.join(__dirname, '../..', file.chemin);
+      const fullPath = path.join(__dirname, '../..', file.chemin_stockage);
       try {
         await fs.unlink(fullPath);
       } catch (unlinkError) {
-        console.warn(`Impossible de supprimer le fichier physique ${file.nom}:`, unlinkError);
+        console.warn(`Impossible de supprimer le fichier physique ${file.nom_original}:`, unlinkError);
       }
     }
     await db.query('DELETE FROM fichiers WHERE dossier_id = $1', [dossierId]);
@@ -1912,22 +2583,28 @@ router.delete('/:id', auth, checkDossierPermission('delete'), async (req, res) =
       console.warn('Impossible de supprimer le répertoire du dossier:', rmdirError);
     }
 
-    // Supprimer l'historique éventuel (optionnel)
+    // Supprimer l'historique éventuel (optionnel) avec fallback
     try {
       await db.query('DELETE FROM dossier_status_history WHERE dossier_id = $1', [dossierId]);
-    } catch (_) {}
+    } catch (histErr) {
+      if (histErr && (histErr.code === '42P01' || /relation .* does not exist/i.test(histErr.message))) {
+        try {
+          await db.query('DELETE FROM historique_statuts WHERE dossier_id = $1', [dossierId]);
+        } catch (_) { }
+      }
+    }
 
     // Supprimer le dossier
     await db.query('DELETE FROM dossiers WHERE id = $1', [dossierId]);
 
     // Notifier via Socket.IO
-    socketService.emitDossierDeleted(dossier.folder_id, {
+    socketService.emitDossierDeleted(dossier.id, {
       numero_commande: dossier.numero_commande,
       deleted_by: user.nom,
     });
-    
+
     // Logger (avant suppression pour avoir le folder_id)
-    await logDossierActivity(dossier.folder_id, user.id, 'deleted', {
+    await logDossierActivity(dossier.id, user.id, 'deleted', {
       numero_commande: dossier.numero_commande,
     });
 
@@ -1951,9 +2628,9 @@ router.put('/:id/valider', auth, checkDossierPermission('validate'), async (req,
     const { commentaire = null } = req.body || {};
     const dossier = req.dossier; // Dossier déjà chargé par le middleware
 
-    console.log('[WORKFLOW_SIMPLE] Validation/revalidation:', { 
-      user: req.user?.nom, 
-      dossier_id: dossier.folder_id,
+    console.log('[WORKFLOW_SIMPLE] Validation/revalidation:', {
+      user: req.user?.nom,
+      dossier_id: dossier.id,
       statut_actuel: dossier.statut,
       commentaire_revision: dossier.commentaire_revision
     });
@@ -1962,26 +2639,27 @@ router.put('/:id/valider', auth, checkDossierPermission('validate'), async (req,
     // Normaliser le statut pour gérer les différents formats (en_cours, En cours, etc.)
     const statutNormalise = dossier.statut.toLowerCase().replace(/\s+/g, '_');
     const statutsAutorisesNormalises = ['en_cours', 'a_revoir'];
-    
+
     if (!statutsAutorisesNormalises.includes(statutNormalise)) {
-      return res.status(400).json({ 
-        success: false, 
-        message: `Impossible de valider ce dossier. Statut actuel: "${dossier.statut}". Le dossier doit être "En cours" ou "À revoir".` 
+      return res.status(400).json({
+        success: false,
+        message: `Impossible de valider ce dossier. Statut actuel: "${dossier.statut}". Le dossier doit être "En cours" ou "À revoir".`
       });
     }
 
     // 2. Vérifier qu'il y a au moins un fichier
     const filesCheck = await db.query('SELECT COUNT(*) FROM fichiers WHERE dossier_id = $1', [dossier.id]);
     if (parseInt(filesCheck.rows[0].count) === 0) {
-      return res.status(400).json({ 
-        success: false, 
-        message: 'Impossible de valider un dossier sans fichiers. Veuillez d\'abord uploader un fichier.' 
+      return res.status(400).json({
+        success: false,
+        message: 'Impossible de valider un dossier sans fichiers. Veuillez d\'abord uploader un fichier.'
       });
     }
 
-    // 3. Workflow simplifié: dossier → "Prêt impression" (prêt pour les imprimeurs)
-    const nouveauStatut = 'Prêt impression';
-    
+    // 3. Workflow simplifié: dossier → "pret_impression" (prêt pour les imprimeurs)
+    const nouveauStatutFr = 'Prêt impression';  // Label français
+    const nouveauStatut = 'pret_impression';
+
     const updateQuery = `
       UPDATE dossiers
       SET statut = $2, valide_preparateur = true, date_validation_preparateur = NOW()
@@ -1991,28 +2669,41 @@ router.put('/:id/valider', auth, checkDossierPermission('validate'), async (req,
     const updateResult = await db.query(updateQuery, [dossier.id, nouveauStatut]);
     const dossierMisAJour = updateResult.rows[0];
 
-    // 4. Historique des changements
+    // 4. Historique des changements avec fallback
     try {
       await db.query(
-        `INSERT INTO dossier_status_history (dossier_id, ancien_statut, nouveau_statut, changed_by, commentaire)
+        `INSERT INTO dossier_status_history (dossier_id, old_status, new_status, changed_by, comment)
          VALUES ($1, $2, $3, $4, $5)`,
-        [dossier.id, dossier.statut, nouveauStatut, req.user.id, commentaire]
+        [dossier.id, dossier.statut, nouveauStatutFr, req.user.id, commentaire]
       );
     } catch (e) {
-      console.warn('[WORKFLOW_SIMPLE] Erreur historique:', e.message);
+      // Fallback vers historique_statuts
+      if (e && (e.code === '42P01' || /relation .* does not exist/i.test(e.message))) {
+        try {
+          await db.query(
+            `INSERT INTO historique_statuts (dossier_id, ancien_statut, nouveau_statut, user_id, commentaire)
+             VALUES ($1, $2, $3, $4, $5)`,
+            [dossier.id, dossier.statut, nouveauStatutFr, req.user.id, commentaire]
+          );
+        } catch (legacyErr) {
+          console.warn('[WORKFLOW_SIMPLE] Erreur historique:', legacyErr.message);
+        }
+      } else {
+        console.warn('[WORKFLOW_SIMPLE] Erreur historique:', e.message);
+      }
     }
 
     // 5. Notifications Socket.IO
     try {
       const socketService = require('../services/socketService');
-      socketService.emitStatusChanged(dossier.folder_id, dossier.statut, nouveauStatut, dossierMisAJour);
+      socketService.emitStatusChanged(dossier.id, dossier.statut, nouveauStatut, dossierMisAJour);
     } catch (socketError) {
       console.warn('[WORKFLOW_SIMPLE] Erreur notification:', socketError.message);
     }
 
     // 6. Message selon le contexte (validation initiale vs revalidation)
-    const messageSucces = statutNormalise === 'a_revoir' 
-      ? 'Dossier revalidé avec succès ! Il est maintenant prêt pour l\'impression.' 
+    const messageSucces = statutNormalise === 'a_revoir'
+      ? 'Dossier revalidé avec succès ! Il est maintenant prêt pour l\'impression.'
       : 'Dossier validé avec succès ! Il est maintenant prêt pour l\'impression.';
 
     console.log('[WORKFLOW_SIMPLE] Succès:', messageSucces);
@@ -2040,3 +2731,238 @@ router.put('/:id/valider', auth, checkDossierPermission('validate'), async (req,
     });
   }
 });
+
+// 🚨 PATCH /dossiers/:id/urgent - Marquer/démarquer un dossier comme urgent (Préparateur uniquement)
+router.patch('/:id/urgent', auth, validateIdParam('id'), async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { urgent } = req.body;
+
+    // Vérifier que le champ urgent est un booléen
+    if (typeof urgent !== 'boolean') {
+      return res.status(400).json({
+        success: false,
+        message: 'Le champ urgent doit être un booléen (true/false)'
+      });
+    }
+
+    // Seul le préparateur peut marquer comme urgent
+    if (req.user.role !== 'preparateur' && req.user.role !== 'admin') {
+      return res.status(403).json({
+        success: false,
+        message: 'Seul le préparateur peut marquer un dossier comme urgent'
+      });
+    }
+
+    // Charger le dossier
+    const checkResult = await db.query(
+      `SELECT id, created_by, preparateur_id, urgent FROM dossiers WHERE id = $1`,
+      [id]
+    );
+
+    if (checkResult.rows.length === 0) {
+      return res.status(404).json({
+        success: false,
+        message: 'Dossier introuvable'
+      });
+    }
+
+    const dossier = checkResult.rows[0];
+
+    // Vérifier que le préparateur est le créateur (sauf pour admin)
+    if (req.user.role === 'preparateur' && dossier.created_by !== req.user.id && dossier.preparateur_id !== req.user.id) {
+      return res.status(403).json({
+        success: false,
+        message: 'Vous ne pouvez marquer comme urgent que vos propres dossiers'
+      });
+    }
+
+    // Mettre à jour le statut urgent
+    const updateResult = await db.query(
+      `UPDATE dossiers SET urgent = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2 RETURNING *`,
+      [urgent, id]
+    );
+
+    const dossierMisAJour = updateResult.rows[0];
+
+    console.log(`✅ Dossier ${id} marqué comme ${urgent ? 'URGENT' : 'NORMAL'} par ${req.user.nom}`);
+
+    // Émettre une notification Socket.IO
+    try {
+      const socketService = require('../services/socketService');
+      socketService.emitDossierUpdated(dossierMisAJour);
+    } catch (socketError) {
+      console.warn('Erreur notification urgent:', socketError.message);
+    }
+
+    return res.json({
+      success: true,
+      message: urgent ? 'Dossier marqué comme urgent' : 'Dossier retiré des urgents',
+      dossier: dossierMisAJour
+    });
+
+  } catch (error) {
+    console.error('Erreur changement urgent:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Erreur lors du changement du statut urgent',
+      error: error.message
+    });
+  }
+});
+
+// 📅 PATCH /dossiers/:id/repousser-livraison - Reporter la date de livraison (accessible livreur)
+router.patch('/:id/repousser-livraison', auth, validateIdParam('id'), async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { date_livraison_prevue, commentaire_report } = req.body;
+
+    console.log(`📅 [REPOUSSER] Début - Dossier ${id}, User ${req.user.id}, Date: ${date_livraison_prevue}`);
+
+    if (!date_livraison_prevue) {
+      return res.status(400).json({
+        success: false,
+        message: 'La nouvelle date de livraison est requise'
+      });
+    }
+
+    // Vérifier que le dossier existe
+    console.log(`📅 [REPOUSSER] Vérification dossier ${id}...`);
+    const checkResult = await db.query('SELECT * FROM dossiers WHERE id = $1', [id]);
+
+    if (checkResult.rows.length === 0) {
+      return res.status(404).json({
+        success: false,
+        message: 'Dossier introuvable'
+      });
+    }
+
+    const dossier = checkResult.rows[0];
+    console.log(`📅 [REPOUSSER] Dossier trouvé - Statut: ${dossier.statut}`);
+
+    // Seuls les livreurs et admins peuvent reporter une livraison
+    if (req.user.role !== 'livreur' && req.user.role !== 'admin') {
+      return res.status(403).json({
+        success: false,
+        message: 'Seuls les livreurs peuvent reporter une livraison'
+      });
+    }
+
+    // Mettre à jour la date de livraison
+    console.log(`📅 [REPOUSSER] Mise à jour date...`);
+    const updateResult = await db.query(
+      `UPDATE dossiers 
+       SET date_livraison_prevue = $1, 
+           commentaire_report = $2,
+           updated_at = CURRENT_TIMESTAMP 
+       WHERE id = $3 
+       RETURNING *`,
+      [
+        date_livraison_prevue,
+        commentaire_report || `Reporté au ${date_livraison_prevue}`,
+        id
+      ]
+    );
+
+    const dossierMisAJour = updateResult.rows[0];
+    console.log(`📅 [REPOUSSER] Dossier mis à jour, insertion historique...`);
+
+    // Enregistrer dans l'historique
+    await db.query(
+      `INSERT INTO historique_statuts 
+       (dossier_id, ancien_statut, nouveau_statut, user_id, commentaire) 
+       VALUES ($1, $2, $3, $4, $5)`,
+      [
+        id,
+        dossier.statut,
+        dossier.statut, // Même statut, juste la date change
+        req.user.id,
+        `Report de livraison au ${new Date(date_livraison_prevue).toLocaleString('fr-FR')}${commentaire_report ? `: ${commentaire_report}` : ''}`
+      ]
+    );
+
+    console.log(`📅 Livraison du dossier ${id} reportée au ${date_livraison_prevue} par ${req.user.nom}`);
+
+    // Émettre une notification Socket.IO
+    try {
+      const socketService = require('../services/socketService');
+      socketService.emitDossierUpdated(dossierMisAJour);
+    } catch (socketError) {
+      console.warn('Erreur notification report livraison:', socketError.message);
+    }
+
+    return res.json({
+      success: true,
+      message: 'Date de livraison reportée avec succès',
+      dossier: dossierMisAJour
+    });
+
+  } catch (error) {
+    console.error('Erreur report livraison:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Erreur lors du report de la livraison',
+      error: error.message
+    });
+  }
+});
+
+// Endpoint pour enregistrer les modifications dans l'historique
+router.post('/:id/history', auth, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { type, commentaire, changes, ancien_statut, nouveau_statut } = req.body;
+
+    console.log(`📝 [HISTORIQUE] Enregistrement pour dossier ${id}:`, {
+      type,
+      commentaire: commentaire?.substring(0, 100),
+      changesCount: changes?.length
+    });
+
+    // Vérifier que le dossier existe
+    const dossierResult = await db.query(
+      'SELECT id, statut FROM dossiers WHERE id = $1',
+      [id]
+    );
+
+    if (dossierResult.rows.length === 0) {
+      return res.status(404).json({
+        success: false,
+        message: 'Dossier non trouvé'
+      });
+    }
+
+    const dossier = dossierResult.rows[0];
+
+    // Enregistrer dans l'historique
+    await db.query(
+      `INSERT INTO historique_statuts 
+       (dossier_id, ancien_statut, nouveau_statut, user_id, commentaire) 
+       VALUES ($1, $2, $3, $4, $5)`,
+      [
+        id,
+        ancien_statut || dossier.statut,
+        nouveau_statut || dossier.statut,
+        req.user.id,
+        commentaire
+      ]
+    );
+
+    console.log(`✅ [HISTORIQUE] Modification enregistrée pour dossier ${id}`);
+
+    return res.json({
+      success: true,
+      message: 'Historique enregistré avec succès'
+    });
+
+  } catch (error) {
+    console.error('❌ [HISTORIQUE] Erreur:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Erreur lors de l\'enregistrement de l\'historique',
+      error: error.message
+    });
+  }
+});
+
+module.exports = router;

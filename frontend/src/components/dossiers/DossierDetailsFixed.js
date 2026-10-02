@@ -17,15 +17,16 @@ import FileViewer from '../files/FileViewer';
 import FileThumbnail from '../files/FileThumbnailSimple';
 import { useAuth } from '../../context/AuthContext';
 import { normalizeDossier } from '../../services/dossierNormalizer';
-import { getAvailableActions } from '../../workflow-adapter/workflowActions';
+import { getAvailableActions, WORKFLOW_ACTIONS } from '../../workflow-adapter/workflowActions';
+import { normalizeStatusLabel } from '../../workflow-adapter/normalizeStatusLabel';
 import { filterValidFiles } from '../../utils/fileValidation';
 
-export default function DossierDetails({ 
-  dossier: dossierProp = null, 
-  dossierId = null, 
-  isOpen = false, 
-  onClose, 
-  onStatusChange = () => {} 
+export default function DossierDetails({
+  dossier: dossierProp = null,
+  dossierId = null,
+  isOpen = false,
+  onClose,
+  onStatusChange = () => { }
 }) {
   const { user } = useAuth();
   // Initialiser avec dossierProp seulement s'il est vraiment fourni et valide
@@ -58,7 +59,7 @@ export default function DossierDetails({
   // Extraire l'ID - utiliser un state pour le garder stable
   const [effectiveId, setEffectiveId] = useState(null);
   const previousIsOpen = useRef(isOpen);
-  
+
   // Mettre à jour l'ID uniquement quand le modal s'ouvre (transition false -> true)
   useEffect(() => {
     if (isOpen && !previousIsOpen.current) {
@@ -69,22 +70,22 @@ export default function DossierDetails({
         if (strValue === '' || strValue === 'null' || strValue === 'undefined') return null;
         return value;
       };
-      
+
       // Priorité: dossierId explicite > propriétés de dossierProp
       // Vérifier d'abord si dossierId est fourni directement
       let id = extractValidId(dossierId);
-      
+
       // Si pas d'ID direct et que dossierProp existe, chercher dans ses propriétés
       if (!id && dossierProp && typeof dossierProp === 'object') {
-        id = extractValidId(dossierProp.folder_id) || 
-             extractValidId(dossierProp.id) || 
-             extractValidId(dossierProp.dossier_id) ||
-             extractValidId(dossierProp.numero_dossier) ||
-             extractValidId(dossierProp.numero);
+        id = extractValidId(dossierProp.folder_id) ||
+          extractValidId(dossierProp.id) ||
+          extractValidId(dossierProp.dossier_id) ||
+          extractValidId(dossierProp.numero_dossier) ||
+          extractValidId(dossierProp.numero);
       }
-      
+
       setEffectiveId(id);
-      
+
       // DEBUG: Afficher l'ID résolu UNIQUEMENT au moment de l'extraction
       if (process.env.NODE_ENV === 'development') {
         notificationService.debug && notificationService.debug('[DossierDetails] ID Resolution:', {
@@ -134,72 +135,72 @@ export default function DossierDetails({
 
   const getStatusBadge = status => {
     const statusConfig = {
-      nouveau: { 
-        gradient: 'bg-gradient-to-r from-blue-400 to-blue-600', 
-        icon: '🆕', 
+      nouveau: {
+        gradient: 'bg-gradient-to-r from-blue-400 to-blue-600',
+        icon: '🆕',
         label: 'Nouveau',
         ring: 'ring-blue-400/30'
       },
-      en_cours: { 
-        gradient: 'bg-gradient-to-r from-amber-400 to-yellow-500', 
-        icon: '⚙️', 
+      en_cours: {
+        gradient: 'bg-gradient-to-r from-amber-400 to-yellow-500',
+        icon: '⚙️',
         label: 'En préparation',
         ring: 'ring-yellow-400/30'
       },
-      a_revoir: { 
-        gradient: 'bg-gradient-to-r from-red-500 to-pink-600', 
-        icon: '⚠️', 
+      a_revoir: {
+        gradient: 'bg-gradient-to-r from-red-500 to-pink-600',
+        icon: '⚠️',
         label: 'À revoir',
         ring: 'ring-red-400/30',
         animate: 'animate-pulse'
       },
-      pret_impression: { 
-        gradient: 'bg-gradient-to-r from-purple-500 to-indigo-600', 
-        icon: '✓', 
+      pret_impression: {
+        gradient: 'bg-gradient-to-r from-purple-500 to-indigo-600',
+        icon: '✓',
         label: 'Prêt impression',
         ring: 'ring-purple-400/30'
       },
-      en_impression: { 
-        gradient: 'bg-gradient-to-r from-orange-500 to-amber-600', 
-        icon: '🖨️', 
+      en_impression: {
+        gradient: 'bg-gradient-to-r from-orange-500 to-amber-600',
+        icon: '🖨️',
         label: 'En impression',
         ring: 'ring-orange-400/30'
       },
-      imprime: { 
-        gradient: 'bg-gradient-to-r from-emerald-500 to-green-600', 
-        icon: '📋', 
+      imprime: {
+        gradient: 'bg-gradient-to-r from-emerald-500 to-green-600',
+        icon: '📋',
         label: 'Imprimé',
         ring: 'ring-emerald-400/30'
       },
-      pret_livraison: { 
-        gradient: 'bg-gradient-to-r from-cyan-500 to-blue-600', 
-        icon: '📦', 
+      pret_livraison: {
+        gradient: 'bg-gradient-to-r from-cyan-500 to-blue-600',
+        icon: '📦',
         label: 'Prêt livraison',
         ring: 'ring-cyan-400/30'
       },
-      en_livraison: { 
-        gradient: 'bg-gradient-to-r from-blue-600 to-indigo-700', 
-        icon: '🚚', 
+      en_livraison: {
+        gradient: 'bg-gradient-to-r from-blue-600 to-indigo-700',
+        icon: '🚚',
         label: 'En livraison',
         ring: 'ring-blue-500/30'
       },
-      livre: { 
-        gradient: 'bg-gradient-to-r from-green-600 to-emerald-700', 
-        icon: '✅', 
+      livre: {
+        gradient: 'bg-gradient-to-r from-green-600 to-emerald-700',
+        icon: '✅',
         label: 'Livré',
         ring: 'ring-green-500/30'
       },
-      termine: { 
-        gradient: 'bg-gradient-to-r from-teal-600 to-green-700', 
-        icon: '🎉', 
+      termine: {
+        gradient: 'bg-gradient-to-r from-teal-600 to-green-700',
+        icon: '🎉',
         label: 'Terminé',
         ring: 'ring-teal-500/30'
       },
     };
 
-    const config = statusConfig[status] || { 
-      gradient: 'bg-gradient-to-r from-gray-400 to-gray-600', 
-      icon: '📋', 
+    const config = statusConfig[status] || {
+      gradient: 'bg-gradient-to-r from-gray-400 to-gray-600',
+      icon: '📋',
       label: status,
       ring: 'ring-gray-400/30'
     };
@@ -220,22 +221,22 @@ export default function DossierDetails({
       }
       return;
     }
-    
+
     try {
       setLoading(true);
       setError('');
-      
+
       if (process.env.NODE_ENV === 'development') {
         notificationService.debug && notificationService.debug('[DossierDetails] Chargement du dossier:', id);
       }
-      
+
       const response = await dossiersService.getDossier(id);
       const raw = response?.dossier || response;
-      
+
       if (!raw) {
         throw new Error('Aucune donnée de dossier reçue');
       }
-      
+
       const normalized = normalizeDossier(raw);
 
       let dossierFiles = response.files || raw?.fichiers || [];
@@ -255,21 +256,37 @@ export default function DossierDetails({
 
       // Filtrer les fichiers avec ID invalide
       const validFiles = filterValidFiles(dossierFiles);
-      
+
+      // DEBUG: Vérifier les propriétés des fichiers
+      if (process.env.NODE_ENV === 'development' && validFiles.length > 0) {
+        console.log('🔍 [DossierDetails] Premier fichier reçu:', validFiles[0]);
+        console.log('🔍 [DossierDetails] Propriétés MIME disponibles:', {
+          type_mime: validFiles[0]?.type_mime,
+          mimetype: validFiles[0]?.mimetype,
+          type: validFiles[0]?.type,
+          nom_original: validFiles[0]?.nom_original,
+          original_filename: validFiles[0]?.original_filename,
+          nom: validFiles[0]?.nom
+        });
+      }
+
       const history = response.statut_history || raw?.historique || [];
-      
+      console.log('📊 [DEBUG] Historique reçu:', history);
+      console.log('📊 [DEBUG] Premier élément:', history[0]);
+
       // Batch tous les setState ensemble pour éviter multiples re-renders
       setDossier(normalized);
       setFiles(validFiles);
       setStatutHistory(history);
       setError('');
       setLoading(false);
-      
+
       if (process.env.NODE_ENV === 'development') {
-        notificationService.debug && notificationService.debug('[DossierDetails] Chargement réussi:', {
+        console.log('🔍 [DossierDetails] Chargement réussi:', {
           dossier: normalized?.numero_commande,
           files: validFiles.length,
-          history: history.length
+          history: history.length,
+          filesArray: validFiles
         });
       }
     } catch (err) {
@@ -279,11 +296,11 @@ export default function DossierDetails({
       else if (status === 404) userMessage = "Ce dossier n'existe pas ou a été supprimé.";
       else if (status === 403) userMessage = "Vous n'avez pas les permissions pour consulter ce dossier.";
       else userMessage = err?.response?.data?.message || err?.message || 'Erreur lors du chargement des détails';
-      
+
       if (process.env.NODE_ENV === 'development') {
         notificationService.debug && notificationService.debug('[DossierDetails] Erreur chargement:', err);
       }
-      
+
       setError(userMessage);
       setDossier(null);
       setFiles([]);
@@ -299,10 +316,10 @@ export default function DossierDetails({
       setLoadingFiles(true);
       const response = await filesService.getFiles(id);
       const list = response.files || response || [];
-      
+
       // Filtrer les fichiers avec ID invalide
       const validFiles = filterValidFiles(list);
-      
+
       setFiles(validFiles);
       setError('');
     } catch (err) {
@@ -440,7 +457,7 @@ export default function DossierDetails({
 
   useEffect(() => {
     if (!isOpen) return; // Ne rien faire si modal fermée
-    
+
     // Log détaillé pour debug
     try {
       notificationService.debug && notificationService.debug('[DossierDetails] Ouverture modal', {
@@ -453,26 +470,26 @@ export default function DossierDetails({
     } catch (e) { /* ignore */ }
 
     // Vérifications strictes de l'ID
-    if (!effectiveId || 
-        effectiveId === null || 
-        effectiveId === undefined ||
-        String(effectiveId).trim() === '' ||
-        String(effectiveId).trim().toLowerCase() === 'null' || 
-        String(effectiveId).trim().toLowerCase() === 'undefined') {
+    if (!effectiveId ||
+      effectiveId === null ||
+      effectiveId === undefined ||
+      String(effectiveId).trim() === '' ||
+      String(effectiveId).trim().toLowerCase() === 'null' ||
+      String(effectiveId).trim().toLowerCase() === 'undefined') {
       const errMsg = `Identifiant du dossier manquant ou invalide (reçu: ${effectiveId})`;
       try {
-        notificationService.debug && notificationService.debug('[DossierDetails] ERREUR ID invalide:', errMsg, {dossierId, dossierProp});
+        notificationService.debug && notificationService.debug('[DossierDetails] ERREUR ID invalide:', errMsg, { dossierId, dossierProp });
         notificationService.error && notificationService.error(errMsg);
       } catch (e) { /* ignore */ }
       setError(errMsg);
       setLoading(false);
       return;
     }
-    
+
     try {
       notificationService.debug && notificationService.debug('[DossierDetails] ID valide, chargement...', effectiveId);
     } catch (e) { /* ignore */ }
-    
+
     // Charger les données uniquement si l'ID est valide
     // Note: loadDossierDetails charge aussi les fichiers en interne
     loadDossierDetails();
@@ -581,9 +598,9 @@ export default function DossierDetails({
       rose: 'bg-gradient-to-r from-pink-500 to-rose-600 text-white',
       gray: 'bg-gradient-to-r from-gray-500 to-slate-600 text-white',
     };
-    
+
     if (!value || value === '' || value === 'undefined' || value === 'null') return null;
-    
+
     return (
       <div className="flex items-center justify-between py-2.5 px-4 bg-gradient-to-r from-gray-50 to-white rounded-lg border border-gray-200 hover:shadow-md transition-all">
         <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-extrabold uppercase tracking-wider ${colors[colorClass] || colors.violet} shadow-sm`}>
@@ -601,9 +618,9 @@ export default function DossierDetails({
         const formData = dossier.data_formulaire || {};
         const machineType = (dossier.type_formulaire || dossier.machine || '').toLowerCase();
         const isRoland = machineType.includes('roland');
-        
+
         // ✅ MODE COMPACT INSPIRÉ DE L'IMAGE : Badges inline avec label + valeur
-        
+
         return (
           <div className="space-y-2">
             {/* Description si présente */}
@@ -627,7 +644,7 @@ export default function DossierDetails({
             {formData.grammage && renderCompactBadge('PAPIER', formData.grammage, 'orange')}
             {Array.isArray(formData.finition) && formData.finition.length > 0 && renderCompactBadge('FINITIONS', formData.finition.join(', '), 'rose')}
             {typeof formData.numerotation !== 'undefined' && renderCompactBadge('NUMÉROTATION', formData.numerotation ? '✓ Oui' : '✗ Non', 'gray')}
-            
+
             {/* Support Roland */}
             {isRoland && formData.type_support && renderCompactBadge('SUPPORT', formData.type_support, 'violet')}
             {isRoland && (formData.largeur || formData.hauteur) && renderCompactBadge('DIMENSIONS', `${formData.largeur || '?'} × ${formData.hauteur || '?'} ${formData.unite || 'cm'}`, 'cyan')}
@@ -650,7 +667,7 @@ export default function DossierDetails({
         return (
           <div>
             {/* Upload déplacé en bas en section pleine largeur - Suppression d'ici pour éviter duplication */}
-            
+
             {files.length > 0 ? (
               <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
                 {files
@@ -662,75 +679,88 @@ export default function DossierDetails({
                     return true;
                   })
                   .map(file => {
-                  const isImage = file.type?.includes('image') || file.nom?.match(/\.(jpg|jpeg|png|gif|webp)$/i);
-                  const isPdf = file.type?.includes('pdf') || file.nom?.match(/\.pdf$/i);
-                  const canPreview = isImage || isPdf;
+                    const fileType = file.type_mime || file.mimetype || file.type || '';
+                    const fileName = file.nom_original || file.original_filename || file.nom || '';
+                    const isImage = fileType.includes('image') || fileName.match(/\.(jpg|jpeg|png|gif|webp)$/i);
+                    const isPdf = fileType.includes('pdf') || fileName.match(/\.pdf$/i);
+                    const canPreview = isImage || isPdf;
 
-                  return (
-                    <div key={file.id} className="group relative bg-gradient-to-br from-white to-gray-50 rounded-xl p-4 border-2 border-gray-200 hover:border-blue-400 hover:shadow-2xl transition-all duration-300 transform hover:scale-105">
-                {/* Badge de type de fichier */}
-                <div className="absolute top-2 right-2 z-10">
-                  {isImage && (
-                    <span className="px-2 py-1 bg-gradient-to-r from-pink-500 to-rose-600 text-white text-xs font-bold rounded-full shadow-lg">
-                      IMAGE
-                    </span>
-                  )}
-                  {isPdf && (
-                    <span className="px-2 py-1 bg-gradient-to-r from-red-500 to-rose-600 text-white text-xs font-bold rounded-full shadow-lg">
-                      PDF
-                    </span>
-                  )}
-                </div>
-                
-                <div className="text-center mb-3 cursor-pointer" onClick={() => { if (canPreview) { setSelectedFile(file); setShowFileViewer(true); } }}>
-                  <FileThumbnail file={file} size={80} />
-                </div>
-                
-                <p className="text-xs font-bold text-gray-900 truncate mb-3 text-center group-hover:text-blue-600 transition-colors" title={file.original_filename || file.nom || 'Fichier'}>
-                  {file.original_filename || file.nom || 'Fichier'}
-                </p>
-                
-                <div className="flex gap-2">
-                  <button 
-                    onClick={() => filesService.downloadFile(file.id)} 
-                    className="group/btn relative flex-1 p-2.5 bg-gradient-to-r from-blue-500 to-indigo-600 text-white rounded-lg hover:shadow-lg transform hover:scale-110 transition-all duration-200" 
-                    title="Télécharger"
-                  >
-                    <ArrowDownTrayIcon className="h-4 w-4 mx-auto" />
-                    <span className="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-2 px-2 py-1 bg-gray-900 text-white text-xs rounded opacity-0 group-hover/btn:opacity-100 transition-opacity whitespace-nowrap pointer-events-none">
-                      Télécharger
-                    </span>
-                  </button>
-                  
-                  {canPreview && (
-                    <button 
-                      onClick={() => { setSelectedFile(file); setShowFileViewer(true); }} 
-                      className="group/btn relative flex-1 p-2.5 bg-gradient-to-r from-emerald-500 to-green-600 text-white rounded-lg hover:shadow-lg transform hover:scale-110 transition-all duration-200" 
-                      title="Aperçu"
-                    >
-                      <EyeIcon className="h-4 w-4 mx-auto" />
-                      <span className="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-2 px-2 py-1 bg-gray-900 text-white text-xs rounded opacity-0 group-hover/btn:opacity-100 transition-opacity whitespace-nowrap pointer-events-none">
-                        Aperçu
-                      </span>
-                    </button>
-                  )}
-                  
-                  {user?.role === 'admin' && (
-                    <button 
-                      onClick={() => { setFileToDelete(file); setShowDeleteConfirm(true); }} 
-                      className="group/btn relative flex-1 p-2.5 bg-gradient-to-r from-red-500 to-pink-600 text-white rounded-lg hover:shadow-lg transform hover:scale-110 transition-all duration-200" 
-                      title="Supprimer"
-                    >
-                      <TrashIcon className="h-4 w-4 mx-auto" />
-                      <span className="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-2 px-2 py-1 bg-gray-900 text-white text-xs rounded opacity-0 group-hover/btn:opacity-100 transition-opacity whitespace-nowrap pointer-events-none">
-                        Supprimer
-                      </span>
-                    </button>
-                  )}
-                </div>
-                    </div>
-                  );
-                })}
+                    // DEBUG: Log pour chaque fichier
+                    if (process.env.NODE_ENV === 'development') {
+                      console.log('🔍 [File Render] Fichier:', fileName, {
+                        fileType,
+                        isImage,
+                        isPdf,
+                        canPreview,
+                        rawFile: file
+                      });
+                    }
+
+                    return (
+                      <div key={file.id} className="group relative bg-gradient-to-br from-white to-gray-50 rounded-xl p-4 border-2 border-gray-200 hover:border-blue-400 hover:shadow-2xl transition-all duration-300 transform hover:scale-105">
+                        {/* Badge de type de fichier */}
+                        <div className="absolute top-2 right-2 z-10">
+                          {isImage && (
+                            <span className="px-2 py-1 bg-gradient-to-r from-pink-500 to-rose-600 text-white text-xs font-bold rounded-full shadow-lg">
+                              IMAGE
+                            </span>
+                          )}
+                          {isPdf && (
+                            <span className="px-2 py-1 bg-gradient-to-r from-red-500 to-rose-600 text-white text-xs font-bold rounded-full shadow-lg">
+                              PDF
+                            </span>
+                          )}
+                        </div>
+
+                        <div className="text-center mb-3 cursor-pointer" onClick={() => { if (canPreview) { setSelectedFile(file); setShowFileViewer(true); } }}>
+                          <FileThumbnail file={file} size={80} />
+                        </div>
+
+                        <p className="text-xs font-bold text-gray-900 truncate mb-3 text-center group-hover:text-blue-600 transition-colors" title={file.original_filename || file.nom || 'Fichier'}>
+                          {file.original_filename || file.nom || 'Fichier'}
+                        </p>
+
+                        <div className="flex gap-2">
+                          <button
+                            onClick={() => filesService.downloadFile(file.id)}
+                            className="group/btn relative flex-1 p-2.5 bg-gradient-to-r from-blue-500 to-indigo-600 text-white rounded-lg hover:shadow-lg transform hover:scale-110 transition-all duration-200"
+                            title="Télécharger"
+                          >
+                            <ArrowDownTrayIcon className="h-4 w-4 mx-auto" />
+                            <span className="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-2 px-2 py-1 bg-gray-900 text-white text-xs rounded opacity-0 group-hover/btn:opacity-100 transition-opacity whitespace-nowrap pointer-events-none">
+                              Télécharger
+                            </span>
+                          </button>
+
+                          {canPreview && (
+                            <button
+                              onClick={() => { setSelectedFile(file); setShowFileViewer(true); }}
+                              className="group/btn relative flex-1 p-2.5 bg-gradient-to-r from-emerald-500 to-green-600 text-white rounded-lg hover:shadow-lg transform hover:scale-110 transition-all duration-200"
+                              title="Aperçu"
+                            >
+                              <EyeIcon className="h-4 w-4 mx-auto" />
+                              <span className="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-2 px-2 py-1 bg-gray-900 text-white text-xs rounded opacity-0 group-hover/btn:opacity-100 transition-opacity whitespace-nowrap pointer-events-none">
+                                Aperçu
+                              </span>
+                            </button>
+                          )}
+
+                          {user?.role === 'admin' && (
+                            <button
+                              onClick={() => { setFileToDelete(file); setShowDeleteConfirm(true); }}
+                              className="group/btn relative flex-1 p-2.5 bg-gradient-to-r from-red-500 to-pink-600 text-white rounded-lg hover:shadow-lg transform hover:scale-110 transition-all duration-200"
+                              title="Supprimer"
+                            >
+                              <TrashIcon className="h-4 w-4 mx-auto" />
+                              <span className="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-2 px-2 py-1 bg-gray-900 text-white text-xs rounded opacity-0 group-hover/btn:opacity-100 transition-opacity whitespace-nowrap pointer-events-none">
+                                Supprimer
+                              </span>
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
               </div>
             ) : (
               <div className="text-center py-12">
@@ -777,7 +807,7 @@ export default function DossierDetails({
                   'Remettre en impression': { gradient: 'from-amber-500 to-orange-600', icon: '🔄', ring: 'ring-amber-400/30' },
                 };
                 const config = actionConfig[action.label] || { gradient: 'from-gray-500 to-gray-600', icon: '→', ring: 'ring-gray-400/30' };
-                
+
                 return (
                   <button
                     key={i}
@@ -792,9 +822,9 @@ export default function DossierDetails({
                 );
               })}
               {user?.role === 'admin' && (
-                <button 
-                  onClick={() => handleUnlockDossier()} 
-                  disabled={changingStatut} 
+                <button
+                  onClick={() => handleUnlockDossier()}
+                  disabled={changingStatut}
                   title="Déverrouiller le dossier (Admin)"
                   className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-gradient-to-r from-gray-700 to-gray-900 text-white font-semibold text-xs rounded-lg shadow hover:shadow-md ring-1 ring-gray-600/30 transition-all duration-200 hover:scale-105 disabled:opacity-50 disabled:cursor-not-allowed"
                 >
@@ -816,11 +846,11 @@ export default function DossierDetails({
                 </div>
                 <h4 className="text-lg font-extrabold text-gray-900">Progression du dossier</h4>
               </div>
-              
+
               <div className="relative space-y-2">
                 {/* Ligne verticale de progression */}
                 <div className="absolute left-5 top-8 bottom-8 w-1 bg-gradient-to-b from-blue-300 via-indigo-300 to-gray-200"></div>
-                
+
                 {[
                   { status: 'nouveau', label: 'Nouveau', icon: '🆕', color: 'blue' },
                   { status: 'en_cours', label: 'En préparation', icon: '⚙️', color: 'yellow' },
@@ -834,54 +864,51 @@ export default function DossierDetails({
                   const isComplete = statutHistory.some(h => h.nouveau_statut === stage.status || h.statut === stage.status);
                   const isCurrent = dossier.status === stage.status;
                   const completedDate = statutHistory.find(h => h.nouveau_statut === stage.status || h.statut === stage.status)?.created_at;
-                  
+
                   return (
                     <div key={stage.status} className="relative flex items-center gap-4 py-3">
-                {/* Icône de statut */}
-                <div className={`relative z-10 flex-shrink-0 w-10 h-10 rounded-full flex items-center justify-center font-bold shadow-lg transform transition-all duration-300 ${ 
-                  isCurrent 
-                    ? `bg-gradient-to-r from-${stage.color}-500 to-${stage.color}-600 text-white ring-4 ring-${stage.color}-200 scale-110 animate-pulse` 
-                    : isComplete 
-                    ? `bg-gradient-to-r from-${stage.color}-500 to-${stage.color}-600 text-white` 
-                    : 'bg-gray-200 text-gray-400' 
-                }`}>
-                  <span className="text-lg">{isComplete ? '✓' : stage.icon}</span>
-                </div>
-                
-                {/* Informations du statut */}
-                <div className={`flex-1 bg-white rounded-xl p-4 shadow-md transition-all duration-300 ${
-                  isCurrent ? 'ring-2 ring-blue-400 ring-offset-2' : ''
-                }`}>
-                  <div className="flex items-center justify-between">
-                    <p className={`font-bold text-sm ${
-                      isCurrent ? 'text-blue-600' : isComplete ? 'text-gray-900' : 'text-gray-400'
-                    }`}>
-                      {stage.label}
-                      {isCurrent && (
-                        <span className="ml-2 inline-flex items-center px-2 py-0.5 rounded-full text-xs bg-blue-100 text-blue-800">
-                          En cours
-                        </span>
-                      )}
-                    </p>
-                    {completedDate && (
-                      <span className="text-xs text-gray-500">
-                        {formatDateTime(completedDate)}
-                      </span>
-                    )}
-                  </div>
-                  
-                  {/* Barre de progression pour l'étape courante */}
-                  {isCurrent && (
-                    <div className="mt-2 h-1.5 bg-gray-200 rounded-full overflow-hidden">
-                      <div className="h-full bg-gradient-to-r from-blue-500 to-indigo-600 rounded-full animate-pulse" style={{ width: '75%' }}></div>
-                    </div>
-                  )}
-                </div>
+                      {/* Icône de statut */}
+                      <div className={`relative z-10 flex-shrink-0 w-10 h-10 rounded-full flex items-center justify-center font-bold shadow-lg transform transition-all duration-300 ${isCurrent
+                          ? `bg-gradient-to-r from-${stage.color}-500 to-${stage.color}-600 text-white ring-4 ring-${stage.color}-200 scale-110 animate-pulse`
+                          : isComplete
+                            ? `bg-gradient-to-r from-${stage.color}-500 to-${stage.color}-600 text-white`
+                            : 'bg-gray-200 text-gray-400'
+                        }`}>
+                        <span className="text-lg">{isComplete ? '✓' : stage.icon}</span>
+                      </div>
+
+                      {/* Informations du statut */}
+                      <div className={`flex-1 bg-white rounded-xl p-4 shadow-md transition-all duration-300 ${isCurrent ? 'ring-2 ring-blue-400 ring-offset-2' : ''
+                        }`}>
+                        <div className="flex items-center justify-between">
+                          <p className={`font-bold text-sm ${isCurrent ? 'text-blue-600' : isComplete ? 'text-gray-900' : 'text-gray-400'
+                            }`}>
+                            {stage.label}
+                            {isCurrent && (
+                              <span className="ml-2 inline-flex items-center px-2 py-0.5 rounded-full text-xs bg-blue-100 text-blue-800">
+                                En cours
+                              </span>
+                            )}
+                          </p>
+                          {completedDate && (
+                            <span className="text-xs text-gray-500">
+                              {formatDateTime(completedDate)}
+                            </span>
+                          )}
+                        </div>
+
+                        {/* Barre de progression pour l'étape courante */}
+                        {isCurrent && (
+                          <div className="mt-2 h-1.5 bg-gray-200 rounded-full overflow-hidden">
+                            <div className="h-full bg-gradient-to-r from-blue-500 to-indigo-600 rounded-full animate-pulse" style={{ width: '75%' }}></div>
+                          </div>
+                        )}
+                      </div>
                     </div>
                   );
                 })}
               </div>
-              
+
               {/* Indicateur de progression global */}
               <div className="mt-6 pt-6 border-t border-blue-200">
                 <div className="flex items-center justify-between mb-2">
@@ -891,7 +918,7 @@ export default function DossierDetails({
                   </span>
                 </div>
                 <div className="h-3 bg-gray-200 rounded-full overflow-hidden">
-                  <div 
+                  <div
                     className="h-full bg-gradient-to-r from-blue-500 via-indigo-500 to-purple-600 rounded-full transition-all duration-1000 ease-out"
                     style={{ width: `${Math.min((statutHistory.length / 8) * 100, 100)}%` }}
                   ></div>
@@ -906,54 +933,76 @@ export default function DossierDetails({
         return (
           <div className="space-y-2">
             {sortedHistory.length > 0 ? (
-              sortedHistory.map((entry, index) => {
-                const status = entry.nouveau_statut || entry.statut;
-                const author = entry.user_name || entry.utilisateur || entry.user || 'Système';
-                const date = entry.created_at || entry.date_changement;
-                const comment = entry.commentaire || entry.comment;
-                const isRecent = index === 0;
+              sortedHistory
+                .filter((entry) => {
+                  // Filtrer les entrées où ancien_statut = nouveau_statut (pas de changement réel)
+                  const newStat = entry.nouveau_statut || entry.new_status || entry.statut;
+                  const oldStat = entry.ancien_statut || entry.old_status;
+                  return !oldStat || oldStat !== newStat || entry.commentaire || entry.comment;
+                })
+                .map((entry, index) => {
+                  const status = entry.nouveau_statut || entry.new_status || entry.statut;
+                  const oldStatus = entry.ancien_statut || entry.old_status;
+                  const author = entry.user_name || entry.changed_by_name || entry.utilisateur || entry.user || (entry.user_id ? `Utilisateur #${entry.user_id}` : 'Système');
+                  const date = entry.created_at || entry.date_changement;
+                  const comment = entry.commentaire || entry.comment;
+                  const isRecent = index === 0;
 
-                return (
-                  <div 
-                    key={index} 
-                    className={`relative rounded-md p-2 border transition-all duration-150 ${
-                isRecent 
-                  ? 'bg-blue-50 border-blue-200' 
-                  : 'bg-white border-gray-200 hover:bg-gray-50'
-                    }`}
-                  >
-                    {/* Badge récent */}
-                    {isRecent && (
-                <div className="absolute -top-1.5 -right-1.5 px-1.5 py-0.5 bg-gradient-to-r from-blue-500 to-indigo-600 text-white text-[9px] font-bold rounded-full shadow">
-                  NOUVEAU
-                </div>
-                    )}
-                    
-                    {/* Ligne compacte : statut + date */}
-                    <div className="flex items-center justify-between gap-2 mb-1.5">
-                <div className="flex items-center gap-1.5 flex-1 min-w-0">
-                  {getStatusBadge(status)}
-                </div>
-                <span className="text-[10px] text-gray-500 font-medium flex-shrink-0">{formatDateTime(date)}</span>
+                  // Fonction pour traduire les codes de statut en français
+                  const getStatusLabel = (statusCode) => {
+                    const statusLabels = {
+                      'nouveau': 'Nouveau',
+                      'en_cours': 'En cours',
+                      'a_revoir': 'À revoir',
+                      'pret_impression': 'Prêt impression',
+                      'en_impression': 'En impression',
+                      'imprime': 'Imprimé',
+                      'pret_livraison': 'Prêt livraison',
+                      'en_livraison': 'En livraison',
+                      'livre': 'Livré',
+                      'termine': 'Terminé'
+                    };
+                    return statusLabels[statusCode] || statusCode;
+                  };
+
+                  return (
+                    <div
+                      key={index}
+                      className={`relative rounded-md p-2 border transition-all duration-150 ${isRecent
+                          ? 'bg-blue-50 border-blue-200'
+                          : 'bg-white border-gray-200 hover:bg-gray-50'
+                        }`}
+                    >
+                      {/* Badge récent */}
+                      {isRecent && (
+                        <div className="absolute -top-1.5 -right-1.5 px-1.5 py-0.5 bg-gradient-to-r from-blue-500 to-indigo-600 text-white text-[9px] font-bold rounded-full shadow">
+                          NOUVEAU
+                        </div>
+                      )}
+
+                      {/* Ligne compacte : changement de statut + date */}
+                      <div className="flex items-center justify-between gap-2 mb-1.5">
+                        <div className="flex items-center gap-1.5 flex-1 min-w-0 flex-wrap">
+                          <span className="text-xs font-bold text-blue-700 bg-blue-50 px-2 py-0.5 rounded">{getStatusLabel(status)}</span>
+                        </div>
+                        <span className="text-[10px] text-gray-500 font-medium flex-shrink-0">{formatDateTime(date)}</span>
+                      </div>                    {/* Auteur compact */}
+                      <div className="flex items-center gap-1.5 mb-1">
+                        <div className="w-4 h-4 bg-gradient-to-br from-gray-400 to-gray-600 rounded-full flex items-center justify-center flex-shrink-0">
+                          <span className="text-white text-[9px] font-bold">{author.charAt(0).toUpperCase()}</span>
+                        </div>
+                        <span className="text-[10px] text-gray-600 font-medium">{author}</span>
+                      </div>
+
+                      {/* Commentaire si présent */}
+                      {comment && (
+                        <div className="mt-1.5 pt-1.5 border-t border-gray-200">
+                          <p className="text-[10px] text-gray-700 leading-relaxed">💬 {comment}</p>
+                        </div>
+                      )}
                     </div>
-                    
-                    {/* Auteur compact */}
-                    <div className="flex items-center gap-1.5 mb-1">
-                <div className="w-4 h-4 bg-gradient-to-br from-gray-400 to-gray-600 rounded-full flex items-center justify-center flex-shrink-0">
-                  <span className="text-white text-[9px] font-bold">{author.charAt(0).toUpperCase()}</span>
-                </div>
-                <span className="text-[10px] text-gray-600 font-medium">{author}</span>
-                    </div>
-                    
-                    {/* Commentaire si présent */}
-                    {comment && (
-                <div className="mt-1.5 pt-1.5 border-t border-gray-200">
-                  <p className="text-[10px] text-gray-700 leading-relaxed">💬 {comment}</p>
-                </div>
-                    )}
-                  </div>
-                );
-              })
+                  );
+                })
             ) : (
               <div className="text-center py-8 bg-gray-50 rounded-lg border border-gray-200">
                 <div className="inline-flex items-center justify-center w-12 h-12 bg-gray-100 rounded-full mb-2">
@@ -981,7 +1030,7 @@ export default function DossierDetails({
             {/* Effet de fond animé */}
             <div className="absolute inset-0 bg-grid-white/[0.05] bg-[size:20px_20px]"></div>
             <div className="absolute top-0 right-0 w-96 h-96 bg-white/5 rounded-full blur-3xl transform translate-x-1/2 -translate-y-1/2"></div>
-            
+
             <div className="relative flex flex-col md:flex-row md:items-center md:justify-between gap-6">
               <div className="flex items-start gap-5">
                 <div className="bg-white/20 backdrop-blur-sm p-4 rounded-2xl shadow-2xl ring-4 ring-white/30 transform hover:scale-110 transition-transform duration-300">
@@ -990,13 +1039,13 @@ export default function DossierDetails({
                 <div className="flex-1">
                   <div className="flex items-center gap-3 flex-wrap">
                     <h3 className="text-3xl font-black text-white tracking-tight drop-shadow-2xl">
-                {dossier.numero_commande || dossier.numero}
+                      {dossier.numero_commande || dossier.numero}
                     </h3>
                     {dossier.urgence && (
-                <span className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-red-500 text-white text-xs font-bold rounded-full shadow-lg ring-4 ring-red-400/30 animate-pulse">
-                  <ExclamationTriangleIcon className="h-4 w-4" />
-                  URGENT
-                </span>
+                      <span className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-red-500 text-white text-xs font-bold rounded-full shadow-lg ring-4 ring-red-400/30 animate-pulse">
+                        <ExclamationTriangleIcon className="h-4 w-4" />
+                        URGENT
+                      </span>
                     )}
                   </div>
                   {/* ✅ Point vert "actif" + nom client */}
@@ -1009,7 +1058,7 @@ export default function DossierDetails({
                   </div>
                   <div className="text-blue-100 text-sm mt-1.5 flex items-center gap-2">
                     <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
                     </svg>
                     Créé le {formatDateSafe(dossier.created_at)}
                   </div>
@@ -1017,9 +1066,9 @@ export default function DossierDetails({
               </div>
               <div className="flex items-center gap-4">
                 {getStatusBadge(dossier.status)}
-                <button 
-                  onClick={onClose} 
-                  className="text-white/80 hover:text-white hover:bg-white/10 transition-all duration-200 p-2.5 rounded-xl backdrop-blur-sm" 
+                <button
+                  onClick={onClose}
+                  className="text-white/80 hover:text-white hover:bg-white/10 transition-all duration-200 p-2.5 rounded-xl backdrop-blur-sm"
                   title="Fermer"
                 >
                   <XMarkIcon className="h-7 w-7" />
@@ -1039,33 +1088,31 @@ export default function DossierDetails({
           <div className="p-8 max-h-[80vh] overflow-y-auto">
             {/* Grid principal: Gauche (infos) + Droite (actions + historique) */}
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-6">
-              
+
               {/* COLONNE GAUCHE: Détails techniques uniquement (2/3 de la largeur) */}
               <div className="lg:col-span-2 space-y-6">
-                
+
                 {/* Détails techniques - Section complète avec toutes les infos */}
                 <div className="bg-white rounded-2xl shadow-xl border border-purple-100 overflow-hidden transform transition-all duration-300 hover:shadow-2xl">
-                  <div className={`px-6 py-4 border-b-2 ${ 
-                    (dossier.type_formulaire || dossier.machine || '').toLowerCase().includes('roland') 
-                ? 'bg-gradient-to-r from-red-50 via-pink-50 to-rose-50 border-red-200' 
-                : (dossier.type_formulaire || dossier.machine || '').toLowerCase().includes('xerox')
-                ? 'bg-gradient-to-r from-blue-50 via-cyan-50 to-sky-50 border-blue-200'
-                : 'bg-gradient-to-r from-purple-50 via-indigo-50 to-blue-50 border-purple-200'
-                  }`}>
+                  <div className={`px-6 py-4 border-b-2 ${(dossier.type_formulaire || dossier.machine || '').toLowerCase().includes('roland')
+                      ? 'bg-gradient-to-r from-red-50 via-pink-50 to-rose-50 border-red-200'
+                      : (dossier.type_formulaire || dossier.machine || '').toLowerCase().includes('xerox')
+                        ? 'bg-gradient-to-r from-blue-50 via-cyan-50 to-sky-50 border-blue-200'
+                        : 'bg-gradient-to-r from-purple-50 via-indigo-50 to-blue-50 border-purple-200'
+                    }`}>
                     <div className="flex items-center gap-3">
-                <div className={`p-2 rounded-xl shadow-lg ${
-                  (dossier.type_formulaire || dossier.machine || '').toLowerCase().includes('roland')
-                    ? 'bg-gradient-to-br from-red-500 to-pink-600'
-                    : (dossier.type_formulaire || dossier.machine || '').toLowerCase().includes('xerox')
-                    ? 'bg-gradient-to-br from-blue-500 to-cyan-600'
-                    : 'bg-gradient-to-br from-purple-500 to-indigo-600'
-                }`}>
-                  <svg className="h-5 w-5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-                  </svg>
-                </div>
-                <h3 className="text-lg font-extrabold text-gray-900 tracking-tight">⚙️ Détails techniques</h3>
+                      <div className={`p-2 rounded-xl shadow-lg ${(dossier.type_formulaire || dossier.machine || '').toLowerCase().includes('roland')
+                          ? 'bg-gradient-to-br from-red-500 to-pink-600'
+                          : (dossier.type_formulaire || dossier.machine || '').toLowerCase().includes('xerox')
+                            ? 'bg-gradient-to-br from-blue-500 to-cyan-600'
+                            : 'bg-gradient-to-br from-purple-500 to-indigo-600'
+                        }`}>
+                        <svg className="h-5 w-5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                        </svg>
+                      </div>
+                      <h3 className="text-lg font-extrabold text-gray-900 tracking-tight">⚙️ Détails techniques</h3>
                     </div>
                   </div>
                   <div className="p-6 bg-gradient-to-br from-white to-purple-50/20">{renderTabContentSection('technical')}</div>
@@ -1075,113 +1122,124 @@ export default function DossierDetails({
                 <div className="bg-white rounded-2xl shadow-xl border border-emerald-100 overflow-hidden transform transition-all duration-300 hover:shadow-2xl">
                   <div className="px-6 py-4 bg-gradient-to-r from-emerald-50 via-green-50 to-teal-50 border-b-2 border-emerald-200">
                     <div className="flex items-center justify-between">
-                <div className="flex items-center gap-3">
-                  <div className="bg-gradient-to-br from-emerald-500 to-green-600 p-2 rounded-xl shadow-lg">
-                    <svg className="h-5 w-5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z" />
-                    </svg>
-                  </div>
-                  <div>
-                    <h3 className="text-lg font-extrabold text-gray-900 tracking-tight">📁 Fichiers</h3>
-                    <p className="text-xs text-gray-600 mt-0.5">{files.length} fichier{files.length > 1 ? 's' : ''}</p>
-                  </div>
-                </div>
+                      <div className="flex items-center gap-3">
+                        <div className="bg-gradient-to-br from-emerald-500 to-green-600 p-2 rounded-xl shadow-lg">
+                          <svg className="h-5 w-5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z" />
+                          </svg>
+                        </div>
+                        <div>
+                          <h3 className="text-lg font-extrabold text-gray-900 tracking-tight">📁 Fichiers</h3>
+                          <p className="text-xs text-gray-600 mt-0.5">{files.length} fichier{files.length > 1 ? 's' : ''}</p>
+                        </div>
+                      </div>
                     </div>
                   </div>
                   <div className="p-6 bg-gradient-to-br from-white to-emerald-50/20 max-h-80 overflow-y-auto">{renderTabContentSection('files')}</div>
                 </div>
               </div>
-              
+
               {/* COLONNE DROITE: Actions (haut) + Historique (bas) */}
               <div className="lg:col-span-1 space-y-6">
-                
+
                 {/* ACTIONS WORKFLOW */}
                 <div className="bg-white rounded-2xl shadow-xl border border-pink-100 overflow-hidden transform transition-all duration-300 hover:shadow-2xl">
                   <div className="px-6 py-4 bg-gradient-to-r from-pink-50 via-purple-50 to-indigo-50 border-b-2 border-pink-200">
                     <div className="flex items-center gap-3">
-                <div className="bg-gradient-to-br from-pink-500 to-purple-600 p-2 rounded-xl shadow-lg">
-                  <svg className="h-5 w-5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
-                  </svg>
-                </div>
-                <h3 className="text-lg font-extrabold text-gray-900 tracking-tight">🎯 Actions</h3>
+                      <div className="bg-gradient-to-br from-pink-500 to-purple-600 p-2 rounded-xl shadow-lg">
+                        <svg className="h-5 w-5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+                        </svg>
+                      </div>
+                      <h3 className="text-lg font-extrabold text-gray-900 tracking-tight">🎯 Actions</h3>
                     </div>
                   </div>
                   <div className="p-6 bg-gradient-to-br from-white to-pink-50/20">
                     {/* Boutons d'action - SANS statut ni progression répétés */}
                     {(() => {
+                      const actions = getAvailableActions(user?.role, dossier?.status);
+                      // 🐛 DEBUG: Logs pour identifier pourquoi boutons invisibles
+                      console.log('🎯 [DossierDetails] DEBUG Actions:', {
+                        userRole: user?.role,
+                        dossierStatus: dossier?.status,
+                        normalizedStatus: dossier?.status ? normalizeStatusLabel(dossier.status) : null,
+                        actionsCount: actions.length,
+                        actions: actions,
+                        workflowHasRole: !!WORKFLOW_ACTIONS[user?.role],
+                        workflowHasStatus: user?.role && dossier?.status ? !!WORKFLOW_ACTIONS[user?.role]?.[normalizeStatusLabel(dossier.status)] : false,
+                      });
                       return null;
                     })()}
                     <div className="space-y-3">
-                {getAvailableActions(user?.role, dossier?.status).length > 0 ? (
-                  getAvailableActions(user?.role, dossier?.status).map((action, i) => {
-                    const actionConfig = {
-                      'Marquer prêt pour impression': { gradient: 'from-purple-500 to-indigo-600', icon: '✓', ring: 'ring-purple-400/30' },
-                      'Valider': { gradient: 'from-emerald-500 to-green-600', icon: '✓', ring: 'ring-emerald-400/30' },
-                      'Revalider': { gradient: 'from-blue-500 to-indigo-600', icon: '✓✓', ring: 'ring-blue-400/30' },
-                      'Renvoyer à revoir': { gradient: 'from-red-500 to-pink-600', icon: '⚠️', ring: 'ring-red-400/30' },
-                      'Retour en cours': { gradient: 'from-amber-500 to-orange-600', icon: '↩️', ring: 'ring-amber-400/30' },
-                      'Marquer à revoir': { gradient: 'from-orange-500 to-red-600', icon: '⚠️', ring: 'ring-orange-400/30' },
-                      'Démarrer impression': { gradient: 'from-purple-500 to-indigo-600', icon: '🖨️', ring: 'ring-purple-400/30' },
-                      'Marquer comme imprimé': { gradient: 'from-cyan-500 to-blue-600', icon: '✓', ring: 'ring-cyan-400/30' },
-                      'Terminer impression': { gradient: 'from-cyan-500 to-blue-600', icon: '✓', ring: 'ring-cyan-400/30' },
-                      'Marquer prêt livraison': { gradient: 'from-indigo-500 to-purple-600', icon: '📦', ring: 'ring-indigo-400/30' },
-                      'Programmer livraison': { gradient: 'from-blue-600 to-indigo-700', icon: '🚚', ring: 'ring-blue-500/30' },
-                      'Démarrer livraison': { gradient: 'from-blue-600 to-indigo-700', icon: '🚚', ring: 'ring-blue-500/30' },
-                      'Marquer comme livré': { gradient: 'from-green-600 to-emerald-700', icon: '✅', ring: 'ring-green-500/30' },
-                      'Marquer comme terminé': { gradient: 'from-gray-600 to-slate-700', icon: '🏁', ring: 'ring-gray-500/30' },
-                      'Remettre en impression': { gradient: 'from-amber-500 to-orange-600', icon: '🔄', ring: 'ring-amber-400/30' },
-                    };
-                    const config = actionConfig[action.label] || { gradient: 'from-gray-500 to-gray-600', icon: '→', ring: 'ring-gray-400/30' };
-                    
-                    return (
-                      <button
-                        key={i}
-                        onClick={() => handleWorkflowAction(action)}
-                        disabled={changingStatut}
-                        aria-label={action.label}
-                        title={action.label}
-                        className={`group relative w-full inline-flex items-center justify-start gap-3 px-4 py-3 bg-gradient-to-r ${config.gradient} text-white font-bold text-sm rounded-xl shadow-lg ring-2 ${config.ring} transform transition-all duration-300 hover:scale-105 hover:shadow-xl disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100`}
-                      >
-                        {changingStatut ? (
-                          <>
-                            <svg className="animate-spin h-5 w-5 text-white" fill="none" viewBox="0 0 24 24">
-                              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                            </svg>
-                            <span className="text-left flex-1">En cours...</span>
-                          </>
-                        ) : (
-                          <>
-                            <span className="text-lg">{config.icon}</span>
-                            <span className="text-left flex-1">{action.label}</span>
-                          </>
-                        )}
-                      </button>
-                    );
-                  })
-                ) : (
-                  <div className="text-center py-8 text-gray-500 text-sm">
-                    <svg className="h-12 w-12 mx-auto mb-3 text-gray-300" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
-                    </svg>
-                    Aucune action disponible
-                  </div>
-                )}
-                {user?.role === 'admin' && (
-                  <button 
-                    onClick={() => handleUnlockDossier()} 
-                    disabled={changingStatut} 
-                    aria-label="Déverrouiller le dossier"
-                    title="Déverrouiller le dossier (Admin)"
-                    className="group relative w-full inline-flex items-center justify-start gap-3 px-4 py-3 bg-gradient-to-r from-gray-700 to-gray-900 text-white font-bold text-sm rounded-xl shadow-lg ring-2 ring-gray-600/30 transform transition-all duration-300 hover:scale-105 hover:shadow-xl disabled:opacity-50 disabled:cursor-not-allowed"
-                  >
-                    <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 11V7a4 4 0 118 0m-4 8v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2z" />
-                    </svg>
-                    <span className="flex-1 text-left">Déverrouiller</span>
-                  </button>
-                )}
+                      {getAvailableActions(user?.role, dossier?.status).length > 0 ? (
+                        getAvailableActions(user?.role, dossier?.status).map((action, i) => {
+                          const actionConfig = {
+                            'Marquer prêt pour impression': { gradient: 'from-purple-500 to-indigo-600', icon: '✓', ring: 'ring-purple-400/30' },
+                            'Valider': { gradient: 'from-emerald-500 to-green-600', icon: '✓', ring: 'ring-emerald-400/30' },
+                            'Revalider': { gradient: 'from-blue-500 to-indigo-600', icon: '✓✓', ring: 'ring-blue-400/30' },
+                            'Renvoyer à revoir': { gradient: 'from-red-500 to-pink-600', icon: '⚠️', ring: 'ring-red-400/30' },
+                            'Retour en cours': { gradient: 'from-amber-500 to-orange-600', icon: '↩️', ring: 'ring-amber-400/30' },
+                            'Marquer à revoir': { gradient: 'from-orange-500 to-red-600', icon: '⚠️', ring: 'ring-orange-400/30' },
+                            'Démarrer impression': { gradient: 'from-purple-500 to-indigo-600', icon: '🖨️', ring: 'ring-purple-400/30' },
+                            'Marquer comme imprimé': { gradient: 'from-cyan-500 to-blue-600', icon: '✓', ring: 'ring-cyan-400/30' },
+                            'Terminer impression': { gradient: 'from-cyan-500 to-blue-600', icon: '✓', ring: 'ring-cyan-400/30' },
+                            'Marquer prêt livraison': { gradient: 'from-indigo-500 to-purple-600', icon: '📦', ring: 'ring-indigo-400/30' },
+                            'Programmer livraison': { gradient: 'from-blue-600 to-indigo-700', icon: '🚚', ring: 'ring-blue-500/30' },
+                            'Démarrer livraison': { gradient: 'from-blue-600 to-indigo-700', icon: '🚚', ring: 'ring-blue-500/30' },
+                            'Marquer comme livré': { gradient: 'from-green-600 to-emerald-700', icon: '✅', ring: 'ring-green-500/30' },
+                            'Marquer comme terminé': { gradient: 'from-gray-600 to-slate-700', icon: '🏁', ring: 'ring-gray-500/30' },
+                            'Remettre en impression': { gradient: 'from-amber-500 to-orange-600', icon: '🔄', ring: 'ring-amber-400/30' },
+                          };
+                          const config = actionConfig[action.label] || { gradient: 'from-gray-500 to-gray-600', icon: '→', ring: 'ring-gray-400/30' };
+
+                          return (
+                            <button
+                              key={i}
+                              onClick={() => handleWorkflowAction(action)}
+                              disabled={changingStatut}
+                              aria-label={action.label}
+                              title={action.label}
+                              className={`group relative w-full inline-flex items-center justify-start gap-3 px-4 py-3 bg-gradient-to-r ${config.gradient} text-white font-bold text-sm rounded-xl shadow-lg ring-2 ${config.ring} transform transition-all duration-300 hover:scale-105 hover:shadow-xl disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100`}
+                            >
+                              {changingStatut ? (
+                                <>
+                                  <svg className="animate-spin h-5 w-5 text-white" fill="none" viewBox="0 0 24 24">
+                                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                                  </svg>
+                                  <span className="text-left flex-1">En cours...</span>
+                                </>
+                              ) : (
+                                <>
+                                  <span className="text-lg">{config.icon}</span>
+                                  <span className="text-left flex-1">{action.label}</span>
+                                </>
+                              )}
+                            </button>
+                          );
+                        })
+                      ) : (
+                        <div className="text-center py-8 text-gray-500 text-sm">
+                          <svg className="h-12 w-12 mx-auto mb-3 text-gray-300" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+                          </svg>
+                          Aucune action disponible
+                        </div>
+                      )}
+                      {user?.role === 'admin' && (
+                        <button
+                          onClick={() => handleUnlockDossier()}
+                          disabled={changingStatut}
+                          aria-label="Déverrouiller le dossier"
+                          title="Déverrouiller le dossier (Admin)"
+                          className="group relative w-full inline-flex items-center justify-start gap-3 px-4 py-3 bg-gradient-to-r from-gray-700 to-gray-900 text-white font-bold text-sm rounded-xl shadow-lg ring-2 ring-gray-600/30 transform transition-all duration-300 hover:scale-105 hover:shadow-xl disabled:opacity-50 disabled:cursor-not-allowed"
+                        >
+                          <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 11V7a4 4 0 118 0m-4 8v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2z" />
+                          </svg>
+                          <span className="flex-1 text-left">Déverrouiller</span>
+                        </button>
+                      )}
                     </div>
                   </div>
                 </div>
@@ -1190,15 +1248,15 @@ export default function DossierDetails({
                 <div className="bg-white rounded-2xl shadow-xl border border-indigo-100 overflow-hidden transform transition-all duration-300 hover:shadow-2xl">
                   <div className="px-6 py-4 bg-gradient-to-r from-indigo-50 via-purple-50 to-pink-50 border-b-2 border-indigo-200">
                     <div className="flex items-center gap-3">
-                <div className="bg-gradient-to-br from-indigo-500 to-purple-600 p-2 rounded-xl shadow-lg">
-                  <svg className="h-5 w-5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-                  </svg>
-                </div>
-                <div>
-                  <h3 className="text-lg font-extrabold text-gray-900 tracking-tight">📜 Historique</h3>
-                  <p className="text-xs text-gray-600 mt-0.5">{statutHistory.length} événement{statutHistory.length > 1 ? 's' : ''}</p>
-                </div>
+                      <div className="bg-gradient-to-br from-indigo-500 to-purple-600 p-2 rounded-xl shadow-lg">
+                        <svg className="h-5 w-5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                        </svg>
+                      </div>
+                      <div>
+                        <h3 className="text-lg font-extrabold text-gray-900 tracking-tight">📜 Historique</h3>
+                        <p className="text-xs text-gray-600 mt-0.5">{statutHistory.length} événement{statutHistory.length > 1 ? 's' : ''}</p>
+                      </div>
                     </div>
                   </div>
                   <div className="p-6 bg-gradient-to-br from-white to-indigo-50/20 max-h-[500px] overflow-y-auto custom-scrollbar">
@@ -1223,13 +1281,13 @@ export default function DossierDetails({
                 <div className="flex items-center gap-3">
                   <div className="bg-gradient-to-br from-emerald-500 to-green-600 p-2 rounded-xl shadow-lg">
                     <svg className="h-5 w-5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
                     </svg>
                   </div>
                   <h3 className="text-lg font-bold text-gray-900">📤 Ajouter des fichiers</h3>
                 </div>
-                <button 
-                  onClick={() => setShowUpload(false)} 
+                <button
+                  onClick={() => setShowUpload(false)}
                   className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
                 >
                   <XMarkIcon className="h-5 w-5 text-gray-500" />
@@ -1237,7 +1295,7 @@ export default function DossierDetails({
               </div>
             </div>
             <div className="p-6">
-              <FileUpload 
+              <FileUpload
                 onUpload={handleFileUpload}
                 uploading={uploadingFiles}
                 disabled={uploadingFiles}

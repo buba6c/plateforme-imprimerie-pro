@@ -4,10 +4,10 @@ module.exports = {
       name: 'imprimerie-frontend',
       script: 'npm',
       args: 'start',
-      cwd: '/Users/mac/Documents/PLATEFOME/code_backup_20251003_131151/frontend',
+      cwd: '/Users/mac/Documents/PLATEFOME/BACKUP/IMP PLATEFORM V3/frontend',
       env: {
         NODE_ENV: 'development',
-        PORT: 3000,
+        PORT: 3001,
         BROWSER: 'none',
         SKIP_PREFLIGHT_CHECK: 'true'
       },

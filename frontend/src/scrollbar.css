@@ -1,0 +1,140 @@
+/* Variables CSS pour les scrollbars */
+:root {
+  /* Mode clair */
+  --scrollbar-thumb-gradient: linear-gradient(180deg, #3b82f6 0%, #2563eb 100%);
+  --scrollbar-thumb-hover: linear-gradient(180deg, #2563eb 0%, #1d4ed8 100%);
+  --scrollbar-thumb-active: linear-gradient(180deg, #1d4ed8 0%, #1e40af 100%);
+  --scrollbar-thumb-shadow: rgba(59, 130, 246, 0.4);
+  --scrollbar-color: #3b82f6;
+}
+
+:root.dark,
+html.dark {
+  /* Mode sombre */
+  --scrollbar-thumb-gradient: linear-gradient(180deg, #60a5fa 0%, #3b82f6 100%);
+  --scrollbar-thumb-hover: linear-gradient(180deg, #3b82f6 0%, #2563eb 100%);
+  --scrollbar-thumb-active: linear-gradient(180deg, #2563eb 0%, #1d4ed8 100%);
+  --scrollbar-thumb-shadow: rgba(96, 165, 250, 0.4);
+  --scrollbar-color: #60a5fa;
+}
+
+/* Scrollbar personnalisée - WebKit (Chrome, Safari, Edge) */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--scrollbar-thumb-gradient);
+  border-radius: 10px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--scrollbar-thumb-hover);
+  background-clip: padding-box;
+  box-shadow: 0 0 8px var(--scrollbar-thumb-shadow);
+}
+
+::-webkit-scrollbar-thumb:active {
+  background: var(--scrollbar-thumb-active);
+  background-clip: padding-box;
+}
+
+/* Firefox - Scrollbar personnalisée */
+* {
+  scrollbar-color: var(--scrollbar-color) transparent;
+  scrollbar-width: thin;
+}
+
+html,
+body {
+  scrollbar-color: var(--scrollbar-color) transparent;
+  scrollbar-width: thin;
+}
+
+/* Smooth scroll behavior */
+html {
+  scroll-behavior: smooth;
+}
+
+/* Animation de fade pour menu items */
+@keyframes fadeInLeft {
+  from {
+    opacity: 0;
+    transform: translateX(-20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+/* Classe utilitaire pour masquer la scrollbar */
+.scrollbar-hide {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+.scrollbar-hide::-webkit-scrollbar {
+  display: none;
+}
+
+/* Classe utilitaire pour la scrollbar personnalisée */
+.scrollbar-custom {
+  scrollbar-width: thin;
+  scrollbar-color: var(--scrollbar-color) transparent;
+}
+
+.scrollbar-custom::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+.scrollbar-custom::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.scrollbar-custom::-webkit-scrollbar-thumb {
+  background: var(--scrollbar-thumb-gradient);
+  border-radius: 10px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.scrollbar-custom::-webkit-scrollbar-thumb:hover {
+  background: var(--scrollbar-thumb-hover);
+  background-clip: padding-box;
+  box-shadow: 0 0 8px var(--scrollbar-thumb-shadow);
+}
+
+.scrollbar-custom::-webkit-scrollbar-thumb:active {
+  background: var(--scrollbar-thumb-active);
+  background-clip: padding-box;
+}
+
+/* Animation smooth pour le scrolling */
+@supports (scroll-behavior: smooth) {
+  html {
+    scroll-behavior: smooth;
+  }
+}
+
+/* Amélioration des performances de scroll */
+body {
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* Optimisation pour le scroll sur les conteneurs */
+.overflow-y-auto {
+  will-change: scroll-position;
+  -webkit-overflow-scrolling: touch;
+}

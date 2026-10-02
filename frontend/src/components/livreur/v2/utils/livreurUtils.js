@@ -17,7 +17,7 @@ export const enrichDossierData = (dossier) => {
   if (!dossier) return null;
 
   const zone = getZoneFromPostalCode(dossier.code_postal || dossier.codePostal);
-  const isUrgent = dossier.priorite === 'urgent' || dossier.priority === 'urgent';
+  const isUrgent = dossier.urgent === true;
   const isLate = dossier.date_limite && new Date(dossier.date_limite) < new Date();
 
   return {

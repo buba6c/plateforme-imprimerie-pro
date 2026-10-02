@@ -182,6 +182,13 @@ const ImprimeurDashboard = ({ user }) => {
     toast.success('Tâches d\'impression actualisées');
     setTimeout(() => setRefreshing(false), 1000);
   };
+
+  // Démarrage d'impression
+  const handleStartPrint = (dossier) => {
+    setDossierToStart(dossier);
+    setShowStartConfirm(true);
+  };
+
   const confirmStartPrint = async () => {
     try {
       // TODO: API call pour démarrer l'impression
@@ -227,7 +234,7 @@ const ImprimeurDashboard = ({ user }) => {
     return () => {
       if (typeof unsubscribe === 'function') unsubscribe();
     };
-  }, [user, user?.id, fetchDossiers]);
+  }, [user?.id, fetchDossiers]);
 
   // Composant Badge de statut d'impression
   const PrintStatusBadge = ({ status, size = 'sm' }) => {

@@ -4,6 +4,7 @@ import {
   ClockIcon,
   DocumentTextIcon,
   UserIcon,
+  TruckIcon,
 } from '@heroicons/react/24/outline';
 import PropTypes from 'prop-types';
 
@@ -19,6 +20,10 @@ const DossierCard = ({
   actions,
   variant = 'default' 
 }) => {
+  // Vérifier si une livraison est programmée
+  const hasScheduledDelivery = dossier.date_livraison || dossier.livreur_id;
+  const isDeliveryStatus = ['pret_livraison', 'en_livraison', 'livre'].includes(dossier.statut || dossier.status);
+
   return (
     <div className="bg-white rounded-lg sm:rounded-xl p-4 sm:p-6 shadow-md hover:shadow-lg transition-all duration-300 border border-neutral-200 hover:border-neutral-300">
       {/* En-tête avec nom client */}
@@ -43,6 +48,16 @@ const DossierCard = ({
         </div>
       )}
 
+      {/* Badge livraison programmée */}
+      {hasScheduledDelivery && isDeliveryStatus && (
+        <div className="mb-3 flex items-center gap-2 px-3 py-2 bg-blue-50 border border-blue-200 rounded-lg">
+          <TruckIcon className="h-4 w-4 text-blue-600" />
+          <span className="text-xs font-medium text-blue-700">
+            📦 Livraison programmée
+          </span>
+        </div>
+      )}
+
       {/* Informations additionnelles */}
       {additionalInfo && (
         <div className="mb-4">
@@ -57,7 +72,21 @@ const DossierCard = ({
           <div className="flex items-center gap-2 text-xs sm:text-sm text-neutral-600">
             <ClockIcon className="h-4 w-4 sm:h-5 sm:w-5 flex-shrink-0" />
             <span>
-              {new Date(dossier.date_creation).toLocaleDateString('fr-FR', {
+              Créé: {new Date(dossier.date_creation).toLocaleDateString('fr-FR', {
+                day: '2-digit',
+                month: 'short',
+                year: 'numeric'
+              })}
+            </span>
+          </div>
+        )}
+
+        {/* Date de livraison programmée */}
+        {dossier.date_livraison && (
+          <div className="flex items-center gap-2 text-xs sm:text-sm text-blue-600 font-medium">
+            <TruckIcon className="h-4 w-4 sm:h-5 sm:w-5 flex-shrink-0" />
+            <span>
+              Livraison: {new Date(dossier.date_livraison).toLocaleDateString('fr-FR', {
                 day: '2-digit',
                 month: 'short',
                 year: 'numeric'
@@ -111,6 +140,10 @@ DossierCard.propTypes = {
     nom_client: PropTypes.string,
     client: PropTypes.string,
     date_creation: PropTypes.string,
+    date_livraison: PropTypes.string,
+    livreur_id: PropTypes.number,
+    statut: PropTypes.string,
+    status: PropTypes.string,
     nombre_fichiers: PropTypes.number,
     nom_preparateur: PropTypes.string,
   }).isRequired,

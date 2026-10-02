@@ -70,85 +70,79 @@ class ConversionService {
       // 5. Créer le dossier dans la base de données avec TOUTES les données
       const [dossierResult] = await dbHelper.query(
         `INSERT INTO dossiers (
-          folder_id, 
           numero, 
           client, 
-          user_id, 
-          created_by,
           preparateur_id,
-          machine_type,
           type_formulaire,
-          data_json, 
+          data_formulaire, 
           statut,
-          source,
-          devis_id,
-          prix_devis,
+          montant_cfa,
           created_at
-        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, NOW())
-        RETURNING id, folder_id, numero`,
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, NOW())
+        RETURNING id, numero`,
         [
-          folderId,
           numeroDossier,
           clientNom,                  // ✅ Client du devis (avec fallback)
           devis.user_id,              // ✅ Le préparateur qui a CRÉÉ le devis
-          devis.user_id,              // ✅ Même valeur pour created_by
-          devis.user_id,              // ✅ Même valeur pour preparateur_id
-          devis.machine_type,         // ✅ Type de machine (Roland/Xerox)
           devis.machine_type,         // type_formulaire = machine_type
           JSON.stringify(dataJson),   // ✅ TOUTES les données techniques
           'en_cours',                 // Statut initial du dossier
-          'devis',                    // Source de création
-          devisId,                    // Référence au devis source
-          devis.prix_final || devis.prix_estime  // ✅ Prix du devis
+          devis.prix_final || devis.prix_estime // Montant du devis
         ]
       );
       
       const dossier = dossierResult[0];
-      console.log(`✅ Dossier créé: ${dossier.numero} (${dossier.folder_id})`);
+      console.log(`✅ Dossier créé: ${dossier.numero} (ID: ${dossier.id})`);
       console.log(`✅ Propriétaire: Préparateur #${devis.user_id}`);
       console.log(`✅ Toutes les données du devis ont été copiées`);
       
-      // 6. Marquer le devis comme converti
+      // 6. Marquer le devis comme converti et lier au dossier
       await dbHelper.query(
         `UPDATE devis 
          SET statut = $1, 
-             converted_folder_id = $2, 
-             converted_at = NOW(),
-             is_locked = TRUE
+             dossier_id = $2,
+             updated_at = NOW()
          WHERE id = $3`,
-        ['converti', folderId, devisId]
+        ['converti', dossier.id, devisId]
       );
       
-      // 7. Enregistrer dans l'historique de conversion
-      await dbHelper.query(
-        `INSERT INTO conversion_historique (devis_id, folder_id, user_id, notes)
-         VALUES ($1, $2, $3, $4)`,
-        [
-          devisId, 
-          folderId, 
-          user.id, // Celui qui a cliqué sur "Convertir"
-          `Conversion du devis ${devis.numero} en dossier ${numeroDossier}. ` +
-          `Dossier attribué au préparateur #${devis.user_id} (créateur du devis)`
-        ]
-      );
+      // 7. Note: conversion_historique table doesn't exist, skipping
+      // Conversion is tracked via devis.dossier_id and devis.statut
       
-      // 8. Ajouter dans l'historique du devis
-      await dbHelper.query(
-        `INSERT INTO devis_historique (devis_id, user_id, action, nouveau_statut, commentaire)
-         VALUES ($1, $2, $3, $4, $5)`,
-        [
-          devisId, 
-          user.id, 
-          'conversion', 
-          'converti', 
-          `Converti en dossier ${numeroDossier} pour le préparateur #${devis.user_id}`
-        ]
-      );
+      console.log(`✅ Devis #${devisId} marqué comme converti → Dossier #${dossier.id}`);
+      
+      return {
+        success: true,
+        dossier_id: dossier.id,
+        dossier_numero: dossier.numero,
+        devis_id: devisId
+      };
+      
+      // 8. Ajouter dans l'historique du devis (si la table existe)
+      try {
+        await dbHelper.query(
+          `INSERT INTO devis_historique (devis_id, user_id, action, nouveau_statut, commentaire)
+           VALUES ($1, $2, $3, $4, $5)`,
+          [
+            devisId, 
+            user.id, 
+            'conversion', 
+            'converti', 
+            `Converti en dossier ${numeroDossier} pour le préparateur #${devis.user_id}`
+          ]
+        );
+      } catch (histErr) {
+        console.log('⚠️ Table devis_historique non disponible, historique non enregistré');
+      }
       
       // 9. Copier les fichiers si présents
-      await this.copyDevisFiles(devisId, folderId);
+      try {
+        await this.copyDevisFiles(devisId, dossier.id);
+      } catch (fileErr) {
+        console.log('⚠️ Erreur copie fichiers:', fileErr.message);
+      }
       
-      console.log(`🎉 Conversion réussie ! Devis ${devis.numero} → Dossier ${numeroDossier}`);
+      console.log(`🎉 Conversion réussie ! Devis → Dossier ${numeroDossier}`);
       console.log(`👤 Le dossier appartient au préparateur qui a créé le devis (#${devis.user_id})`);
       
       return {

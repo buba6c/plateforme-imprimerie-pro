@@ -46,10 +46,12 @@ const ROLE_TRANSITIONS = {
     [Statut.EN_IMPRESSION]: [Statut.PRET_LIVRAISON, Statut.A_REVOIR],  // Imprimer OU Demander révision
   },
   [Roles.LIVREUR]: {
+    // Livreur peut prendre en charge dès la sortie de l'impression
+    [Statut.IMPRIME]: [Statut.PRET_LIVRAISON, Statut.EN_LIVRAISON, Statut.LIVRE], // 3 options flexibles
     // Livreur a 2 options depuis "Prêt livraison" : programmer OU livrer directement
     [Statut.PRET_LIVRAISON]: [Statut.EN_LIVRAISON, Statut.LIVRE], // Programmer livraison OU Livrer direct
-    [Statut.EN_LIVRAISON]: [Statut.LIVRE],            // Livrer (après programmation)
-    [Statut.LIVRE]: [Statut.TERMINE],                 // Terminer (auto/confirmation)
+    [Statut.EN_LIVRAISON]: [Statut.LIVRE],                         // Livrer (confirmer livraison)
+    // Livreur ne peut PAS marquer "Terminé" - réservé à l'admin
   },
   [Roles.ADMIN]: {
     // Admin peut tout faire + rollback + forcer transitions
@@ -84,7 +86,12 @@ const ACTION_LABELS = {
     [Statut.PRET_IMPRESSION]: '◀️ Annuler impression',
     [Statut.A_REVOIR]: '🔄 Demander révision',
   },
-  // LIVREUR (2 options depuis Prêt livraison)
+  // LIVREUR (Workflow complet depuis impression jusqu'à terminé)
+  [Statut.IMPRIME]: {
+    [Statut.PRET_LIVRAISON]: '📦 Préparer la livraison',
+    [Statut.EN_LIVRAISON]: '📅 Programmer livraison',
+    [Statut.LIVRE]: '🚚 Livrer directement',
+  },
   [Statut.PRET_LIVRAISON]: {
     [Statut.EN_LIVRAISON]: '📅 Programmer la livraison',
     [Statut.LIVRE]: '🚚 Livrer directement',
@@ -95,8 +102,8 @@ const ACTION_LABELS = {
     [Statut.PRET_LIVRAISON]: '◀️ Annuler la livraison',
   },
   [Statut.LIVRE]: {
-    [Statut.TERMINE]: '✅ Terminer le dossier',
     [Statut.EN_LIVRAISON]: '◀️ Remettre en livraison',
+    [Statut.TERMINE]: '✅ Terminer le dossier', // Admin uniquement
   },
   [Statut.TERMINE]: {
     [Statut.LIVRE]: '◀️ Rouvrir le dossier',
@@ -239,7 +246,8 @@ function canViewDossier(user, dossier) {
         [Statut.PRET_IMPRESSION, Statut.EN_IMPRESSION, Statut.PRET_LIVRAISON].includes(currentStatus)
       );
     case Roles.LIVREUR:
-      return [Statut.PRET_LIVRAISON, Statut.EN_LIVRAISON, Statut.LIVRE, Statut.TERMINE].includes(currentStatus);
+      // Livreur voit les dossiers depuis la sortie d'impression jusqu'à terminé
+      return [Statut.IMPRIME, Statut.PRET_LIVRAISON, Statut.EN_LIVRAISON, Statut.LIVRE, Statut.TERMINE].includes(currentStatus);
     default:
       return false;
   }
