@@ -158,6 +158,8 @@ interface PrixPanelProps {
   montantRetenu?: number | null;
   children?: ReactNode;
   titre?: string;
+  /** Le formulaire propose la saisie manuelle du montant (dossier). */
+  saisieManuelle?: boolean;
 }
 
 /** Panneau de prix en direct, réutilisé par le dossier et le devis. */
@@ -174,10 +176,11 @@ export function PrixPanel({
   montantRetenu,
   children,
   titre = 'Prix',
+  saisieManuelle,
 }: PrixPanelProps) {
   const lignes = lignesDe(machine, draft);
   const titreGroupe = (g: number) => {
-    if (g === -1) return 'Forfaits du dossier';
+    if (g === -1) return 'Forfaits et services';
     const l = conversion.apercu.lignes[g];
     return `Ligne ${indexOrigine(conversion, g) + 1} · ${l ? libelle(machine, l.support) : ''}`;
   };
@@ -211,7 +214,7 @@ export function PrixPanel({
           ) : (
             "Demandez à l'administrateur de renseigner ce prix dans Tarifs"
           )}
-          , ou saisissez le montant à la main.
+          {saisieManuelle ? ', ou saisissez le montant à la main.' : '.'}
         </span>
       </Alert>
     );

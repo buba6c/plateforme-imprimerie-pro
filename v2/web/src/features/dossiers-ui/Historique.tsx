@@ -111,9 +111,9 @@ function decrire(e: Evenement, ctx: { machine: Machine; libelle: (m: Machine, c:
       const montant = data?.montant ? `${formatFCFA(data.montant)}${data.mode ? ` en ${mode(data.mode)}` : ''}` : '';
       switch (e.action) {
         case 'encaisse':
-          return { titre: `Encaissement à valider${montant ? ` : ${montant}` : ''}`, details: data?.reference ? <span className="ev-mono">Réf. {data.reference}</span> : null };
+          return { titre: `Encaissement à valider${montant ? ` : ${montant}` : ''}`, details: data?.reference ? <span className="ev-mono ev-muted" style={{ fontSize: 12 }}>Réf. {data.reference}</span> : null };
         case 'encaisse_valide':
-          return { titre: `Paiement enregistré${montant ? ` : ${montant}` : ''}`, ton: 'success', details: data?.reference ? <span className="ev-mono">Réf. {data.reference}</span> : null };
+          return { titre: `Paiement enregistré${montant ? ` : ${montant}` : ''}`, ton: 'success', details: data?.reference ? <span className="ev-mono ev-muted" style={{ fontSize: 12 }}>Réf. {data.reference}</span> : null };
         case 'valide':
           return { titre: `Paiement validé${montant ? ` : ${montant}` : ''}`, ton: 'success' };
         case 'refuse':

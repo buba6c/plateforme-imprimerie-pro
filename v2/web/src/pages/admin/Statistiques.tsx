@@ -5,7 +5,7 @@ import { Download, Table2 } from 'lucide-react';
 import { formatEntier, formatFCFA, MACHINE_LABELS, ROLE_LABELS } from '@evocom/shared';
 import { api, messageErreur } from '../../lib/api';
 import { Alert, Button, Card, Kpi, PageHeader, Segmented, Skeleton } from '../../ui';
-import { BarresHorizontales, CommandesChart, EvolutionChart, formatDuree } from '../../features/admin/charts';
+import { BarresDelais, CommandesChart, EvolutionChart, formatDuree } from '../../features/admin/charts';
 import { buckets, jourFr, joursEntre, libelleLong, PRESETS } from '../../features/admin/dates';
 import { useAujourdhui } from '../../features/admin/hooks';
 import type { Delais, Pas, PointEvolution, StatsProduction, TopClient } from '../../features/admin/types';
@@ -31,6 +31,10 @@ const ACTIVITE: Record<string, [string, string]> = {
   cloturer: ['clôture', 'clôtures'],
   rouvrir: ['réouverture', 'réouvertures'],
   reimprimer: ['réimpression', 'réimpressions'],
+  forcer: ['statut forcé', 'statuts forcés'],
+  forcer_statut: ['statut forcé', 'statuts forcés'],
+  suppression: ['suppression', 'suppressions'],
+  restauration: ['restauration', 'restaurations'],
 };
 
 const PAS_OPTIONS: { value: Pas; label: string }[] = [
@@ -84,10 +88,11 @@ export default function Statistiques() {
   const totaux = useMemo(() => {
     const d = evolution.data;
     if (!d) return null;
-    return d.reduce(
-      (s, p) => ({ commandes: s.commandes + p.commandes, montant: s.montant + p.montant_commandes, encaisse: s.encaisse + p.encaisse }),
-      { commandes: 0, montant: 0, encaisse: 0 },
-    );
+    return d.reduce((s, p) => ({ commandes: s.commandes + p.commandes, montant: s.montant + p.montant_commandes, encaisse: s.encaisse + p.encaisse }), {
+      commandes: 0,
+      montant: 0,
+      encaisse: 0,
+    });
   }, [evolution.data]);
   const livres = production.data?.par_machine.reduce((s, m) => s + m.livres, 0);
   const imprimes = production.data?.par_machine.reduce((s, m) => s + m.imprimes, 0);
@@ -158,21 +163,32 @@ export default function Statistiques() {
         </div>
       </div>
       <p className="adm-explain" style={{ marginTop: 'calc(-1 * var(--space-3))' }}>
-        Les exports CSV (séparateur « ; », ouverture directe dans Excel) portent sur la même période. Commandes : dossiers créés sur la période ;
-        encaissé : paiements validés sur la période.
+        Les exports CSV (séparateur « ; », ouverture directe dans Excel) portent sur la même période. Commandes : dossiers créés sur la période ; encaissé :
+        paiements validés sur la période.
       </p>
 
       {inverse && <Alert tone="warning">La date de début est postérieure à la date de fin : inversez-les.</Alert>}
       {tropLong && (
         <Alert tone="warning">
-          Période trop longue pour un regroupement {PAS_OPTIONS.find((p) => p.value === pas)!.label.toLowerCase()} ({nbPoints} points) : choisissez un regroupement plus large.
+          Période trop longue pour un regroupement {PAS_OPTIONS.find((p) => p.value === pas)!.label.toLowerCase()} ({nbPoints} points) : choisissez un
+          regroupement plus large.
         </Alert>
       )}
 
       <div className="ev-kpis" style={opacite(evolution.isFetching || production.isFetching)}>
         <Kpi label="Commandes" value={totaux ? formatEntier(totaux.commandes) : evolution.isLoading ? <Skeleton h={32} w={60} /> : '—'} meta="dossiers créés" />
-        <Kpi label="Montant commandé" value={totaux ? formatEntier(totaux.montant) : evolution.isLoading ? <Skeleton h={32} w={120} /> : '—'} unit={totaux ? 'FCFA' : undefined} meta="montant des dossiers créés" />
-        <Kpi label="Encaissé" value={totaux ? formatEntier(totaux.encaisse) : evolution.isLoading ? <Skeleton h={32} w={120} /> : '—'} unit={totaux ? 'FCFA' : undefined} meta="paiements validés" />
+        <Kpi
+          label="Montant commandé"
+          value={totaux ? formatEntier(totaux.montant) : evolution.isLoading ? <Skeleton h={32} w={120} /> : '—'}
+          unit={totaux ? 'FCFA' : undefined}
+          meta="montant des dossiers créés"
+        />
+        <Kpi
+          label="Encaissé"
+          value={totaux ? formatEntier(totaux.encaisse) : evolution.isLoading ? <Skeleton h={32} w={120} /> : '—'}
+          unit={totaux ? 'FCFA' : undefined}
+          meta="paiements validés"
+        />
         <Kpi
           label="Livrés"
           value={livres !== undefined ? formatEntier(livres) : production.isLoading ? <Skeleton h={32} w={60} /> : '—'}
@@ -258,17 +274,13 @@ export default function Statistiques() {
                   Aucune étape terminée sur cette période : les délais apparaîtront dès qu’un dossier aura été validé, imprimé ou livré.
                 </p>
               ) : (
-                <BarresHorizontales
-                  data={ETAPES.map((e) => ({ label: e.label, value: production.data!.delais[e.cle].heures_moyennes, detail: e.aide }))}
-                  format={(v) => formatDuree(v)}
-                  tooltip={(d) => {
-                    const e = ETAPES.find((x) => x.label === d.label)!;
-                    const n = production.data!.delais[e.cle].nb;
-                    return [
-                      { label: 'en moyenne', value: formatDuree(d.value) },
-                      { label: `${n > 1 ? 'dossiers mesurés' : 'dossier mesuré'}`, value: formatEntier(n) },
-                    ];
-                  }}
+                <BarresDelais
+                  data={ETAPES.map((e) => ({
+                    label: e.label,
+                    aide: e.aide,
+                    heures: production.data!.delais[e.cle].heures_moyennes,
+                    nb: production.data!.delais[e.cle].nb,
+                  }))}
                 />
               )}
               <p className="adm-explain">Une étape compte quand elle se termine dans la période. Heures calendaires, nuits et week-ends compris.</p>

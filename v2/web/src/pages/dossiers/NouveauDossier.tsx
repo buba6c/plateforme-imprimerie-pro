@@ -411,6 +411,7 @@ export default function NouveauDossier() {
             tarifsCharges={!!tarifs.data}
             libelle={libelle}
             peutEditerTarifs={peutEditerTarifs}
+            saisieManuelle
             montantRetenu={f.montantManuel ? montantSaisi : undefined}
           >
             <Checkbox

@@ -198,7 +198,7 @@ export function SpecsEditor({ machine, value, onChange, tarifs, params, erreurs 
       {parCat.divers.length > 0 && (
         <div className="sp-bloc">
           <Choix
-            titre="Forfaits et services du dossier"
+            titre="Forfaits et services"
             tarifs={parCat.divers}
             valeur={value.forfaits}
             onChange={(forfaits) => onChange({ ...value, forfaits })}
@@ -314,7 +314,7 @@ function LigneXerox({ l, supports, maj, err }: {
           placeholder="Choisir un format"
           erreur={err('support')}
         />
-        <ChampTexte label="Pages par exemplaire" required value={l.pages} onChange={(p) => maj({ pages: p })} inputMode="numeric" mono erreur={err('pages')} />
+        <ChampTexte label="Pages" required value={l.pages} onChange={(p) => maj({ pages: p })} inputMode="numeric" mono erreur={err('pages')} />
         <ChampTexte label="Exemplaires" required value={l.quantite} onChange={(quantite) => maj({ quantite })} inputMode="numeric" mono erreur={err('quantite')} />
         <div className="sp-rv">
           <Checkbox label="Recto-verso" checked={l.recto_verso} onChange={(recto_verso) => maj({ recto_verso })} />

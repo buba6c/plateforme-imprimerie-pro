@@ -39,14 +39,24 @@ export default function Journal() {
     const type = e.cible ? (CIBLE_LABELS[e.cible] ?? e.cible) : '—';
     const d = (e.data && typeof e.data === 'object' ? e.data : {}) as Record<string, unknown>;
     const id = e.cible_id;
-    if (e.cible === 'user' && id) return <>{type} · {nomsUsers.get(id) ?? `n° ${id}`}</>;
-    if (e.cible === 'tarif' && id) return <>{type} · {nomsTarifs.get(id) ?? `n° ${id}`}</>;
+    if (e.cible === 'user' && id)
+      return (
+        <>
+          {type} · {nomsUsers.get(id) ?? `n° ${id}`}
+        </>
+      );
+    if (e.cible === 'tarif' && id)
+      return (
+        <>
+          {type} · {nomsTarifs.get(id) ?? `n° ${id}`}
+        </>
+      );
     if (e.cible === 'paiement' && typeof d.dossier_id === 'number') {
       return (
         <>
           {type} ·{' '}
-          <Link className="ev-link ev-ref" to={`/dossiers/${d.dossier_id}`}>
-            {typeof d.numero === 'string' ? d.numero : `dossier ${d.dossier_id}`}
+          <Link className={typeof d.numero === 'string' ? 'ev-link ev-ref' : 'ev-link'} to={`/dossiers/${d.dossier_id}`}>
+            {typeof d.numero === 'string' ? d.numero : 'ouvrir le dossier'}
           </Link>
         </>
       );
@@ -62,11 +72,13 @@ export default function Journal() {
       );
     }
     if (e.cible === 'client' && id) {
+      const source = d.source as { id?: unknown; nom?: unknown } | undefined;
+      const nom = source && String(source.id) === id && typeof source.nom === 'string' ? source.nom : typeof d.nom === 'string' ? d.nom : null;
       return (
         <>
           {type} ·{' '}
           <Link className="ev-link" to={`/clients/${id}`}>
-            fiche n° {id}
+            {nom ?? `fiche n° ${id}`}
           </Link>
         </>
       );

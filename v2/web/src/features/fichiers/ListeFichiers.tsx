@@ -1,7 +1,7 @@
 // Liste des fichiers d'impression d'un dossier : aperçu, téléchargement, marquage
 // « à réimprimer », suppression tant que le dossier est modifiable.
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { Download, Eye, ExternalLink, RotateCcw, Trash2 } from 'lucide-react';
 import { formatDateHeure, formatTaille } from '@evocom/shared';
@@ -144,9 +144,38 @@ export function ListeFichiers({ dossierId, fichiers, peutMarquer, peutSupprimer 
   );
 }
 
+/**
+ * PDF chargé en mémoire puis affiché depuis une adresse blob: : le visionneur PDF du
+ * navigateur refuse de s'ouvrir dans un document servi avec « Content-Security-Policy: sandbox ».
+ */
+function usePdfBlob(id: number, actif: boolean) {
+  const [etat, setEtat] = useState<{ url: string | null; erreur: string | null }>({ url: null, erreur: null });
+  useEffect(() => {
+    if (!actif) return;
+    let url: string | null = null;
+    const ctrl = new AbortController();
+    fetch(fichierUrl(id), { credentials: 'same-origin', signal: ctrl.signal })
+      .then(async (r) => {
+        if (!r.ok) throw new Error(r.status === 404 ? 'Fichier introuvable sur le serveur.' : `Aperçu impossible (erreur ${r.status}).`);
+        const b = await r.blob();
+        url = URL.createObjectURL(new Blob([b], { type: 'application/pdf' }));
+        setEtat({ url, erreur: null });
+      })
+      .catch((e: Error) => {
+        if (e.name !== 'AbortError') setEtat({ url: null, erreur: e.message || 'Aperçu impossible.' });
+      });
+    return () => {
+      ctrl.abort();
+      if (url) URL.revokeObjectURL(url);
+    };
+  }, [id, actif]);
+  return etat;
+}
+
 export function ApercuFichier({ fichier, onClose }: { fichier: Fichier; onClose: () => void }) {
   const type = typeApercu(fichier);
   const url = fichierUrl(fichier.id);
+  const pdf = usePdfBlob(fichier.id, type === 'pdf');
   return (
     <Dialog
       open
@@ -171,7 +200,11 @@ export function ApercuFichier({ fichier, onClose }: { fichier: Fichier; onClose:
         {type === 'image' ? (
           <img src={url} alt={`Aperçu de ${fichier.nom_original}`} />
         ) : type === 'pdf' ? (
-          <iframe src={url} title={`Aperçu de ${fichier.nom_original}`} />
+          pdf.url ? (
+            <iframe src={pdf.url} title={`Aperçu de ${fichier.nom_original}`} />
+          ) : (
+            <p className={pdf.erreur ? 'ev-error' : 'ev-muted'}>{pdf.erreur ?? 'Chargement de l’aperçu…'}</p>
+          )
         ) : (
           <p className="ev-muted">Aperçu indisponible pour ce type de fichier : téléchargez-le pour l'ouvrir.</p>
         )}

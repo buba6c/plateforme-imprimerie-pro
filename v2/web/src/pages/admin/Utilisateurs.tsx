@@ -4,20 +4,7 @@ import { Copy, KeyRound, Pencil, Search, UserPlus, Users } from 'lucide-react';
 import { formatDateHeure, formatRelatif, ROLE_LABELS, ROLES, type Role } from '@evocom/shared';
 import { useUser } from '../../auth/AuthContext';
 import { api, ApiError, messageErreur } from '../../lib/api';
-import {
-  Alert,
-  Button,
-  Checkbox,
-  ConfirmDialog,
-  Dialog,
-  EmptyState,
-  IconButton,
-  LoadingRows,
-  PageHeader,
-  SelectField,
-  TextField,
-  useToast,
-} from '../../ui';
+import { Alert, Button, Checkbox, ConfirmDialog, Dialog, EmptyState, IconButton, LoadingRows, PageHeader, SelectField, TextField, useToast } from '../../ui';
 import { champsErreur, useUsers } from '../../features/admin/hooks';
 import type { UserAdmin } from '../../features/admin/types';
 import '../../features/admin/admin.css';
@@ -58,7 +45,9 @@ export default function Utilisateurs() {
     <>
       <PageHeader
         title="Utilisateurs"
-        subtitle={users.data ? `${nbActifs} ${nbActifs === 1 ? 'compte actif' : 'comptes actifs'} sur ${users.data.length}` : 'Comptes de l’équipe et droits d’accès'}
+        subtitle={
+          users.data ? `${nbActifs} ${nbActifs === 1 ? 'compte actif' : 'comptes actifs'} sur ${users.data.length}` : 'Comptes de l’équipe et droits d’accès'
+        }
         actions={
           <Button variant="primary" icon={<UserPlus />} onClick={() => setCreer(true)}>
             Ajouter un utilisateur
@@ -69,7 +58,14 @@ export default function Utilisateurs() {
       <div className="ev-filterbar">
         <div className="ev-search" style={{ maxWidth: 360 }}>
           <Search aria-hidden="true" />
-          <input className="ev-input" style={{ height: 'var(--control-sm)', fontSize: 13 }} placeholder="Rechercher un nom, un e-mail, un téléphone" aria-label="Rechercher un utilisateur" value={q} onChange={(e) => setQ(e.target.value)} />
+          <input
+            className="ev-input"
+            style={{ height: 'var(--control-sm)', fontSize: 13 }}
+            placeholder="Rechercher un nom, un e-mail, un téléphone"
+            aria-label="Rechercher un utilisateur"
+            value={q}
+            onChange={(e) => setQ(e.target.value)}
+          />
         </div>
         <select className="ev-select" aria-label="Filtrer par rôle" value={role} onChange={(e) => setRole(e.target.value as Role | '')}>
           <option value="">Tous les rôles</option>
@@ -128,7 +124,11 @@ export default function Utilisateurs() {
                         {u.is_active ? 'Actif' : 'Désactivé'}
                       </span>
                       {u.doit_changer_mdp && u.is_active && (
-                        <span className="ev-badge ev-pay" data-pay="partiel" title="Mot de passe provisoire : la personne doit le changer à sa prochaine connexion">
+                        <span
+                          className="ev-badge ev-pay"
+                          data-pay="partiel"
+                          title="Mot de passe provisoire : la personne doit le changer à sa prochaine connexion"
+                        >
                           Mot de passe provisoire
                         </span>
                       )}
@@ -239,11 +239,41 @@ function CreerDialog({ open, onClose }: { open: boolean; onClose: () => void }) 
     >
       <form id="form-creer-user" className="stack" onSubmit={submit} noValidate>
         {erreur && <Alert tone="error">{erreur}</Alert>}
-        <TextField label="Nom complet" required data-autofocus value={f.nom} onChange={(e) => setF({ ...f, nom: e.target.value })} error={erreurs.nom} autoComplete="off" />
-        <TextField label="E-mail" type="email" required value={f.email} onChange={(e) => setF({ ...f, email: e.target.value })} error={erreurs.email} autoComplete="off" />
+        <TextField
+          label="Nom complet"
+          required
+          data-autofocus
+          value={f.nom}
+          onChange={(e) => setF({ ...f, nom: e.target.value })}
+          error={erreurs.nom}
+          autoComplete="off"
+        />
+        <TextField
+          label="E-mail"
+          type="email"
+          required
+          value={f.email}
+          onChange={(e) => setF({ ...f, email: e.target.value })}
+          error={erreurs.email}
+          autoComplete="off"
+        />
         <div className="ev-form-grid">
-          <SelectField label="Rôle" required value={f.role} onChange={(e) => setF({ ...f, role: e.target.value as Role })} options={ROLE_OPTIONS} error={erreurs.role} />
-          <TextField label="Téléphone" type="tel" value={f.telephone} onChange={(e) => setF({ ...f, telephone: e.target.value })} error={erreurs.telephone} placeholder="77 000 00 00" />
+          <SelectField
+            label="Rôle"
+            required
+            value={f.role}
+            onChange={(e) => setF({ ...f, role: e.target.value as Role })}
+            options={ROLE_OPTIONS}
+            error={erreurs.role}
+          />
+          <TextField
+            label="Téléphone"
+            type="tel"
+            value={f.telephone}
+            onChange={(e) => setF({ ...f, telephone: e.target.value })}
+            error={erreurs.telephone}
+            placeholder="77 000 00 00"
+          />
         </div>
         <div className="stack-sm">
           <TextField
@@ -296,10 +326,7 @@ function ModifierDialog({ user, moiId, onClose }: { user: UserAdmin | null; moiI
     onSuccess: (u) => {
       qc.invalidateQueries({ queryKey: ['users'] });
       const coupe = 'role' in changes || changes.is_active === false;
-      toast.success(
-        u.is_active ? 'Utilisateur modifié' : 'Compte désactivé',
-        coupe ? `Les sessions ouvertes de ${u.nom} ont été fermées.` : undefined,
-      );
+      toast.success(u.is_active ? 'Utilisateur modifié' : 'Compte désactivé', coupe ? `Les sessions ouvertes de ${u.nom} ont été fermées.` : undefined);
       onClose();
     },
     onError: (e) => {

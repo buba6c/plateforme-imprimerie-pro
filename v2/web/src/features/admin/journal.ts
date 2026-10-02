@@ -65,6 +65,11 @@ const CLE_LABELS: Record<string, string> = {
   rccm: 'RCCM',
   adresse: 'adresse',
   dans_id: 'fusionné dans',
+  source: 'client fusionné',
+  destination: 'conservé',
+  dossiers: 'dossiers déplacés',
+  devis: 'devis déplacés',
+  factures: 'factures déplacées',
 };
 
 const MASQUEES = new Set(['dossier_id', 'paiement_id']);
@@ -122,8 +127,13 @@ export function resumerDonnees(data: unknown): { cle: string; valeur: string }[]
       return;
     }
     if (estObjet(v)) {
+      // Une entité { id, nom } se résume à son nom.
+      if (chemin.length && typeof v.nom === 'string') {
+        out.push({ cle: libelleCle(chemin), valeur: valeur('nom', v.nom) });
+        return;
+      }
       for (const [k, x] of Object.entries(v)) {
-        if (MASQUEES.has(k) && ('numero' in v || 'dossier_numero' in v)) continue;
+        if (MASQUEES.has(k)) continue;
         visiter(x, [...chemin, k]);
       }
       return;

@@ -3,7 +3,7 @@
 //   Montant commandé : --accent   ·   Encaissé : --st-ship-solid
 // Couple validé (scripts/validate_palette.js) : séparation daltonisme ΔE 19,2 (clair) / 13,4 (sombre).
 import { useEffect, useState } from 'react';
-import { Bar, BarChart, CartesianGrid, LabelList, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
+import { Bar, BarChart, CartesianGrid, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import { formatEntier, formatFCFA } from '@evocom/shared';
 import { libelleAxe, libelleLong } from './dates';
 import type { Pas, PointEvolution } from './types';
@@ -75,7 +75,11 @@ function TipBox({ title, rows }: { title: string; rows: TipRow[] }) {
       <div className="adm-tip__title">{title}</div>
       {rows.map((r) => (
         <div key={r.label} className="adm-tip__row">
-          {r.color ? <span className="adm-key" style={{ background: r.color }} aria-hidden="true" /> : <span className="adm-key adm-key--none" aria-hidden="true" />}
+          {r.color ? (
+            <span className="adm-key" style={{ background: r.color }} aria-hidden="true" />
+          ) : (
+            <span className="adm-key adm-key--none" aria-hidden="true" />
+          )}
           <strong className="ev-num">{r.value}</strong>
           <span>{r.label}</span>
         </div>
@@ -204,56 +208,41 @@ export function CommandesChart({ data, pas, height = 180 }: { data: PointEvoluti
   );
 }
 
-/** Barres horizontales d'une seule série (délais moyens), valeur au bout de la barre. */
-export function BarresHorizontales({
-  data,
-  format,
-  tooltip,
-}: {
-  data: { label: string; value: number | null; detail?: string }[];
-  format: (v: number) => string;
-  tooltip?: (d: { label: string; value: number | null; detail?: string }) => TipRow[];
-}) {
-  const c = useChartColors();
-  const rows = data.map((d) => ({ ...d, v: d.value ?? 0 }));
-  const height = rows.length * 44 + 16;
-  return (
-    <div style={{ width: '100%', height }}>
-      <ResponsiveContainer width="100%" height="100%">
-        <BarChart data={rows} layout="vertical" margin={{ top: 4, right: 72, bottom: 4, left: 0 }} barCategoryGap={10}>
-          <CartesianGrid horizontal={false} stroke={c.grid} strokeWidth={1} />
-          <XAxis type="number" hide domain={[0, 'dataMax']} />
-          <YAxis type="category" dataKey="label" width={170} tick={{ fill: c.text, fontSize: 13, fontFamily: c.sans }} tickLine={false} axisLine={{ stroke: c.grid }} />
-          <Tooltip
-            cursor={{ fill: c.grid, fillOpacity: 0.5 }}
-            isAnimationActive={false}
-            content={({ active, payload }) => {
-              if (!active || !payload?.length) return null;
-              const d = payload[0]!.payload as (typeof rows)[number];
-              return <TipBox title={d.label} rows={tooltip ? tooltip(d) : [{ label: '', value: d.value === null ? '—' : format(d.value), color: c.commande }]} />;
-            }}
-          />
-          <Bar dataKey="v" fill={c.commande} maxBarSize={20} radius={[0, 4, 4, 0]} isAnimationActive={false}>
-            <LabelList
-              dataKey="value"
-              position="right"
-              formatter={(v: unknown) => (typeof v === 'number' ? format(v) : '—')}
-              style={{ fill: c.text, fontSize: 12, fontFamily: c.mono }}
-            />
-          </Bar>
-        </BarChart>
-      </ResponsiveContainer>
-    </div>
-  );
-}
-
 /** Durée moyenne en heures -> « 3,5 h », « 2 j 4 h ». */
 export function formatDuree(heures: number | null | undefined): string {
   if (heures === null || heures === undefined || Number.isNaN(heures)) return '—';
-  if (heures < 1) return `${Math.max(1, Math.round(heures * 60))} min`;
+  // L'API arrondit au dixième d'heure (6 min) : 0 signifie moins de 3 minutes.
+  if (heures < 0.1) return 'moins de 6 min';
+  if (heures < 1) return `${Math.round(heures * 60)} min`;
   if (heures < 24) return `${heures.toLocaleString('fr-FR', { maximumFractionDigits: 1 })} h`;
   const total = Math.round(heures);
   const j = Math.floor(total / 24);
   const h = total % 24;
   return h ? `${j} j ${h} h` : `${j} j`;
+}
+
+/** Barres horizontales d'une seule série en HTML : libellé, barre proportionnelle, valeur toujours visible. */
+export function BarresDelais({ data }: { data: { label: string; aide: string; heures: number | null; nb: number }[] }) {
+  const max = Math.max(...data.map((d) => d.heures ?? 0), 0);
+  return (
+    <ul className="adm-bars">
+      {data.map((d) => (
+        <li key={d.label} className="adm-bars__row">
+          <span className="adm-bars__label">
+            {d.label}
+            <span className="adm-sub">{d.aide}</span>
+          </span>
+          <span className="adm-bars__track" aria-hidden="true">
+            {d.heures !== null && <span style={{ width: `${max > 0 ? Math.max(1.5, (d.heures / max) * 100) : 1.5}%` }} />}
+          </span>
+          <span className="adm-bars__value">
+            <span className="ev-num">{formatDuree(d.heures)}</span>
+            <span className="adm-sub">
+              {d.nb} {d.nb > 1 ? 'dossiers' : 'dossier'}
+            </span>
+          </span>
+        </li>
+      ))}
+    </ul>
+  );
 }

@@ -88,9 +88,7 @@ export default function TableauDeBord() {
       />
 
       {apercu.isError && (
-        <Alert tone="error">
-          Les indicateurs n'ont pas pu être chargés : {messageErreur(apercu.error)} Les chiffres inconnus sont affichés « — ».
-        </Alert>
+        <Alert tone="error">Les indicateurs n'ont pas pu être chargés : {messageErreur(apercu.error)} Les chiffres inconnus sont affichés « — ».</Alert>
       )}
 
       <div className="ev-kpis adm-kpis" style={{ opacity: apercu.isFetching && !chargement ? 0.6 : 1 }}>
@@ -152,7 +150,15 @@ export default function TableauDeBord() {
             <BandeProduction apercu={a} loading={chargement} />
           </Card>
 
-          <Card title={`Commandé et encaissé · ${titreGraphe}`} actions={<Link to="/statistiques" className="ev-btn ev-btn--ghost ev-btn--sm">Ouvrir les statistiques<ArrowRight aria-hidden="true" /></Link>}>
+          <Card
+            title={`Commandé et encaissé · ${titreGraphe}`}
+            actions={
+              <Link to="/statistiques" className="ev-btn ev-btn--ghost ev-btn--sm">
+                Ouvrir les statistiques
+                <ArrowRight aria-hidden="true" />
+              </Link>
+            }
+          >
             {evolution.isError ? (
               <Alert tone="error">L'évolution n'a pas pu être chargée : {messageErreur(evolution.error)}</Alert>
             ) : evolution.isLoading ? (
@@ -376,13 +382,7 @@ function Bloc({
         </div>
         <span className="adm-watch__n ev-num">{nb(n)}</span>
       </header>
-      {loading ? (
-        <Skeleton h={36} />
-      ) : n === 0 ? (
-        <p className="adm-watch__vide">{vide}</p>
-      ) : (
-        <div className="adm-watch__list">{children}</div>
-      )}
+      {loading ? <Skeleton h={36} /> : n === 0 ? <p className="adm-watch__vide">{vide}</p> : <div className="adm-watch__list">{children}</div>}
       {!!n && lien && (
         <Link to={lien} className="adm-watch__more">
           {reste > 0 ? `${lienLabel} (${reste} de plus)` : lienLabel}

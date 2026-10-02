@@ -87,7 +87,8 @@ export default function ListeDossiers() {
   const page = Math.max(1, Number(sp.get('page')) || 1);
 
   const maj = (patch: Record<string, string | null>, garderPage = false) => {
-    const n = new URLSearchParams(sp);
+    // Base = adresse courante : deux changements rapprochés ne s'écrasent pas.
+    const n = new URLSearchParams(window.location.search);
     for (const [k, v] of Object.entries(patch)) {
       if (v === null || v === '') n.delete(k);
       else n.set(k, v);

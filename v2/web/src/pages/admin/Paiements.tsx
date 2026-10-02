@@ -2,29 +2,9 @@ import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Check, Wallet, X } from 'lucide-react';
-import {
-  formatDateHeure,
-  formatEntier,
-  formatFCFA,
-  MODE_PAIEMENT_LABELS,
-  ROLE_LABELS,
-  type StatutPaiement,
-} from '@evocom/shared';
+import { formatDateHeure, formatEntier, formatFCFA, MODE_PAIEMENT_LABELS, ROLE_LABELS, type StatutPaiement } from '@evocom/shared';
 import { api, messageErreur } from '../../lib/api';
-import {
-  Alert,
-  Button,
-  Card,
-  ConfirmDialog,
-  EmptyState,
-  LoadingRows,
-  PageHeader,
-  Pagination,
-  Ref,
-  Tabs,
-  TextareaField,
-  useToast,
-} from '../../ui';
+import { Alert, Button, Card, ConfirmDialog, EmptyState, LoadingRows, PageHeader, Pagination, Ref, Tabs, TextareaField, useToast } from '../../ui';
 import type { Caisse, ListePaiements, Paiement } from '../../features/admin/types';
 import '../../features/admin/admin.css';
 
@@ -129,10 +109,7 @@ export default function Paiements() {
     if (ko.length === 0) {
       toast.success(`${ok.length} ${ok.length > 1 ? 'paiements validés' : 'paiement validé'}`, `${formatFCFA(totalOk)} ajoutés à l'encaissé.`);
     } else {
-      toast.error(
-        `${ok.length} ${ok.length > 1 ? 'validés' : 'validé'}, ${ko.length} en échec`,
-        ko.map((k) => `${k.p.numero} : ${k.err}`).join(' '),
-      );
+      toast.error(`${ok.length} ${ok.length > 1 ? 'validés' : 'validé'}, ${ko.length} en échec`, ko.map((k) => `${k.p.numero} : ${k.err}`).join(' '));
     }
   }
 
@@ -155,7 +132,12 @@ export default function Paiements() {
                 {encaisseur ? (
                   <span className="ev-chip">
                     Encaissé par {encaisseur.nom}
-                    <button className="ev-icon-btn ev-icon-btn--sm" aria-label="Retirer le filtre encaisseur" onClick={() => setEncaisseur(null)} style={{ width: 22, height: 22 }}>
+                    <button
+                      className="ev-icon-btn ev-icon-btn--sm"
+                      aria-label="Retirer le filtre encaisseur"
+                      onClick={() => setEncaisseur(null)}
+                      style={{ width: 22, height: 22 }}
+                    >
                       <X />
                     </button>
                   </span>
@@ -167,7 +149,8 @@ export default function Paiements() {
               </div>
               {liste.data && (
                 <span className="ev-muted" style={{ fontSize: 13 }}>
-                  {formatEntier(liste.data.total)} {liste.data.total > 1 ? 'paiements' : 'paiement'} · <span className="ev-num">{formatFCFA(liste.data.somme)}</span>
+                  {formatEntier(liste.data.total)} {liste.data.total > 1 ? 'paiements' : 'paiement'} ·{' '}
+                  <span className="ev-num">{formatFCFA(liste.data.somme)}</span>
                 </span>
               )}
             </div>
@@ -209,7 +192,11 @@ export default function Paiements() {
                         <th>Encaissé par</th>
                         {statut === 'valide' && <th>Validé par</th>}
                         {statut === 'refuse' && <th>Refus</th>}
-                        {statut === 'a_valider' && <th className="ev-cell-actions"><span className="sr-only">Actions</span></th>}
+                        {statut === 'a_valider' && (
+                          <th className="ev-cell-actions">
+                            <span className="sr-only">Actions</span>
+                          </th>
+                        )}
                       </tr>
                     </thead>
                     <tbody>
@@ -271,10 +258,22 @@ export default function Paiements() {
                           {statut === 'a_valider' && (
                             <td className="ev-cell-actions">
                               <div className="row" style={{ justifyContent: 'flex-end', flexWrap: 'nowrap' }}>
-                                <Button size="sm" variant="primary" busy={enCours === p.id} disabled={bulkBusy} onClick={() => valider.mutate(p)} aria-label={`Valider le paiement ${p.numero}`}>
+                                <Button
+                                  size="sm"
+                                  variant="primary"
+                                  busy={enCours === p.id}
+                                  disabled={bulkBusy}
+                                  onClick={() => valider.mutate(p)}
+                                  aria-label={`Valider le paiement ${p.numero}`}
+                                >
                                   Valider
                                 </Button>
-                                <Button size="sm" disabled={bulkBusy || enCours === p.id} onClick={() => setRefus(p)} aria-label={`Refuser le paiement ${p.numero}`}>
+                                <Button
+                                  size="sm"
+                                  disabled={bulkBusy || enCours === p.id}
+                                  onClick={() => setRefus(p)}
+                                  aria-label={`Refuser le paiement ${p.numero}`}
+                                >
                                   Refuser
                                 </Button>
                               </div>
@@ -289,7 +288,11 @@ export default function Paiements() {
                 <div className="adm-only-mobile adm-cards" style={{ padding: 'var(--space-3)' }}>
                   {statut === 'a_valider' && (
                     <label className="ev-check" style={{ padding: '0 var(--space-1)' }}>
-                      <input type="checkbox" checked={tousCoches} onChange={(e) => setSelection(e.target.checked ? new Set(items.map((p) => p.id)) : new Set())} />
+                      <input
+                        type="checkbox"
+                        checked={tousCoches}
+                        onChange={(e) => setSelection(e.target.checked ? new Set(items.map((p) => p.id)) : new Set())}
+                      />
                       <span className="ev-check__box" aria-hidden="true" />
                       Tout sélectionner
                     </label>
@@ -459,8 +462,8 @@ function RefusDialog({ paiement, onClose }: { paiement: Paiement | null; onClose
       description={
         paiement ? (
           <>
-            <Ref>{paiement.numero}</Ref> · {paiement.client_nom} · <span className="ev-num">{formatFCFA(paiement.montant)}</span> en {MODE_PAIEMENT_LABELS[paiement.mode]}, encaissé par{' '}
-            {paiement.encaisse_par_nom ?? '—'}.
+            <Ref>{paiement.numero}</Ref> · {paiement.client_nom} · <span className="ev-num">{formatFCFA(paiement.montant)}</span> en{' '}
+            {MODE_PAIEMENT_LABELS[paiement.mode]}, encaissé par {paiement.encaisse_par_nom ?? '—'}.
           </>
         ) : null
       }
@@ -494,6 +497,7 @@ function CaissePanel({
   onChoisir: (u: { id: number; nom: string } | null) => void;
 }) {
   const modes = useMemo(() => data?.par_mode ?? [], [data]);
+  const totalAValider = data ? (data.totaux?.a_valider.somme ?? sum(data.par_encaisseur.map((e) => e.a_valider.somme))) : 0;
   return (
     <Card title="Caisse" flush className="adm-sticky">
       {error ? (
@@ -509,14 +513,16 @@ function CaissePanel({
           <div className="adm-caisse-total">
             <div className="stack-sm" style={{ gap: 2 }}>
               <span className="ev-kpi__label">À valider</span>
-              <span className="ev-kpi__value adm-caisse-pending">{formatEntier(data.totaux?.a_valider.somme ?? sum(data.par_encaisseur.map((e) => e.a_valider.somme)))}</span>
-              <span className="adm-caisse-sub">
-                FCFA · {data.totaux?.a_valider.n ?? sum(data.par_encaisseur.map((e) => e.a_valider.n))} paiement(s)
+              <span className={totalAValider > 0 ? 'ev-kpi__value adm-caisse-pending' : 'ev-kpi__value'}>
+                {formatEntier(data.totaux?.a_valider.somme ?? sum(data.par_encaisseur.map((e) => e.a_valider.somme)))}
               </span>
+              <span className="adm-caisse-sub">FCFA · {data.totaux?.a_valider.n ?? sum(data.par_encaisseur.map((e) => e.a_valider.n))} paiement(s)</span>
             </div>
             <div className="stack-sm" style={{ gap: 2 }}>
               <span className="ev-kpi__label">Validé aujourd'hui</span>
-              <span className="ev-kpi__value">{formatEntier(data.totaux?.valide_aujourdhui.somme ?? sum(data.par_encaisseur.map((e) => e.valide_aujourdhui.somme)))}</span>
+              <span className="ev-kpi__value">
+                {formatEntier(data.totaux?.valide_aujourdhui.somme ?? sum(data.par_encaisseur.map((e) => e.valide_aujourdhui.somme)))}
+              </span>
               <span className="adm-caisse-sub">
                 FCFA · {data.totaux?.valide_aujourdhui.n ?? sum(data.par_encaisseur.map((e) => e.valide_aujourdhui.n))} paiement(s)
               </span>
@@ -544,7 +550,7 @@ function CaissePanel({
                   <span style={{ fontWeight: 500, minWidth: 0 }} className="truncate">
                     {e.nom}
                   </span>
-                  <span className="ev-num adm-caisse-pending">{formatFCFA(e.a_valider.somme)}</span>
+                  <span className={e.a_valider.somme > 0 ? 'ev-num adm-caisse-pending' : 'ev-num'}>{formatFCFA(e.a_valider.somme)}</span>
                   <span className="adm-caisse-sub">
                     {e.role ? ROLE_LABELS[e.role] : '—'} · {e.a_valider.n} à valider
                   </span>
@@ -589,8 +595,8 @@ function CaissePanel({
             </table>
           )}
           <p className="adm-explain" style={{ padding: 'var(--space-3) var(--space-5) var(--space-4)', borderTop: '1px solid var(--line)' }}>
-            Avant de valider, comptez l'argent remis par chaque encaisseur : les espèces doivent correspondre au montant « à valider », les paiements
-            mobiles à leur référence de transaction. Montants en FCFA.
+            Avant de valider, comptez l'argent remis par chaque encaisseur : les espèces doivent correspondre au montant « à valider », les paiements mobiles à
+            leur référence de transaction. Montants en FCFA.
           </p>
         </>
       )}

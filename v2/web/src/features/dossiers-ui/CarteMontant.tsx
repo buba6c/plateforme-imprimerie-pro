@@ -115,7 +115,7 @@ export function CarteMontant({ d, peutEncaisser, peutFacturer, params, libelleGr
                     {p.reference ? (
                       <>
                         {' · '}
-                        <span className="ev-mono">Réf. {p.reference}</span>
+                        <span className="ev-mono nowrap">Réf. {p.reference}</span>
                       </>
                     ) : null}
                   </span>

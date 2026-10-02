@@ -126,9 +126,7 @@ export function Simulateur({
             Le calcul inclut {brouillons} {brouillons > 1 ? 'prix saisis non enregistrés' : 'prix saisi non enregistré'}.
           </Alert>
         )}
-        {paramsIndisponibles && (
-          <Alert tone="warning">Paramètres de calcul indisponibles : le calcul utilise l’arrondi à 100 FCFA sans TVA, à vérifier.</Alert>
-        )}
+        {paramsIndisponibles && <Alert tone="warning">Paramètres de calcul indisponibles : le calcul utilise l’arrondi à 100 FCFA sans TVA, à vérifier.</Alert>}
         <Segmented<Machine>
           name="sim-machine"
           label="Machine"
@@ -150,7 +148,12 @@ export function Simulateur({
           <div className="adm-sim-grid">
             <TextField label="Largeur" inputMode="decimal" value={largeur} onChange={(e) => setLargeur(e.target.value)} mono />
             <TextField label="Hauteur" inputMode="decimal" value={hauteur} onChange={(e) => setHauteur(e.target.value)} mono />
-            <SelectField label="Unité" value={unite} onChange={(e) => setUnite(e.target.value as UniteDimension)} options={UNITES_DIMENSION.map((u) => ({ value: u, label: u }))} />
+            <SelectField
+              label="Unité"
+              value={unite}
+              onChange={(e) => setUnite(e.target.value as UniteDimension)}
+              options={UNITES_DIMENSION.map((u) => ({ value: u, label: u }))}
+            />
             <TextField label="Exemplaires" inputMode="numeric" value={quantite} onChange={(e) => setQuantite(e.target.value)} mono />
           </div>
         ) : (
@@ -258,7 +261,9 @@ export function Simulateur({
                       <td>
                         {l.libelle}
                         <span className="adm-sub">
-                          {l.unite === 'pourcent' ? 'sur le sous-total' : `${formatDecimal(l.quantite)} ${UNITE_COURTE[l.unite]} × ${formatFCFA(l.prix_unitaire)}`}
+                          {l.unite === 'pourcent'
+                            ? 'sur le sous-total'
+                            : `${formatDecimal(l.quantite)} ${UNITE_COURTE[l.unite]} × ${formatFCFA(l.prix_unitaire)}`}
                         </span>
                       </td>
                       <td className="ev-num text-right nowrap">{formatFCFA(l.total)}</td>

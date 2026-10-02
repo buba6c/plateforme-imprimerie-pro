@@ -32,7 +32,15 @@ export default function Sante() {
   const libre = s?.stockage.libre_octets ?? null;
   const total = s?.stockage.total_octets ?? null;
   const partLibre = libre !== null && total ? libre / total : null;
-  const stockageTone: 'ok' | 'warn' | 'ko' = libre === null ? 'ko' : partLibre !== null && (partLibre < 0.05 || libre < 2 * 1024 ** 3) ? 'ko' : partLibre !== null && partLibre < 0.15 ? 'warn' : 'ok';
+  const GO = 1024 ** 3;
+  const stockageTone: 'ok' | 'warn' | 'ko' =
+    libre === null
+      ? 'ko'
+      : libre < 2 * GO || (partLibre !== null && partLibre < 0.03)
+        ? 'ko'
+        : libre < 10 * GO || (partLibre !== null && partLibre < 0.1)
+          ? 'warn'
+          : 'ok';
 
   const migrationsEnAttente = s?.migrations.en_attente ?? [];
 
@@ -68,7 +76,8 @@ export default function Sante() {
           {!s.base.ok && <Alert tone="error">{s.base.erreur ?? 'La base de données ne répond pas.'}</Alert>}
           {migrationsEnAttente.length > 0 && (
             <Alert tone="warning">
-              {migrationsEnAttente.length} {migrationsEnAttente.length > 1 ? 'migrations de base de données en attente' : 'migration de base de données en attente'} : relancez le
+              {migrationsEnAttente.length}{' '}
+              {migrationsEnAttente.length > 1 ? 'migrations de base de données en attente' : 'migration de base de données en attente'} : relancez le
               déploiement (v2/deploy/deploy.sh) pour les appliquer.
             </Alert>
           )}
@@ -151,7 +160,9 @@ export default function Sante() {
                 )}
                 {s.stockage.erreur && <Alert tone="error">{s.stockage.erreur}</Alert>}
                 {stockageTone !== 'ok' && !s.stockage.erreur && (
-                  <Alert tone={stockageTone === 'ko' ? 'error' : 'warning'}>Le disque se remplit : libérez de l’espace ou agrandissez le volume avant qu’un envoi de fichier échoue.</Alert>
+                  <Alert tone={stockageTone === 'ko' ? 'error' : 'warning'}>
+                    Le disque se remplit : libérez de l’espace ou agrandissez le volume avant qu’un envoi de fichier échoue.
+                  </Alert>
                 )}
               </div>
             </Card>

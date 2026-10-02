@@ -151,11 +151,11 @@ export default function Tarifs() {
                       <table className="ev-table adm-dense adm-tarifs-table">
                         <colgroup>
                           <col />
-                          <col style={{ width: 190 }} />
-                          <col style={{ width: 140 }} />
-                          <col style={{ width: 200 }} />
-                          <col style={{ width: 64 }} />
-                          <col style={{ width: 56 }} />
+                          <col style={{ width: 170 }} />
+                          <col style={{ width: 132 }} />
+                          <col style={{ width: 150 }} />
+                          <col style={{ width: 60 }} />
+                          <col style={{ width: 76 }} />
                         </colgroup>
                         <thead>
                           <tr>
@@ -247,7 +247,10 @@ function LigneTarif({
     mutationFn: (v: boolean) => api.patch<Tarif>(`/tarifs/${t.id}`, { actif: v }),
     onSuccess: (r) => {
       invalider(qc);
-      toast.success(r.actif ? 'Tarif activé' : 'Tarif désactivé', r.actif ? `${r.libelle} est de nouveau proposé.` : `${r.libelle} n’est plus proposé dans les devis et les dossiers.`);
+      toast.success(
+        r.actif ? 'Tarif activé' : 'Tarif désactivé',
+        r.actif ? `${r.libelle} est de nouveau proposé.` : `${r.libelle} n’est plus proposé dans les devis et les dossiers.`,
+      );
     },
     onError: (e) => toast.error(`« ${t.libelle} » n’a pas été modifié`, messageErreur(e)),
   });
@@ -258,76 +261,90 @@ function LigneTarif({
   const classe = [t.actif && t.prix === null && 'adm-tarif-missing', !t.actif && 'adm-tarif-inactive'].filter(Boolean).join(' ') || undefined;
 
   return (
-    <tr className={classe}>
-      <td>
-        <div className="row" style={{ gap: 6 }}>
-          <span className="ev-cell-main">{t.libelle}</span>
-          {t.actif && t.prix === null && <span className="adm-tag-missing">Prix à définir</span>}
-        </div>
-        {t.description && <span className="adm-sub">{t.description}</span>}
-        {reliureAuForfait(t) && (
-          <div className="adm-note">
-            <AlertTriangle aria-hidden="true" />
-            <span>
-              Facturée une seule fois par ligne, quel que soit le nombre d’exemplaires.{' '}
-              <button type="button" className="ev-link adm-linkbtn" onClick={onPasserExemplaire}>
-                Facturer par exemplaire
-              </button>
-            </span>
+    <>
+      <tr className={[classe, reliureAuForfait(t) && 'adm-has-note'].filter(Boolean).join(' ') || undefined}>
+        <td>
+          <div className="row" style={{ gap: 6 }}>
+            <span className="ev-cell-main">{t.libelle}</span>
+            {t.actif && t.prix === null && <span className="adm-tag-missing">Prix à définir</span>}
           </div>
-        )}
-      </td>
-      <td>
-        <span className="ev-ref">{t.code}</span>
-      </td>
-      <td className="nowrap">{libelleUnite(t.unite)}</td>
-      <td className="ev-cell-num">
-        <form
-          className="adm-price"
-          onSubmit={(e) => {
-            e.preventDefault();
-            enregistrer();
-          }}
-        >
-          <input
-            className="ev-input"
-            inputMode="numeric"
-            aria-label={`Prix de ${t.libelle} en ${t.unite === 'pourcent' ? 'pourcentage' : 'FCFA'}`}
-            aria-invalid={invalide || undefined}
-            placeholder="À définir"
-            value={valeur}
-            onChange={(e) => setBrouillon(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === 'Escape') setBrouillon(undefined);
+          {t.description && <span className="adm-sub">{t.description}</span>}
+        </td>
+        <td>
+          <span className="ev-ref">{t.code}</span>
+        </td>
+        <td className="nowrap">{libelleUnite(t.unite)}</td>
+        <td className="ev-cell-num">
+          <form
+            className="adm-price"
+            onSubmit={(e) => {
+              e.preventDefault();
+              enregistrer();
             }}
+          >
+            <input
+              className="ev-input"
+              inputMode="numeric"
+              aria-label={`Prix de ${t.libelle} en ${t.unite === 'pourcent' ? 'pourcentage' : 'FCFA'}`}
+              aria-invalid={invalide || undefined}
+              placeholder="À définir"
+              value={valeur}
+              onChange={(e) => setBrouillon(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Escape') setBrouillon(undefined);
+              }}
+            />
+            <span className="adm-price__unit" aria-hidden="true">
+              {t.unite === 'pourcent' ? '%' : ''}
+            </span>
+          </form>
+          {invalide && (
+            <span className="ev-error" style={{ display: 'block', fontFamily: 'var(--font-sans)' }}>
+              Nombre entier attendu
+            </span>
+          )}
+        </td>
+        <td>
+          <Checkbox
+            label={<span className="sr-only">Actif : {t.libelle}</span>}
+            checked={t.actif}
+            disabled={actif.isPending}
+            onChange={(v) => actif.mutate(v)}
           />
-          <span className="adm-price__unit" aria-hidden="true">
-            {t.unite === 'pourcent' ? '%' : ''}
-          </span>
-          <span className="adm-price__actions">
-            {modifie ? (
-              <>
-                <IconButton size="sm" label={`Enregistrer le prix de ${t.libelle}`} type="submit" disabled={prix.isPending} className="adm-save">
-                  <Check />
-                </IconButton>
-                <IconButton size="sm" label="Annuler la saisie" onClick={() => setBrouillon(undefined)} disabled={prix.isPending}>
-                  <Undo2 />
-                </IconButton>
-              </>
-            ) : null}
-          </span>
-        </form>
-        {invalide && <span className="ev-error" style={{ display: 'block', fontFamily: 'var(--font-sans)' }}>Nombre entier attendu</span>}
-      </td>
-      <td>
-        <Checkbox label={<span className="sr-only">Actif : {t.libelle}</span>} checked={t.actif} disabled={actif.isPending} onChange={(v) => actif.mutate(v)} />
-      </td>
-      <td className="ev-cell-actions">
-        <IconButton size="sm" label={`Modifier ${t.libelle}`} onClick={onModifier}>
-          <Pencil />
-        </IconButton>
-      </td>
-    </tr>
+        </td>
+        <td className="ev-cell-actions">
+          {modifie ? (
+            <div className="row" style={{ gap: 0, flexWrap: 'nowrap', justifyContent: 'flex-end' }}>
+              <IconButton size="sm" label={`Enregistrer le prix de ${t.libelle}`} onClick={enregistrer} disabled={prix.isPending} className="adm-save">
+                <Check />
+              </IconButton>
+              <IconButton size="sm" label="Annuler la saisie" onClick={() => setBrouillon(undefined)} disabled={prix.isPending}>
+                <Undo2 />
+              </IconButton>
+            </div>
+          ) : (
+            <IconButton size="sm" label={`Modifier ${t.libelle}`} onClick={onModifier}>
+              <Pencil />
+            </IconButton>
+          )}
+        </td>
+      </tr>
+      {reliureAuForfait(t) && (
+        <tr className={['adm-note-row', classe].filter(Boolean).join(' ')}>
+          <td colSpan={6}>
+            <div className="adm-note">
+              <AlertTriangle aria-hidden="true" />
+              <span>
+                « {t.libelle} » est facturée une seule fois par ligne, quel que soit le nombre d’exemplaires.{' '}
+                <button type="button" className="ev-link adm-linkbtn" onClick={onPasserExemplaire}>
+                  Facturer par exemplaire
+                </button>
+              </span>
+            </div>
+          </td>
+        </tr>
+      )}
+    </>
   );
 }
 
@@ -382,7 +399,10 @@ function AjoutDialog({ open, groupe, onClose }: { open: boolean; groupe: Groupe;
       }),
     onSuccess: (t) => {
       invalider(qc);
-      toast.success('Tarif ajouté', t.prix === null ? `${t.libelle} : prix à définir avant de pouvoir chiffrer.` : `${t.libelle} est disponible pour les devis.`);
+      toast.success(
+        'Tarif ajouté',
+        t.prix === null ? `${t.libelle} : prix à définir avant de pouvoir chiffrer.` : `${t.libelle} est disponible pour les devis.`,
+      );
       onClose();
     },
     onError: (e) => {
@@ -421,10 +441,32 @@ function AjoutDialog({ open, groupe, onClose }: { open: boolean; groupe: Groupe;
       <form id="form-ajout-tarif" className="stack" onSubmit={submit} noValidate>
         {erreur && <Alert tone="error">{erreur}</Alert>}
         <div className="ev-form-grid">
-          <SelectField label="Machine" required value={f.machine} onChange={(e) => setF({ ...f, machine: e.target.value as Groupe })} options={GROUPES} error={erreurs.machine} />
-          <SelectField label="Catégorie" required value={f.categorie} onChange={(e) => setF({ ...f, categorie: e.target.value as CategorieTarif })} options={CATEGORIE_OPTIONS} error={erreurs.categorie} />
+          <SelectField
+            label="Machine"
+            required
+            value={f.machine}
+            onChange={(e) => setF({ ...f, machine: e.target.value as Groupe })}
+            options={GROUPES}
+            error={erreurs.machine}
+          />
+          <SelectField
+            label="Catégorie"
+            required
+            value={f.categorie}
+            onChange={(e) => setF({ ...f, categorie: e.target.value as CategorieTarif })}
+            options={CATEGORIE_OPTIONS}
+            error={erreurs.categorie}
+          />
         </div>
-        <TextField label="Libellé" required data-autofocus value={f.libelle} onChange={(e) => setF({ ...f, libelle: e.target.value })} error={erreurs.libelle} placeholder="Vinyle adhésif mat" />
+        <TextField
+          label="Libellé"
+          required
+          data-autofocus
+          value={f.libelle}
+          onChange={(e) => setF({ ...f, libelle: e.target.value })}
+          error={erreurs.libelle}
+          placeholder="Vinyle adhésif mat"
+        />
         <TextField
           label="Code"
           required
@@ -435,7 +477,14 @@ function AjoutDialog({ open, groupe, onClose }: { open: boolean; groupe: Groupe;
           help="Identifiant utilisé dans les dossiers : minuscules, chiffres et _. Il ne peut plus être changé ensuite."
         />
         <div className="ev-form-grid">
-          <SelectField label="Unité" required value={f.unite} onChange={(e) => setF({ ...f, unite: e.target.value as UniteTarif })} options={UNITE_OPTIONS} error={erreurs.unite} />
+          <SelectField
+            label="Unité"
+            required
+            value={f.unite}
+            onChange={(e) => setF({ ...f, unite: e.target.value as UniteTarif })}
+            options={UNITE_OPTIONS}
+            error={erreurs.unite}
+          />
           <TextField
             label="Prix"
             inputMode="numeric"
@@ -447,7 +496,13 @@ function AjoutDialog({ open, groupe, onClose }: { open: boolean; groupe: Groupe;
             help="Laissez vide si le prix n’est pas encore connu."
           />
         </div>
-        <TextareaField label="Description" value={f.description} onChange={(e) => setF({ ...f, description: e.target.value })} error={erreurs.description} rows={2} />
+        <TextareaField
+          label="Description"
+          value={f.description}
+          onChange={(e) => setF({ ...f, description: e.target.value })}
+          error={erreurs.description}
+          rows={2}
+        />
       </form>
     </Dialog>
   );
@@ -516,13 +571,33 @@ function EditionDialog({ tarif, onClose }: { tarif: Tarif | null; onClose: () =>
         {erreur && <Alert tone="error">{erreur}</Alert>}
         <TextField label="Libellé" required value={f.libelle} onChange={(e) => setF({ ...f, libelle: e.target.value })} error={erreurs.libelle} />
         <div className="ev-form-grid">
-          <SelectField label="Catégorie" value={f.categorie} onChange={(e) => setF({ ...f, categorie: e.target.value as CategorieTarif })} options={CATEGORIE_OPTIONS} error={erreurs.categorie} />
-          <SelectField label="Unité" value={f.unite} onChange={(e) => setF({ ...f, unite: e.target.value as UniteTarif })} options={UNITE_OPTIONS} error={erreurs.unite} />
+          <SelectField
+            label="Catégorie"
+            value={f.categorie}
+            onChange={(e) => setF({ ...f, categorie: e.target.value as CategorieTarif })}
+            options={CATEGORIE_OPTIONS}
+            error={erreurs.categorie}
+          />
+          <SelectField
+            label="Unité"
+            value={f.unite}
+            onChange={(e) => setF({ ...f, unite: e.target.value as UniteTarif })}
+            options={UNITE_OPTIONS}
+            error={erreurs.unite}
+          />
         </div>
         {'unite' in changes && (
-          <Alert tone="warning">Changer l’unité modifie la façon dont ce tarif est compté dans les prochains devis et dossiers. Vérifiez avec le simulateur.</Alert>
+          <Alert tone="warning">
+            Changer l’unité modifie la façon dont ce tarif est compté dans les prochains devis et dossiers. Vérifiez avec le simulateur.
+          </Alert>
         )}
-        <TextareaField label="Description" value={f.description} onChange={(e) => setF({ ...f, description: e.target.value })} error={erreurs.description} rows={2} />
+        <TextareaField
+          label="Description"
+          value={f.description}
+          onChange={(e) => setF({ ...f, description: e.target.value })}
+          error={erreurs.description}
+          rows={2}
+        />
       </form>
     </Dialog>
   );

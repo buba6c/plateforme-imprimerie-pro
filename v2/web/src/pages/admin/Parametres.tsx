@@ -99,7 +99,9 @@ function verifier(f: Form): { erreurs: Record<string, string>; body: P | null } 
 
 function heureDans(fuseau: string): string {
   try {
-    return new Intl.DateTimeFormat('fr-FR', { timeZone: fuseau, hour: '2-digit', minute: '2-digit', weekday: 'long', day: 'numeric', month: 'long' }).format(new Date());
+    return new Intl.DateTimeFormat('fr-FR', { timeZone: fuseau, hour: '2-digit', minute: '2-digit', weekday: 'long', day: 'numeric', month: 'long' }).format(
+      new Date(),
+    );
   } catch {
     return '—';
   }
@@ -202,14 +204,51 @@ export default function Parametres() {
         <div className="stack">
           <p className="adm-explain">Ces informations figurent en en-tête et en pied des devis et des factures PDF.</p>
           <div className="ev-form-grid">
-            <TextField label="Nom de l’entreprise" required value={f.nom} onChange={(e) => set('nom', e.target.value)} error={erreurs['entreprise.nom']} maxLength={200} />
-            <TextField label="Téléphone" type="tel" value={f.telephone} onChange={(e) => set('telephone', e.target.value)} error={erreurs['entreprise.telephone']} maxLength={200} />
-            <TextField label="E-mail" type="email" value={f.email} onChange={(e) => set('email', e.target.value)} error={erreurs['entreprise.email']} maxLength={200} />
+            <TextField
+              label="Nom de l’entreprise"
+              required
+              value={f.nom}
+              onChange={(e) => set('nom', e.target.value)}
+              error={erreurs['entreprise.nom']}
+              maxLength={200}
+            />
+            <TextField
+              label="Téléphone"
+              type="tel"
+              value={f.telephone}
+              onChange={(e) => set('telephone', e.target.value)}
+              error={erreurs['entreprise.telephone']}
+              maxLength={200}
+            />
+            <TextField
+              label="E-mail"
+              type="email"
+              value={f.email}
+              onChange={(e) => set('email', e.target.value)}
+              error={erreurs['entreprise.email']}
+              maxLength={200}
+            />
           </div>
           <TextField label="Adresse" value={f.adresse} onChange={(e) => set('adresse', e.target.value)} error={erreurs['entreprise.adresse']} maxLength={200} />
           <div className="ev-form-grid">
-            <TextField label="NINEA" mono value={f.ninea} onChange={(e) => set('ninea', e.target.value)} error={erreurs['entreprise.ninea']} maxLength={200} help="Numéro d’identification fiscale." />
-            <TextField label="RCCM" mono value={f.rccm} onChange={(e) => set('rccm', e.target.value)} error={erreurs['entreprise.rccm']} maxLength={200} help="Registre du commerce." />
+            <TextField
+              label="NINEA"
+              mono
+              value={f.ninea}
+              onChange={(e) => set('ninea', e.target.value)}
+              error={erreurs['entreprise.ninea']}
+              maxLength={200}
+              help="Numéro d’identification fiscale."
+            />
+            <TextField
+              label="RCCM"
+              mono
+              value={f.rccm}
+              onChange={(e) => set('rccm', e.target.value)}
+              error={erreurs['entreprise.rccm']}
+              maxLength={200}
+              help="Registre du commerce."
+            />
           </div>
           <TextareaField
             label="Pied de facture"
@@ -280,7 +319,9 @@ export default function Parametres() {
                     { value: 'ht', label: 'Hors taxes (HT)' },
                   ]}
                 />
-                <span className="ev-help">{f.prix_saisis_ht ? 'La TVA s’ajoute au prix de la grille.' : 'La TVA est déjà incluse : elle est extraite du total.'}</span>
+                <span className="ev-help">
+                  {f.prix_saisis_ht ? 'La TVA s’ajoute au prix de la grille.' : 'La TVA est déjà incluse : elle est extraite du total.'}
+                </span>
               </div>
             </div>
           )}
@@ -319,8 +360,16 @@ export default function Parametres() {
         </Card>
       </div>
 
-      <div className="adm-savebar">
-        {modifie ? <span className="ev-muted" style={{ fontSize: 13 }}>Modifications non enregistrées</span> : <span className="ev-muted" style={{ fontSize: 13 }}>Tout est enregistré</span>}
+      <div className={modifie ? 'adm-savebar adm-savebar--sticky' : 'adm-savebar'}>
+        {modifie ? (
+          <span className="ev-muted" style={{ fontSize: 13 }}>
+            Modifications non enregistrées
+          </span>
+        ) : (
+          <span className="ev-muted" style={{ fontSize: 13 }}>
+            Tout est enregistré
+          </span>
+        )}
         <Button icon={<Undo2 />} disabled={!modifie || m.isPending} onClick={() => q.data && (setF(versForm(q.data)), setErreurs({}), setErreur(null))}>
           Annuler les modifications
         </Button>
