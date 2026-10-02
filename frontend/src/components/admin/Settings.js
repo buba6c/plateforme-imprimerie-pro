@@ -346,7 +346,7 @@ const Settings = () => {
   const resetDossierCounter = async () => {
     try {
       setSaving(true);
-      const API_BASE = process.env.REACT_APP_API_URL || 'http://localhost:5001/api';
+      const API_BASE = process.env.REACT_APP_API_URL || '/api';
       const authToken = localStorage.getItem('auth_token') || sessionStorage.getItem('auth_token');
       
       const response = await fetch(`${API_BASE}/system-config/reset-dossier-counter`, {

@@ -1,18 +1,42 @@
 import { useEffect, useCallback, useRef } from 'react';
 import io from 'socket.io-client';
 
-const SOCKET_URL = process.env.REACT_APP_SOCKET_URL || 'http://localhost:5001';
+// Même origine que l'application par défaut (Nginx proxifie /socket.io vers le backend)
+const SOCKET_URL =
+  process.env.REACT_APP_SOCKET_URL || (typeof window !== 'undefined' ? window.location.origin : undefined);
+
+// Le serveur refuse désormais toute connexion Socket.IO sans JWT valide :
+// le token est lu (à chaque connexion/reconnexion) depuis le stockage de l'application.
+const getAuthToken = () => {
+  try {
+    return localStorage.getItem('auth_token') || null;
+  } catch (e) {
+    return null;
+  }
+};
 
 let socket = null;
+let socketToken = null;
 
 export const getSocket = () => {
+  const token = getAuthToken();
+
+  // Changement d'utilisateur (déconnexion / reconnexion) : recréer la connexion avec le nouveau token
+  if (socket && token !== socketToken) {
+    socket.disconnect();
+    socket = null;
+  }
+
   if (!socket) {
+    socketToken = token;
     socket = io(SOCKET_URL, {
       transports: ['websocket', 'polling'],
       reconnection: true,
       reconnectionDelay: 1000,
       reconnectionDelayMax: 5000,
       reconnectionAttempts: 5,
+      // Fonction : le token courant est relu à chaque (re)connexion
+      auth: cb => cb({ token: getAuthToken() }),
     });
   }
   return socket;

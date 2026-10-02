@@ -1774,6 +1774,9 @@ async function changeStatutCoreFixed(req, res) {
       }
     }
 
+    // ⚠️ Le statut est DÉJÀ modifié en base : les notifications temps réel ne doivent jamais
+    // transformer ce succès en erreur 500 (try/catch non bloquant).
+    try {
     // Émission Socket.IO via service centralisé
     socketService.emitStatusChanged(
       updatedDossier.id,
@@ -1796,7 +1799,8 @@ async function changeStatutCoreFixed(req, res) {
     // 🔔 Notifications sonores ciblées par Rôle
     // Si le dossier est marqué "prêt impression", notifier tous les imprimeurs de la machine ciblée
     if (statutForDb === 'pret_impression') {
-      const targetRole = updatedDossier.machine === 'Xerox' ? 'imprimeur_xerox' : 'imprimeur_roland';
+      const machineKey = String(updatedDossier.machine || updatedDossier.type_formulaire || '').toLowerCase();
+      const targetRole = machineKey.startsWith('xerox') ? 'imprimeur_xerox' : 'imprimeur_roland';
       socketService.emitNotificationToRole(
         targetRole,
         'sound_alert',
@@ -1842,6 +1846,9 @@ async function changeStatutCoreFixed(req, res) {
           soundType: 'needs_attention'
         }
       );
+    }
+    } catch (notifyError) {
+      console.warn('⚠️ Notification temps réel non envoyée (changement de statut appliqué):', notifyError.message);
     }
 
     // Logger l'activité

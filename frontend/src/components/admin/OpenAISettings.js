@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { SparklesIcon, KeyIcon, CheckCircleIcon, XCircleIcon, DocumentArrowUpIcon } from '@heroicons/react/24/outline';
 import axios from 'axios';
 
-const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:5001/api';
+const API_URL = process.env.REACT_APP_API_URL || '/api';
 
 const OpenAISettings = () => {
   const [config, setConfig] = useState(null);

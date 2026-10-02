@@ -115,9 +115,11 @@ router.get('/download/:id/direct', downloadLimiter, validateIdParam('id'), async
     // Headers pour le téléchargement
     const filename = file.nom_original || file.nom_fichier || 'download';
     const encodedFilename = encodeURIComponent(filename);
+    // Repli ASCII pour filename="..." (un caractère hors Latin-1 faisait planter setHeader)
+    const asciiFilename = filename.replace(/[^\x20-\x7E]/g, '_').replace(/["\\]/g, '_');
 
     res.setHeader('Content-Type', file.type_mime || 'application/octet-stream');
-    res.setHeader('Content-Disposition', `attachment; filename="${filename}"; filename*=UTF-8''${encodedFilename}`);
+    res.setHeader('Content-Disposition', `attachment; filename="${asciiFilename}"; filename*=UTF-8''${encodedFilename}`);
     res.setHeader('Content-Length', file.taille_bytes);
     res.setHeader('Cache-Control', 'no-cache');
 
@@ -518,7 +520,9 @@ const checkFileAccess = async (req, res, next) => {
       numero: row.numero,
       statut: row.statut,
       type_formulaire: row.type_formulaire,
+      machine: row.machine,
       preparateur_id: row.preparateur_id,
+      created_by: row.created_by,
       imprimeur_id: row.imprimeur_id,
       livreur_id: row.livreur_id
     };
@@ -532,7 +536,8 @@ const checkFileAccess = async (req, res, next) => {
 
     // Vérifier les permissions avec canAccessDossier
     const { canAccessDossier } = require('../middleware/permissions');
-    const hasAccess = canAccessDossier(req.user, dossier, 'access_files');
+    // canAccessDossier renvoie un objet { allowed, message } (et non un booléen)
+    const hasAccess = canAccessDossier(req.user, dossier, 'access_files').allowed;
 
     if (!hasAccess) {
       return res.status(403).json({
@@ -619,8 +624,12 @@ router.post(
 
       // Vérifier les permissions d'upload avec le système unifié
       const { canAccessDossier } = require('../middleware/permissions');
-      const canUpload = canAccessDossier(req.user, dossier, 'upload_file');
+      const canUpload = canAccessDossier(req.user, dossier, 'upload_file').allowed;
       if (!canUpload) {
+        // Multer a déjà écrit les fichiers sur disque : les supprimer
+        for (const f of req.files || []) {
+          try { await fs.unlink(f.path); } catch (e) { /* ignore */ }
+        }
         return res.status(403).json({
           error: 'Permission refusée pour uploader des fichiers sur ce dossier',
           code: 'UPLOAD_PERMISSION_DENIED',
@@ -780,7 +789,7 @@ router.get('/', authenticateToken, async (req, res) => {
 
     // Vérifier les permissions avec le middleware unifié
     const { canAccessDossier } = require('../middleware/permissions');
-    const hasAccess = canAccessDossier(req.user, dossier, 'access_files');
+    const hasAccess = canAccessDossier(req.user, dossier, 'access_files').allowed;
 
     if (!hasAccess) {
       return res.status(403).json({
@@ -1166,9 +1175,11 @@ router.post('/download/:id/token', authenticateToken, validateIdParam('id'), asy
 
     const file = fileResult.rows[0];
 
-    // Vérifier les permissions (si l'utilisateur n'est pas admin, il doit être lié au dossier)
+    // Vérifier les permissions : même règle que preview/download (checkFileAccess)
     if (req.user.role !== 'admin') {
-      const hasAccess = true; // Tous les utilisateurs authentifiés
+      const { canAccessDossier } = require('../middleware/permissions');
+      const dossier = await getDossierByIdentifier(file.dossier_id);
+      const hasAccess = !!dossier && canAccessDossier(req.user, dossier, 'access_files').allowed;
 
       if (!hasAccess) {
         return res.status(403).json({ error: 'Accès non autorisé à ce fichier' });
@@ -1593,8 +1604,9 @@ router.post('/upload-chunk', authenticateToken, uploadChunk.single('chunk'), asy
     dossier.status = dossier.statut;
     dossier.type = dossier.type_formulaire;
 
-    const canUpload = canAccessDossier(req.user, dossier, 'upload_file');
+    const canUpload = canAccessDossier(req.user, dossier, 'upload_file').allowed;
     if (!canUpload) {
+      try { if (req.file && req.file.path) await fs.unlink(req.file.path); } catch (e) { /* ignore */ }
       return res.status(403).json({
         error: 'Permission refusée pour uploader des fichiers sur ce dossier',
         code: 'UPLOAD_PERMISSION_DENIED',
@@ -1836,10 +1848,10 @@ router.all('/upload-chunked/*', (req, res, next) => {
   }
 
   const token = authHeader.substring(7);
-  const jwt = require('jsonwebtoken');
+  const { verifyToken } = require('../config/security');
 
   try {
-    const decoded = jwt.verify(token, process.env.JWT_SECRET || 'votre_secret_jwt_super_securise');
+    const decoded = verifyToken(token);
     req.user = decoded;
     console.log('✅ Upload chunked: Utilisateur authentifié:', decoded.id, decoded.role);
 

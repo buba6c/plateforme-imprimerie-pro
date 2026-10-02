@@ -14,6 +14,17 @@ const { authenticateToken: auth } = require('../middleware/auth');
  * ⚠️ Réservé aux administrateurs uniquement
  */
 router.post('/reset', auth, async (req, res) => {
+  // Garde-fou : la réinitialisation est désactivée sauf activation explicite côté serveur
+  if (process.env.ALLOW_SYSTEM_RESET !== 'true') {
+    console.warn(`⛔ Tentative de réinitialisation refusée (ALLOW_SYSTEM_RESET non activé) - utilisateur ${req.user?.id}`);
+    return res.status(403).json({
+      success: false,
+      error: 'La réinitialisation de la plateforme est désactivée sur ce serveur. '
+        + 'Pour l\'autoriser, un administrateur système doit définir ALLOW_SYSTEM_RESET=true '
+        + 'puis redémarrer le serveur (faites une sauvegarde complète avant).'
+    });
+  }
+
   try {
     console.log('🧹 Demande de réinitialisation reçue');
     console.log('👤 Utilisateur:', req.user?.prenom, req.user?.nom, `(${req.user?.role})`);

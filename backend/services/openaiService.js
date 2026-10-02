@@ -280,6 +280,12 @@ Calcule le prix estimé total et détaille chaque poste de coût.`;
  * Estimation manuelle (fallback sans IA)
  */
 async function estimateQuoteManually(formulaireData, machineType, tarifs) {
+  // node-pg renvoie les DECIMAL en chaînes ('3000.00') : conversion en nombres pour que
+  // `prixFinitions += valeur` additionne au lieu de concaténer.
+  tarifs = (Array.isArray(tarifs) ? tarifs : []).map(t => {
+    const n = parseFloat(t.valeur);
+    return { ...t, valeur: Number.isFinite(n) ? n : 0 };
+  });
   let prixBase = 0;
   let prixFinitions = 0;
   let prixOptions = 0;

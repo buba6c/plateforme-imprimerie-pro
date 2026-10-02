@@ -140,8 +140,8 @@ router.get('/top', auth, async (req, res) => {
 });
 
 
-// POST /api/clients/merge - Fusionne deux clients
-router.post('/merge', auth, async (req, res) => {
+// POST /api/clients/merge - Fusionne deux clients (réservé à l'administrateur)
+router.post('/merge', auth, authorizeRoles('admin'), async (req, res) => {
   try {
     const { sourceClient, targetClient } = req.body;
     

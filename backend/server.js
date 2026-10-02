@@ -1,3 +1,7 @@
+// Sécurité : charge le .env et refuse de démarrer si JWT_SECRET est absent ou < 32 caractères.
+// Doit rester la PREMIÈRE instruction du serveur.
+require('./config/security').assertSecurityConfig();
+
 const express = require('express');
 const cors = require('cors');
 const http = require('http');
@@ -70,6 +74,7 @@ console.log('✅ Service de notifications initialisé');
 // ================================
 // MIDDLEWARE GLOBAL
 // ================================
+// Derrière Nginx (1 seul saut) : req.ip = IP réelle du client, utilisée comme clé par express-rate-limit.
 app.set('trust proxy', 1);
 app.use(helmet());
 app.use(compression());
@@ -128,15 +133,9 @@ app.use(cors({
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 
-// Servir les fichiers uploadés directement si nécessaires
-// Mappe /uploads -> <repoRoot>/uploads (parent du dossier backend)
-try {
-  const uploadsRoot = path.join(__dirname, '..', 'uploads');
-  app.use('/uploads', express.static(uploadsRoot));
-  console.log('📁 Static /uploads servi depuis:', uploadsRoot);
-} catch (e) {
-  console.warn('⚠️  Impossible de monter /uploads en statique:', e.message);
-}
+// /uploads n'est PLUS servi en statique (fichiers clients accessibles sans authentification).
+// Tous les accès passent par /api/files/preview/:id, /api/files/download/:id
+// et /api/files/download/:id/direct (jeton temporaire), avec contrôle d'accès.
 
 // Middleware de logs
 app.use((req, res, next) => {

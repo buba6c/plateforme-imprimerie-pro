@@ -485,16 +485,22 @@ export const mockFilesService = {
   },
 };
 
-// Service adaptateur qui choisit entre real, mock et nouveau service unifié
+// Service adaptateur : API réelle par défaut.
+// Les données factices (mockFilesService) ne sont utilisées QUE si REACT_APP_USE_MOCK === 'true'
+// (développement). En production, une erreur réseau/serveur est remontée à l'appelant au lieu
+// d'afficher un faux succès ou de faux fichiers.
+const USE_MOCK = process.env.REACT_APP_USE_MOCK === 'true';
+const filesBackend = () => (USE_MOCK ? mockFilesService : realFilesService);
+
 export const filesService = {
-  // Vérifier la disponibilité du backend
+  // Conservé pour compatibilité (informatif uniquement, ne déclenche plus de repli mock)
   backendAvailable: null,
 
   async checkBackendAvailability() {
     try {
-      const apiUrl = process.env.NODE_ENV === 'production' 
-        ? '/api' 
-        : (process.env.REACT_APP_API_URL || 'http://localhost:5001/api');
+      const apiUrl = process.env.NODE_ENV === 'production'
+        ? '/api'
+        : (process.env.REACT_APP_API_URL || '/api');
       const response = await fetch(`${apiUrl}/health`);
       this.backendAvailable = response.ok;
     } catch {
@@ -503,140 +509,33 @@ export const filesService = {
     return this.backendAvailable;
   },
 
-  // Upload de fichiers - force l'utilisation du service réel fonctionnel
+  // Upload de fichiers
   uploadFiles: async (dossierLike, files, onProgress) => {
     const dossierId = DossierIdResolver.resolve(dossierLike) || dossierLike;
     console.log('📤 Upload fichiers pour dossier:', dossierId);
-
-    // Vérifier la disponibilité du backend
-    if (filesService.backendAvailable === null) {
-      await filesService.checkBackendAvailability();
-    }
-
-    if (filesService.backendAvailable) {
-      try {
-        // Utiliser directement le service réel qui fonctionne
-        const result = await realFilesService.uploadFiles(dossierId, files, onProgress);
-        console.log('✅ Upload réussi via realFilesService:', result);
-        return result;
-      } catch (error) {
-        console.warn('❌ Échec realFilesService, fallback vers mock:', error);
-        return await mockFilesService.uploadFiles(dossierId, files);
-      }
-    }
-
-    console.log('⚠️ Backend indisponible, utilisation du mock service');
-    return await mockFilesService.uploadFiles(dossierId, files);
+    return await filesBackend().uploadFiles(dossierId, files, onProgress);
   },
 
   // Récupérer les fichiers
   getFiles: async dossierLike => {
     const dossierId = DossierIdResolver.resolve(dossierLike) || dossierLike;
-    console.log('📋 Récupération fichiers pour dossier:', dossierId);
-
-    if (filesService.backendAvailable === null) {
-      await filesService.checkBackendAvailability();
-    }
-
-    if (filesService.backendAvailable) {
-      try {
-        const result = await realFilesService.getFiles(dossierId);
-        console.log(`✅ Fichiers récupérés via realFilesService: ${result.files?.length || 0} fichiers`);
-        return result;
-      } catch (error) {
-        console.warn('❌ Échec realFilesService, fallback vers mock:', error);
-        return await mockFilesService.getFiles(dossierId);
-      }
-    }
-
-    console.log('⚠️ Backend indisponible, utilisation du mock service');
-    return await mockFilesService.getFiles(dossierId);
+    return await filesBackend().getFiles(dossierId);
   },
 
   // Récupérer un fichier
-  getFile: async fileId => {
-    if (filesService.backendAvailable === null) {
-      await filesService.checkBackendAvailability();
-    }
-
-    if (filesService.backendAvailable) {
-      try {
-        return await realFilesService.getFile(fileId);
-      } catch (error) {
-        return await mockFilesService.getFile(fileId);
-      }
-    } else {
-      return await mockFilesService.getFile(fileId);
-    }
-  },
+  getFile: async fileId => filesBackend().getFile(fileId),
 
   // Télécharger un fichier
-  downloadFile: async fileId => {
-    if (filesService.backendAvailable === null) {
-      await filesService.checkBackendAvailability();
-    }
-
-    if (filesService.backendAvailable) {
-      try {
-        return await realFilesService.downloadFile(fileId);
-      } catch (error) {
-        return await mockFilesService.downloadFile(fileId);
-      }
-    } else {
-      return await mockFilesService.downloadFile(fileId);
-    }
-  },
+  downloadFile: async fileId => filesBackend().downloadFile(fileId),
 
   // Supprimer un fichier
-  deleteFile: async fileId => {
-    if (filesService.backendAvailable === null) {
-      await filesService.checkBackendAvailability();
-    }
-
-    if (filesService.backendAvailable) {
-      try {
-        return await realFilesService.deleteFile(fileId);
-      } catch (error) {
-        return await mockFilesService.deleteFile(fileId);
-      }
-    } else {
-      return await mockFilesService.deleteFile(fileId);
-    }
-  },
+  deleteFile: async fileId => filesBackend().deleteFile(fileId),
 
   // Récupérer tous les fichiers (admin)
-  getAllFiles: async (params = {}) => {
-    if (filesService.backendAvailable === null) {
-      await filesService.checkBackendAvailability();
-    }
-
-    if (filesService.backendAvailable) {
-      try {
-        return await realFilesService.getAllFiles(params);
-      } catch (error) {
-        return await mockFilesService.getAllFiles(params);
-      }
-    } else {
-      return await mockFilesService.getAllFiles(params);
-    }
-  },
+  getAllFiles: async (params = {}) => filesBackend().getAllFiles(params),
 
   // Marquer un dossier pour réimpression
-  markForReprint: async fileId => {
-    if (filesService.backendAvailable === null) {
-      await filesService.checkBackendAvailability();
-    }
-
-    if (filesService.backendAvailable) {
-      try {
-        return await realFilesService.markForReprint(fileId);
-      } catch (error) {
-        return await mockFilesService.markForReprint(fileId);
-      }
-    } else {
-      return await mockFilesService.markForReprint(fileId);
-    }
-  },
+  markForReprint: async fileId => filesBackend().markForReprint(fileId),
 };
 
 export const uploadFilesAuto = async (dossierLike, files, onProgress) => {
@@ -645,53 +544,41 @@ export const uploadFilesAuto = async (dossierLike, files, onProgress) => {
 
   console.log(`📤 Upload Auto: ${filesArray.length} fichier(s)`);
 
-  // Vérifier backend
-  if (filesService.backendAvailable === null) {
-    await filesService.checkBackendAvailability();
-  }
-
-  if (!filesService.backendAvailable) {
-    console.log('⚠️ Backend indisponible, utilisation du mock');
+  if (USE_MOCK) {
     return await mockFilesService.uploadFiles(dossierId, filesArray);
   }
 
-  try {
-    const smallFiles = [];
-    const largeFiles = [];
+  const smallFiles = [];
+  const largeFiles = [];
 
-    // Séparer les fichiers: > 10MB -> Chunked, <= 10MB -> Classique
-    for (const f of filesArray) {
-      if (f.size > 10 * 1024 * 1024) {
-        largeFiles.push(f);
-      } else {
-        smallFiles.push(f);
-      }
+  // Séparer les fichiers: > 10MB -> Chunked, <= 10MB -> Classique
+  for (const f of filesArray) {
+    if (f.size > 10 * 1024 * 1024) {
+      largeFiles.push(f);
+    } else {
+      smallFiles.push(f);
     }
-
-    const promises = [];
-
-    // Upload des petits fichiers en un seul lot
-    if (smallFiles.length > 0) {
-      const totalSizeMB = Math.round(smallFiles.reduce((sum, f) => sum + f.size, 0) / 1024 / 1024);
-      console.log(`📤 ${smallFiles.length} fichier(s) ${totalSizeMB}MB → Mode CLASSIQUE`);
-      promises.push(realFilesService.uploadFiles(dossierId, smallFiles, onProgress));
-    }
-
-    // Upload individuel chunked pour les gros fichiers
-    for (const f of largeFiles) {
-      const sizeMB = Math.round(f.size / 1024 / 1024);
-      console.log(`📦 Fichier ${f.name} (${sizeMB}MB) > 10MB → Mode CHUNKED`);
-      promises.push(realFilesService.uploadChunked(dossierId, f, onProgress));
-    }
-
-    const results = await Promise.all(promises);
-    return results.length > 0 ? results[0] : null;
-
-  } catch (error) {
-    console.error('❌ Erreur upload auto:', error);
-    // Fallback vers mock en cas d'erreur
-    return await mockFilesService.uploadFiles(dossierId, filesArray);
   }
+
+  const promises = [];
+
+  // Upload des petits fichiers en un seul lot
+  if (smallFiles.length > 0) {
+    const totalSizeMB = Math.round(smallFiles.reduce((sum, f) => sum + f.size, 0) / 1024 / 1024);
+    console.log(`📤 ${smallFiles.length} fichier(s) ${totalSizeMB}MB → Mode CLASSIQUE`);
+    promises.push(realFilesService.uploadFiles(dossierId, smallFiles, onProgress));
+  }
+
+  // Upload individuel chunked pour les gros fichiers
+  for (const f of largeFiles) {
+    const sizeMB = Math.round(f.size / 1024 / 1024);
+    console.log(`📦 Fichier ${f.name} (${sizeMB}MB) > 10MB → Mode CHUNKED`);
+    promises.push(realFilesService.uploadChunked(dossierId, f, onProgress));
+  }
+
+  // En cas d'échec, l'erreur est propagée à l'appelant (plus de faux succès via le mock)
+  const results = await Promise.all(promises);
+  return results.length > 0 ? results[0] : null;
 };
 
 export default filesService;

@@ -16,7 +16,7 @@ import axios from 'axios';
 import DossierDetails from '../dossiers/DossierDetails';
 import DossierCard from '../DossierCard';
 
-const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:5001/api';
+const API_URL = process.env.REACT_APP_API_URL || '/api';
 const LIMIT = 50;
 
 const AdminPaiementsDashboard = () => {

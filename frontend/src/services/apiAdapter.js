@@ -14,9 +14,14 @@ import {
   systemConfigService as realSystemConfigService,
 } from './api';
 
-// Variable pour détecter si le backend est disponible
-let backendAvailable = null;
 const FORCE_REAL = true; // Forcé pour éviter tout fallback silencieux vers les mocks en production de debug
+// Variable pour détecter si le backend est disponible.
+// En mode API réelle forcée, on part de `true` : sinon un appel fait avant le premier
+// test de disponibilité (valeur null) tombait silencieusement dans la branche mock.
+let backendAvailable = FORCE_REAL ? true : null;
+// Données factices uniquement sur demande explicite (développement) : REACT_APP_USE_MOCK=true.
+// Sinon, les erreurs de l'API réelle sont remontées (plus de faux succès silencieux).
+const USE_MOCK = process.env.REACT_APP_USE_MOCK === 'true';
 
 // Test de disponibilité du backend
 const testBackendAvailability = async () => {
@@ -101,71 +106,20 @@ export const authService = {
   },
 };
 
-// Service des utilisateurs adaptatif
+// Service des utilisateurs adaptatif (API réelle ; mock seulement si REACT_APP_USE_MOCK=true)
 export const usersService = {
-  getUsers: async (params = {}) => {
-    if (backendAvailable === null) {
-      await testBackendAvailability();
-    }
+  getUsers: async (params = {}) =>
+    USE_MOCK ? mockUsersService.getUsers(params) : realUsersService.getUsers(params),
 
-    if (backendAvailable) {
-      try {
-        return await realUsersService.getUsers(params);
-      } catch (error) {
-        return await mockUsersService.getUsers(params);
-      }
-    } else {
-      return await mockUsersService.getUsers(params);
-    }
-  },
+  getUser: async id => (USE_MOCK ? mockUsersService.getUser(id) : realUsersService.getUser(id)),
 
-  getUser: async id => {
-    if (backendAvailable) {
-      try {
-        return await realUsersService.getUser(id);
-      } catch (error) {
-        return await mockUsersService.getUser(id);
-      }
-    } else {
-      return await mockUsersService.getUser(id);
-    }
-  },
+  createUser: async userData =>
+    USE_MOCK ? mockUsersService.createUser(userData) : realUsersService.createUser(userData),
 
-  createUser: async userData => {
-    if (backendAvailable) {
-      try {
-        return await realUsersService.createUser(userData);
-      } catch (error) {
-        return await mockUsersService.createUser(userData);
-      }
-    } else {
-      return await mockUsersService.createUser(userData);
-    }
-  },
+  updateUser: async (id, userData) =>
+    USE_MOCK ? mockUsersService.updateUser(id, userData) : realUsersService.updateUser(id, userData),
 
-  updateUser: async (id, userData) => {
-    if (backendAvailable) {
-      try {
-        return await realUsersService.updateUser(id, userData);
-      } catch (error) {
-        return await mockUsersService.updateUser(id, userData);
-      }
-    } else {
-      return await mockUsersService.updateUser(id, userData);
-    }
-  },
-
-  deleteUser: async id => {
-    if (backendAvailable) {
-      try {
-        return await realUsersService.deleteUser(id);
-      } catch (error) {
-        return await mockUsersService.deleteUser(id);
-      }
-    } else {
-      return await mockUsersService.deleteUser(id);
-    }
-  },
+  deleteUser: async id => (USE_MOCK ? mockUsersService.deleteUser(id) : realUsersService.deleteUser(id)),
 };
 
 // Service des dossiers adaptatif
@@ -385,17 +339,8 @@ export const dossiersService = {
     }
   },
 
-  deleteDossier: async id => {
-    if (backendAvailable) {
-      try {
-        return await realDossiersService.deleteDossier(id);
-      } catch (error) {
-        return await mockDossiersService.deleteDossier(id);
-      }
-    } else {
-      return await mockDossiersService.deleteDossier(id);
-    }
-  },
+  deleteDossier: async id =>
+    USE_MOCK ? mockDossiersService.deleteDossier(id) : realDossiersService.deleteDossier(id),
   // Autoriser la modification d'un dossier validé (admin)
   unlockDossier: async id => {
     if (backendAvailable) {

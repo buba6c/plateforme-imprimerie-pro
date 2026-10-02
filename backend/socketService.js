@@ -36,7 +36,7 @@ const initSocketIO = (httpServer, corsOptions) => {
     // Valider le token JWT
     try {
       const jwt = require('jsonwebtoken');
-      const JWT_SECRET = process.env.JWT_SECRET || 'imprimerie_jwt_secret_key_2024_super_secure';
+      const JWT_SECRET = require('./config/security').getJwtSecret();
       const decoded = jwt.verify(token, JWT_SECRET);
       socket.user = decoded;
       socket.authenticated = true;

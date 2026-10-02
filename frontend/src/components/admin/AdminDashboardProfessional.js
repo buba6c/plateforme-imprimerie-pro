@@ -27,7 +27,7 @@ import LoadingButton from '../transitions/LoadingButton';
 import notificationService from '../../services/notificationService';
 import axios from 'axios';
 
-const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:5001/api';
+const API_URL = process.env.REACT_APP_API_URL || '/api';
 
 const AdminDashboardProfessional = ({ user, onNavigate }) => {
   const [loading, setLoading] = useState(true);

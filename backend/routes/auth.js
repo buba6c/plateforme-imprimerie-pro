@@ -1,11 +1,13 @@
 const express = require('express');
 const bcrypt = require('bcryptjs');
-const jwt = require('jsonwebtoken');
 const { query } = require('../config/database');
+const { signToken, verifyToken } = require('../config/security');
+// Middleware qui relit l'utilisateur en base (rôle et is_active à jour) : utilisé
+// pour les routes sensibles (/register, /refresh, /roles).
+const { authenticateToken: authenticateTokenDb } = require('../middleware/auth');
 const router = express.Router();
 
-// Configuration JWT
-const JWT_SECRET = process.env.JWT_SECRET || 'imprimerie_jwt_secret_key_2024_super_secure';
+// Configuration JWT (secret centralisé dans config/security.js, sans valeur de repli)
 const JWT_EXPIRES_IN = process.env.JWT_EXPIRES_IN || '24h';
 
 // ================================
@@ -21,7 +23,7 @@ const generateToken = user => {
     nom: user.nom,
   };
 
-  return jwt.sign(payload, JWT_SECRET, { expiresIn: JWT_EXPIRES_IN });
+  return signToken(payload, { expiresIn: JWT_EXPIRES_IN });
 };
 
 // Valider le token JWT (middleware)
@@ -36,17 +38,15 @@ const authenticateToken = (req, res, next) => {
     });
   }
 
-  jwt.verify(token, JWT_SECRET, (err, user) => {
-    if (err) {
-      return res.status(403).json({
-        error: 'Token invalide ou expiré',
-        code: 'INVALID_TOKEN',
-      });
-    }
-
-    req.user = user;
+  try {
+    req.user = verifyToken(token);
     next();
-  });
+  } catch (err) {
+    return res.status(403).json({
+      error: 'Token invalide ou expiré',
+      code: 'INVALID_TOKEN',
+    });
+  }
 };
 
 // Vérifier les rôles autorisés
@@ -142,7 +142,7 @@ router.post('/login', async (req, res) => {
 });
 
 // POST /api/auth/register - Inscription (admin seulement)
-router.post('/register', authenticateToken, authorizeRoles('admin'), async (req, res) => {
+router.post('/register', authenticateTokenDb, authorizeRoles('admin'), async (req, res) => {
   try {
     const { email, password, role, prenom, nom, telephone } = req.body;
 
@@ -243,9 +243,9 @@ router.get('/me', authenticateToken, async (req, res) => {
 });
 
 // POST /api/auth/refresh - Rafraîchir le token
-router.post('/refresh', authenticateToken, (req, res) => {
+router.post('/refresh', authenticateTokenDb, (req, res) => {
   try {
-    // Générer un nouveau token avec les mêmes informations
+    // Générer un nouveau token à partir de l'utilisateur relu en base (rôle à jour, compte actif)
     const newToken = generateToken(req.user);
 
     res.status(200).json({
@@ -274,7 +274,7 @@ router.post('/logout', authenticateToken, (req, res) => {
 });
 
 // GET /api/auth/roles - Liste des rôles disponibles
-router.get('/roles', authenticateToken, authorizeRoles('admin'), (req, res) => {
+router.get('/roles', authenticateTokenDb, authorizeRoles('admin'), (req, res) => {
   const roles = [
     { value: 'admin', label: 'Administrateur' },
     { value: 'preparateur', label: 'Préparateur' },

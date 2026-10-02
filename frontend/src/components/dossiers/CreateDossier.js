@@ -82,7 +82,7 @@ const CreateDossier = ({ isOpen, onClose, onSuccess }) => {
     const fetchClientSuggestions = async () => {
       try {
         const token = localStorage.getItem('auth_token');
-        const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:5001/api';
+        const API_URL = process.env.REACT_APP_API_URL || '/api';
         const response = await fetch(`${API_URL}/clients?limit=500`, {
           headers: { Authorization: `Bearer ${token}` }
         });

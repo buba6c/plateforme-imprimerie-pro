@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { CalculatorIcon, SparklesIcon, PencilIcon, CheckIcon, XMarkIcon } from '@heroicons/react/24/outline';
 import axios from 'axios';
 
-const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:5001/api';
+const API_URL = process.env.REACT_APP_API_URL || '/api';
 
 const TarifManager = () => {
   const [tarifs, setTarifs] = useState([]);

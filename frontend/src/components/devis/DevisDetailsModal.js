@@ -12,7 +12,7 @@ import axios from 'axios';
 import { systemConfigService } from '../../services/api';
 import { devisTemplates, defaultDocumentsSettings } from '../../utils/documentTemplates';
 
-const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:5001/api';
+const API_URL = process.env.REACT_APP_API_URL || '/api';
 
 const DevisDetailsModal = ({ devis, isOpen, onClose }) => {
   const [viewMode, setViewMode] = useState('details'); // 'details' | 'preview'

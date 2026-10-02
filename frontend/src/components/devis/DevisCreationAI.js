@@ -8,7 +8,7 @@ import {
 } from '@heroicons/react/24/outline';
 import axios from 'axios';
 
-const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:5001/api';
+const API_URL = process.env.REACT_APP_API_URL || '/api';
 
 const DevisCreationAI = ({ user, onBack, onSuccess }) => {
   const [step, setStep] = useState(1); // 1: Description, 2: Analyse IA, 3: Vérification

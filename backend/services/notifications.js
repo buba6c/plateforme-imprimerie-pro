@@ -1,4 +1,5 @@
-const jwt = require('jsonwebtoken');
+// Rôles autorisés à rejoindre les rooms globales (all_dossiers, dossier:<id>)
+const FULL_ACCESS_ROLES = ['admin', 'preparateur'];
 
 class NotificationService {
   constructor(io) {
@@ -8,101 +9,73 @@ class NotificationService {
     this.setupSocketHandlers();
   }
 
+  /**
+   * Enregistre un socket dont l'identité a été VÉRIFIÉE par le middleware Socket.IO
+   * (services/socketService.js : JWT valide + utilisateur actif relu en base).
+   */
+  registerVerifiedSocket(socket) {
+    const { id: userId, role: userRole } = socket.user;
+
+    const userInfo = {
+      socketId: socket.id,
+      userId,
+      userRole,
+      connectedAt: new Date(),
+      lastActivity: new Date(),
+    };
+
+    this.connectedUsers.set(userId, userInfo);
+    this.userSockets.set(socket.id, userInfo);
+
+    // Rooms calculées côté serveur (jamais à partir de données envoyées par le client)
+    socket.join(`role_${userRole}`);
+    socket.join(`user_${userId}`);
+
+    console.log(`👤 Utilisateur ${userId} (${userRole}) authentifié (token vérifié)`);
+
+    socket.emit('authenticated', { success: true, userId, userRole });
+    this.sendPendingNotifications(userId, socket);
+    this.notifyAdmins('user_connected', {
+      userId,
+      userRole,
+      connectedAt: new Date(),
+      socketId: socket.id,
+    });
+  }
+
+  /** Rooms qu'un socket authentifié a le droit de rejoindre explicitement. */
+  canJoinRoom(socket, room) {
+    if (!socket.user || typeof room !== 'string' || !room) return false;
+    const { id: userId, role } = socket.user;
+    if (room === `user_${userId}` || room === `role_${role}`) return true;
+    if (FULL_ACCESS_ROLES.includes(role)) {
+      return room === 'all_dossiers' || room.startsWith('dossier:') || room.startsWith('dossier_');
+    }
+    return false;
+  }
+
   setupSocketHandlers() {
     this.io.on('connection', socket => {
       console.log(`🔌 Nouvelle connexion Socket.IO: ${socket.id}`);
 
-      // Authentification automatique par token dans l'auth header
-      const token = socket.handshake.auth.token;
-      if (token) {
-        try {
-          const decoded = jwt.verify(token, process.env.JWT_SECRET);
-          const { id: userId, role: userRole } = decoded;
-
-          // Stocker les informations utilisateur
-          const userInfo = {
-            socketId: socket.id,
-            userId,
-            userRole,
-            connectedAt: new Date(),
-            lastActivity: new Date(),
-          };
-
-          this.connectedUsers.set(userId, userInfo);
-          this.userSockets.set(socket.id, userInfo);
-
-          // Rejoindre les rooms appropriées
-          socket.join(`role_${userRole}`);
-          socket.join(`user_${userId}`);
-
-          console.log(`👤 Utilisateur ${userId} (${userRole}) auto-authentifié via token`);
-
-          // Confirmer l'authentification
-          socket.emit('authenticated', { success: true, userId, userRole });
-
-          // Envoyer les notifications en attente pour cet utilisateur
-          this.sendPendingNotifications(userId, socket);
-
-          // Notifier les admins d'une nouvelle connexion
-          this.notifyAdmins('user_connected', {
-            userId,
-            userRole,
-            connectedAt: new Date(),
-            socketId: socket.id,
-          });
-        } catch (error) {
-          console.error('❌ Erreur authentification auto Socket.IO:', error.message);
-          socket.emit('auth_error', { error: 'Token invalide' });
-        }
+      // Le middleware d'authentification (socketService) refuse toute connexion sans JWT valide.
+      if (socket.user) {
+        this.registerVerifiedSocket(socket);
       }
 
-      // Authentification du socket avec JWT (méthode manuelle)
-      socket.on('authenticate', data => {
-        try {
-          const { token, userRole, userId } = data;
-
-          // Vérifier le token JWT si fourni
-          if (token) {
-            jwt.verify(token, process.env.JWT_SECRET);
-          }
-
-          if (userId && userRole) {
-            // Stocker les informations utilisateur
-            const userInfo = {
-              socketId: socket.id,
-              userId,
-              userRole,
-              connectedAt: new Date(),
-              lastActivity: new Date(),
-            };
-
-            this.connectedUsers.set(userId, userInfo);
-            this.userSockets.set(socket.id, userInfo);
-
-            // Rejoindre les rooms appropriées
-            socket.join(`role_${userRole}`);
-            socket.join(`user_${userId}`);
-
-            console.log(`👤 Utilisateur ${userId} (${userRole}) authentifié`);
-
-            // Confirmer l'authentification
-            socket.emit('authenticated', { success: true, userId, userRole });
-
-            // Envoyer les notifications en attente pour cet utilisateur
-            this.sendPendingNotifications(userId, socket);
-
-            // Notifier les admins d'une nouvelle connexion
-            this.notifyAdmins('user_connected', {
-              userId,
-              userRole,
-              connectedAt: new Date(),
-              socketId: socket.id,
-            });
-          }
-        } catch (error) {
-          console.error('❌ Erreur authentification Socket.IO:', error.message);
-          socket.emit('auth_error', { error: 'Token invalide' });
+      // Événement 'authenticate' conservé pour compatibilité avec le frontend :
+      // les champs userId / userRole envoyés par le client sont IGNORÉS ;
+      // on renvoie l'identité issue du token vérifié.
+      socket.on('authenticate', () => {
+        if (!socket.user) {
+          socket.emit('auth_error', { error: 'Non authentifié' });
+          return;
         }
+        socket.emit('authenticated', {
+          success: true,
+          userId: socket.user.id,
+          userRole: socket.user.role,
+        });
       });
 
       // Heartbeat pour maintenir la connexion active
@@ -117,21 +90,26 @@ class NotificationService {
 
       // Marquer une notification comme lue
       socket.on('mark_notification_read', data => {
-        const { notificationId } = data;
+        const notificationId = data && data.notificationId;
         console.log(`📖 Notification ${notificationId} marquée comme lue`);
         // Ici on pourrait sauver en base que la notification est lue
       });
 
-      // Rejoindre une room spécifique (ex: dossier)
+      // Rejoindre une room spécifique (ex: dossier) : uniquement les rooms autorisées
       socket.on('join_room', data => {
-        const { room } = data;
+        const room = data && data.room;
+        if (!this.canJoinRoom(socket, room)) {
+          console.warn(`🚫 join_room refusé (${socket.id}): ${room}`);
+          return;
+        }
         socket.join(room);
         console.log(`🏠 Utilisateur rejoint la room: ${room}`);
       });
 
       // Quitter une room spécifique
       socket.on('leave_room', data => {
-        const { room } = data;
+        const room = data && data.room;
+        if (typeof room !== 'string') return;
         socket.leave(room);
         console.log(`🚪 Utilisateur quitte la room: ${room}`);
       });
@@ -245,7 +223,7 @@ class NotificationService {
           this.sendToRole('imprimeur_xerox', 'notification', notification);
         }
         this.sendToRole('admin', 'notification', notification);
-        this.io.emit('dossier_status_changed', { dossier, oldStatus, newStatus, changedBy, comment });
+        this.io.to('all_dossiers').emit('dossier_status_changed', { dossier, oldStatus, newStatus, changedBy, comment });
         console.log(`🔔 Notification envoyée aux imprimeurs: dossier ${dossier.numero_commande} prêt pour impression`);
         break;
 
@@ -253,7 +231,7 @@ class NotificationService {
         // Quand l'imprimeur renvoie à revoir → Notifier le préparateur créateur
         this.sendToUser(dossier.created_by, 'notification', notification);
         this.sendToRole('admin', 'notification', notification);
-        this.io.emit('dossier_status_changed', { dossier, oldStatus, newStatus, changedBy, comment });
+        this.io.to('all_dossiers').emit('dossier_status_changed', { dossier, oldStatus, newStatus, changedBy, comment });
         console.log(`🔔 Notification envoyée au préparateur: dossier ${dossier.numero_commande} à revoir`);
         break;
 
@@ -265,7 +243,7 @@ class NotificationService {
           this.sendToRole('imprimeur_xerox', 'notification', notification);
         }
         this.sendToRole('admin', 'notification', notification);
-        this.io.emit('dossier_status_changed', { dossier, oldStatus, newStatus, changedBy, comment });
+        this.io.to('all_dossiers').emit('dossier_status_changed', { dossier, oldStatus, newStatus, changedBy, comment });
         break;
 
       case 'imprime':
@@ -273,27 +251,27 @@ class NotificationService {
         // Dès que l'impression est terminée ou prêt livraison, notifier les livreurs
         this.sendToRole('livreur', 'notification', notification);
         this.sendToRole('admin', 'notification', notification);
-        this.io.emit('dossier_status_changed', { dossier, oldStatus, newStatus, changedBy, comment });
+        this.io.to('all_dossiers').emit('dossier_status_changed', { dossier, oldStatus, newStatus, changedBy, comment });
         break;
 
       case 'termine':
         // Notifier les livreurs et admins
         this.sendToRole('livreur', 'notification', notification);
         this.sendToRole('admin', 'notification', notification);
-        this.io.emit('dossier_status_changed', { dossier, oldStatus, newStatus, changedBy, comment });
+        this.io.to('all_dossiers').emit('dossier_status_changed', { dossier, oldStatus, newStatus, changedBy, comment });
         break;
 
       case 'livre':
         // Notifier tous les rôles et le créateur
         this.sendToUser(dossier.created_by, 'notification', notification);
         this.sendToRole('admin', 'notification', notification);
-        this.io.emit('dossier_status_changed', { dossier, oldStatus, newStatus, changedBy, comment });
+        this.io.to('all_dossiers').emit('dossier_status_changed', { dossier, oldStatus, newStatus, changedBy, comment });
         break;
 
       default:
         // Pour tous les autres statuts, notifier les admins
         this.sendToRole('admin', 'notification', notification);
-        this.io.emit('dossier_status_changed', { dossier, oldStatus, newStatus, changedBy, comment });
+        this.io.to('all_dossiers').emit('dossier_status_changed', { dossier, oldStatus, newStatus, changedBy, comment });
         break;
     }
 

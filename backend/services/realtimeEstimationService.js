@@ -72,9 +72,22 @@ async function estimateRealtime(formData, machineType) {
 }
 
 /**
+ * Convertit `valeur` (chaîne DECIMAL renvoyée par pg) en nombre pour chaque tarif.
+ */
+function normalizeTarifs(tarifs) {
+  return (Array.isArray(tarifs) ? tarifs : []).map(t => {
+    const n = parseFloat(t.valeur);
+    return { ...t, valeur: Number.isFinite(n) ? n : 0 };
+  });
+}
+
+/**
  * Calcul rapide sans validation stricte (pour temps réel)
  */
 function calculateQuickEstimate(formData, machineType, tarifs) {
+  // node-pg renvoie les DECIMAL/NUMERIC en chaînes ('3000.00') : sans conversion,
+  // `prixFinitions += '3000.00'` CONCATÈNE au lieu d'additionner (ex. 4200003000 FCFA).
+  tarifs = normalizeTarifs(tarifs);
   let prixBase = 0;
   let prixFinitions = 0;
   let prixOptions = 0;

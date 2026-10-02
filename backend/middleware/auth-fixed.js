@@ -16,7 +16,7 @@ const authenticateToken = async (req, res, next) => {
   }
 
   try {
-    const JWT_SECRET = process.env.JWT_SECRET || 'imprimerie_jwt_secret_key_2024_super_secure';
+    const JWT_SECRET = require('../config/security').getJwtSecret();
     const decoded = jwt.verify(token, JWT_SECRET);
 
     // Vérifier que l'utilisateur existe toujours en base
@@ -99,7 +99,7 @@ const optionalAuth = async (req, res, next) => {
   }
 
   try {
-    const JWT_SECRET = process.env.JWT_SECRET || 'imprimerie_jwt_secret_key_2024_super_secure';
+    const JWT_SECRET = require('../config/security').getJwtSecret();
     const decoded = jwt.verify(token, JWT_SECRET);
 
     const userResult = await db.query(

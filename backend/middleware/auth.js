@@ -1,5 +1,5 @@
-const jwt = require('jsonwebtoken');
 const db = require('../config/database');
+const { verifyToken } = require('../config/security');
 
 /**
  * Middleware d'authentification JWT
@@ -16,8 +16,7 @@ const authenticateToken = async (req, res, next) => {
   }
 
   try {
-    const JWT_SECRET = process.env.JWT_SECRET || 'imprimerie_jwt_secret_key_2024_super_secure';
-    const decoded = jwt.verify(token, JWT_SECRET);
+    const decoded = verifyToken(token);
 
     // Vérifier que l'utilisateur existe toujours en base
     const userResult = await db.query(
@@ -99,8 +98,7 @@ const optionalAuth = async (req, res, next) => {
   }
 
   try {
-    const JWT_SECRET = process.env.JWT_SECRET || 'imprimerie_jwt_secret_key_2024_super_secure';
-    const decoded = jwt.verify(token, JWT_SECRET);
+    const decoded = verifyToken(token);
 
     const userResult = await db.query(
       'SELECT id, nom, email, role, is_active FROM users WHERE id = $1 AND is_active = true',
@@ -218,9 +216,6 @@ const isAdmin = (req, res, next) => {
  * Accepte le token via query parameter (?token=xxx) en plus du header Authorization
  */
 const authenticateDownload = async (req, res, next) => {
-  // DEBUG
-  console.log('🔍 authenticateDownload - req.query:', req.query);
-  console.log('🔍 authenticateDownload - req.query.token:', req.query.token);
 
   // Essayer d'abord le header Authorization
   let token = null;
@@ -244,8 +239,7 @@ const authenticateDownload = async (req, res, next) => {
   }
 
   try {
-    const JWT_SECRET = process.env.JWT_SECRET || 'imprimerie_jwt_secret_key_2024_super_secure';
-    const decoded = jwt.verify(token, JWT_SECRET);
+    const decoded = verifyToken(token);
 
     // Vérifier que l'utilisateur existe toujours en base
     const userResult = await db.query(

@@ -3,7 +3,62 @@
  * Synchronisation temps réel des dossiers, fichiers, et statuts
  */
 
+const { verifyToken } = require('../config/security');
+
 let io = null;
+
+// Rôles autorisés à suivre TOUS les dossiers (room 'all_dossiers' / 'dossier:<id>')
+const FULL_ACCESS_ROLES = ['admin', 'preparateur'];
+// Statuts « phase livraison » (mêmes listes que le filtre SQL GET /api/dossiers pour le livreur)
+const LIVREUR_STATUTS = ['imprime', 'pret_livraison', 'en_livraison', 'livre', 'termine'];
+
+const normalizeStatut = s => String(s || '').trim().toLowerCase()
+  .normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/\s+/g, '_');
+
+/**
+ * Machine d'un dossier ('roland' | 'xerox' | null) à partir de type_formulaire / machine.
+ */
+const machineOf = dossier => {
+  if (!dossier || typeof dossier !== 'object') return null;
+  const m = String(dossier.type_formulaire || dossier.machine || dossier.type || '').toLowerCase();
+  if (m.startsWith('roland')) return 'roland';
+  if (m.startsWith('xerox')) return 'xerox';
+  return null;
+};
+
+/** Copie du dossier sans les champs masqués aux imprimeurs (même règle que filterSensitiveFields). */
+const stripForPrinter = dossier => {
+  if (!dossier || typeof dossier !== 'object') return dossier;
+  const { telephone_client, amount, montant_cfa, ...rest } = dossier; // eslint-disable-line no-unused-vars
+  return rest;
+};
+
+/**
+ * Diffuse un événement « dossier » : intégralement aux admins/préparateurs (room all_dossiers),
+ * et, de façon ciblée côté serveur, aux imprimeurs de la bonne machine (sans téléphone ni montants)
+ * et aux livreurs pour les dossiers en phase de livraison.
+ * @param {string} event
+ * @param {object} payload - charge utile complète
+ * @param {object|null} dossier - dossier concerné (pour le ciblage)
+ * @param {string[]} statuts - statuts à considérer pour le ciblage livreur (ancien/nouveau)
+ */
+const emitScoped = (event, payload, dossier, statuts = []) => {
+  if (!io) return;
+  io.to('all_dossiers').emit(event, payload);
+
+  const machine = machineOf(dossier);
+  if (machine) {
+    io.to(`role_imprimeur_${machine}`).emit(event, {
+      ...payload,
+      ...(payload && payload.dossier ? { dossier: stripForPrinter(payload.dossier) } : {}),
+    });
+  }
+
+  const allStatuts = [...statuts, dossier && dossier.statut].map(normalizeStatut);
+  if (allStatuts.some(st => LIVREUR_STATUTS.includes(st))) {
+    io.to('role_livreur').emit(event, payload);
+  }
+};
 
 /**
  * Initialise Socket.IO avec le serveur HTTP
@@ -22,40 +77,61 @@ const initSocketIO = (httpServer, corsOptions) => {
     transports: ['websocket', 'polling'],
   });
 
-  // 🔒 Middleware d'authentification Socket.IO (optionnel mais recommandé)
-  io.use((socket, next) => {
+  // 🔒 Authentification Socket.IO OBLIGATOIRE : JWT valide + utilisateur actif en base.
+  // L'identité (id, rôle) vient UNIQUEMENT du token vérifié et de la base, jamais du client.
+  io.use(async (socket, next) => {
     const token = socket.handshake.auth?.token || socket.handshake.query?.token;
-    
-    // Si aucun token, accepter quand même la connexion (pour compatibilité)
+
     if (!token || token === 'undefined' || token === 'null') {
-      console.warn(`⚠️  Socket ${socket.id} connecté sans token (mode anonyme)`);
-      socket.authenticated = false;
-      return next();
+      console.warn(`⚠️  Connexion Socket.IO refusée (${socket.id}) : token manquant`);
+      return next(new Error('unauthorized'));
     }
-    
-    // Valider le token JWT
+
+    let decoded;
     try {
-      const jwt = require('jsonwebtoken');
-      const JWT_SECRET = process.env.JWT_SECRET || 'imprimerie_jwt_secret_key_2024_super_secure';
-      const decoded = jwt.verify(token, JWT_SECRET);
-      socket.user = decoded;
-      socket.authenticated = true;
-      next();
+      decoded = verifyToken(token);
     } catch (error) {
-      console.error(`❌ Erreur authentification Socket.IO: ${error.message}`);
-      // Ne pas bloquer la connexion, juste marquer comme non authentifié
-      socket.authenticated = false;
-      next();
+      console.warn(`⚠️  Connexion Socket.IO refusée (${socket.id}) : token invalide (${error.name})`);
+      return next(new Error('unauthorized'));
+    }
+
+    try {
+      const db = require('../config/database');
+      const result = await db.query(
+        'SELECT id, nom, email, role FROM users WHERE id = $1 AND is_active = true',
+        [decoded.id]
+      );
+      if (result.rows.length === 0) {
+        console.warn(`⚠️  Connexion Socket.IO refusée (${socket.id}) : utilisateur inconnu ou inactif`);
+        return next(new Error('unauthorized'));
+      }
+      socket.user = result.rows[0];
+      socket.authenticated = true;
+      return next();
+    } catch (error) {
+      console.error(`❌ Erreur vérification utilisateur Socket.IO: ${error.message}`);
+      return next(new Error('server_error'));
     }
   });
   
   // Gestion des connexions
   io.on('connection', socket => {
-    const authStatus = socket.authenticated ? '🔒 Authentifié' : '🔓 Anonyme';
-    console.log(`✅ Client Socket.IO connecté: ${socket.id} (${authStatus})`);
+    const { id: userId, role } = socket.user;
+    console.log(`✅ Client Socket.IO connecté: ${socket.id} (utilisateur ${userId}, ${role})`);
 
-    // Rejoindre une room pour un dossier spécifique
+    // Rooms calculées côté serveur à partir de l'identité vérifiée
+    socket.join(`user_${userId}`);
+    socket.join(`user:${userId}`); // utilisée par emitNotification()
+    socket.join(`role_${role}`);
+
+    const hasFullAccess = FULL_ACCESS_ROLES.includes(role);
+
+    // Rejoindre une room pour un dossier spécifique (admin / préparateur uniquement)
     socket.on('join:dossier', folderId => {
+      if (!hasFullAccess) {
+        console.warn(`🚫 join:dossier refusé pour ${socket.id} (${role})`);
+        return;
+      }
       socket.join(`dossier:${folderId}`);
       console.log(`📂 Socket ${socket.id} a rejoint le dossier ${folderId}`);
     });
@@ -66,8 +142,13 @@ const initSocketIO = (httpServer, corsOptions) => {
       console.log(`📂 Socket ${socket.id} a quitté le dossier ${folderId}`);
     });
 
-    // Rejoindre une room pour tous les dossiers (dashboard admin/operateur)
+    // Rejoindre la room de tous les dossiers : admin et préparateur uniquement.
+    // Les imprimeurs/livreurs reçoivent les événements utiles via leur room de rôle (emitScoped).
     socket.on('join:all_dossiers', () => {
+      if (!hasFullAccess) {
+        console.log(`ℹ️  join:all_dossiers ignoré pour ${socket.id} (${role}) : diffusion ciblée par rôle`);
+        return;
+      }
       socket.join('all_dossiers');
       console.log(`📊 Socket ${socket.id} a rejoint all_dossiers`);
     });
@@ -115,11 +196,11 @@ const getIO = () => {
 const emitDossierCreated = dossier => {
   if (!io) return;
   
-  // Émettre à tous ceux qui suivent tous les dossiers
-  io.to('all_dossiers').emit('dossier:created', {
+  // Admin/préparateur (all_dossiers) + imprimeurs/livreurs concernés
+  emitScoped('dossier:created', {
     dossier,
     timestamp: new Date().toISOString(),
-  });
+  }, dossier);
 
   console.log(`📢 Événement dossier:created émis pour ${dossier.folder_id}`);
 };
@@ -141,8 +222,8 @@ const emitDossierUpdated = (dossier, changes = {}) => {
   // Émettre à la room du dossier spécifique
   io.to(`dossier:${dossier.folder_id}`).emit('dossier:updated', payload);
   
-  // Émettre aussi à tous les dossiers
-  io.to('all_dossiers').emit('dossier:updated', payload);
+  // Émettre aussi à tous les dossiers (+ imprimeurs/livreurs concernés)
+  emitScoped('dossier:updated', payload, dossier);
 
   console.log(`📢 Événement dossier:updated émis pour ${dossier.folder_id}`);
 };
@@ -166,6 +247,11 @@ const emitDossierDeleted = (folderId, metadata = {}) => {
   
   // Émettre aussi à tous les dossiers
   io.to('all_dossiers').emit('dossier:deleted', payload);
+  // Imprimeurs / livreurs : identifiant seulement (pas de métadonnées)
+  io.to(['role_imprimeur_roland', 'role_imprimeur_xerox', 'role_livreur']).emit('dossier:deleted', {
+    folderId,
+    timestamp: payload.timestamp,
+  });
 
   console.log(`📢 Événement dossier:deleted émis pour ${folderId}`);
 };
@@ -191,8 +277,8 @@ const emitStatusChanged = (folderId, oldStatus, newStatus, dossier = null) => {
   // Émettre à la room du dossier
   io.to(`dossier:${folderId}`).emit('status:changed', payload);
   
-  // Émettre aussi à tous les dossiers
-  io.to('all_dossiers').emit('status:changed', payload);
+  // Émettre aussi à tous les dossiers (+ imprimeurs de la machine / livreurs si phase livraison)
+  emitScoped('status:changed', payload, dossier, [oldStatus, newStatus]);
 
   console.log(`📢 Événement status:changed émis pour ${folderId}: ${oldStatus} → ${newStatus}`);
 };
@@ -321,6 +407,27 @@ const emitNotification = (userId, type, message, data = {}) => {
   }
 
   console.log(`📢 Notification émise: ${type} - ${message}`);
+};
+
+/**
+ * Émet une notification à tous les utilisateurs connectés d'un rôle (room 'role_<role>',
+ * rejointe côté serveur à la connexion).
+ * @param {string} role - ex. 'imprimeur_roland', 'livreur'
+ * @param {string} type - Type de notification (ex. 'sound_alert')
+ * @param {string} message - Message
+ * @param {object} data - Données supplémentaires
+ */
+const emitNotificationToRole = (role, type, message, data = {}) => {
+  if (!io || !role) return;
+
+  io.to(`role_${role}`).emit('notification', {
+    type,
+    message,
+    data,
+    timestamp: new Date().toISOString(),
+  });
+
+  console.log(`📢 Notification émise au rôle ${role}: ${type} - ${message}`);
 };
 
 /**
@@ -491,6 +598,7 @@ module.exports = {
   
   // Notifications
   emitNotification,
+  emitNotificationToRole,
   
   // Statistiques
   

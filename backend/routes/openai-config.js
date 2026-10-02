@@ -57,8 +57,13 @@ router.put('/', auth, async (req, res) => {
       return res.status(403).json({ error: 'Accès réservé aux administrateurs' });
     }
     
-    console.log('📝 Body reçu:', req.body);
     const { api_key, knowledge_base_text, is_active } = req.body;
+    // Ne jamais journaliser la clé API (logs PM2) : seulement sa présence et sa longueur
+    console.log('📝 Body reçu:', {
+      api_key: api_key ? `*** (masquée, ${String(api_key).length} caractères)` : undefined,
+      knowledge_base_text: knowledge_base_text !== undefined ? `(${String(knowledge_base_text).length} caractères)` : undefined,
+      is_active,
+    });
     const updates = [];
     const params = [];
     
@@ -82,7 +87,7 @@ router.put('/', auth, async (req, res) => {
     }
     
     console.log('🔍 Updates:', updates);
-    console.log('🔍 Params:', params);
+    console.log('🔍 Params:', params.map((p, i) => (api_key && i === 0 ? '*** (clé API masquée)' : p)));
     
     if (updates.length > 0) {
       const query = `UPDATE openai_config SET ${updates.join(', ')}, updated_at = NOW() WHERE id = 1`;

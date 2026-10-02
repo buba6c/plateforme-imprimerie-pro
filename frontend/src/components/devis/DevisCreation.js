@@ -13,7 +13,7 @@ import DevisCreationAI from './DevisCreationAI';
 import DevisPrintTemplate from './DevisPrintTemplate';
 import RealtimeEstimation from './RealtimeEstimation';
 
-const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:5001/api';
+const API_URL = process.env.REACT_APP_API_URL || '/api';
 
 const DevisCreation = ({ user, onNavigate }) => {
   const [step, setStep] = useState(1);
