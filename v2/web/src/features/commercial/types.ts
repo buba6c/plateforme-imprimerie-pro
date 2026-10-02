@@ -68,26 +68,28 @@ export interface FactureResume {
   dossier_numero?: string | null;
   client_id: number | null;
   client_nom: string;
-  total_ht?: number;
-  tva?: number;
+  total_ht: number;
+  tva_taux: number;
+  tva: number;
   total_ttc: number;
+  annulee_at: string | null;
+  motif_annulation: string | null;
+  created_at: string;
+  created_by_nom: string | null;
+  /** Présents sur la fiche ; absents de la liste (non fournis par GET /factures). */
   situation_paiement?: SituationPaiement;
   deja_paye?: number;
   reste?: number;
-  created_at?: string;
 }
 
 export interface FactureDetail extends FactureResume {
   client_telephone: string | null;
   client_adresse: string | null;
   lignes: (LigneDocument | LignePrix)[];
-  tva_taux: number;
-  annulee_at: string | null;
-  motif_annulation: string | null;
-  annulee_par_nom?: string | null;
-  created_by_nom?: string | null;
-  en_attente_validation?: number;
-  montant_dossier?: number | null;
+  annulee_par_nom: string | null;
+  en_attente_validation: number;
+  /** Montant actuel du dossier (peut différer du total facturé s'il a été modifié depuis). */
+  dossier_montant: number | null;
 }
 
 export interface ListeFacturesReponse {

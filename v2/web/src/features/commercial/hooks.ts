@@ -93,12 +93,15 @@ export interface FiltresFactures {
   from?: string;
   to?: string;
   statut?: 'emise' | 'annulee';
+  client_id?: number;
+  dossier_id?: number;
   page?: number;
   limit?: number;
 }
 
-export function useListeFactures(f: FiltresFactures) {
+export function useListeFactures(f: FiltresFactures, opts: { enabled?: boolean } = {}) {
   return useQuery({
+    enabled: opts.enabled ?? true,
     queryKey: ['factures', 'liste', f],
     queryFn: () => api.get<ListeFacturesReponse>('/factures', f as Record<string, string | number | undefined>),
     placeholderData: (prev) => prev,

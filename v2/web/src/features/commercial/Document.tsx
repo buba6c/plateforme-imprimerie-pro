@@ -84,7 +84,7 @@ export function LignesDocument({ lignes, vide }: { lignes: LigneDocument[]; vide
               {l.prix_unitaire === null ? '' : (
                 <>
                   {formatFCFA(l.prix_unitaire)}
-                  {l.unite && <span className="cm-lines__detail cm-lines__pu">{uniteTarif(l.unite)}</span>}
+                  {l.unite && l.unite !== 'forfait' && <span className="cm-lines__detail cm-lines__pu">{uniteTarif(l.unite)}</span>}
                 </>
               )}
             </td>

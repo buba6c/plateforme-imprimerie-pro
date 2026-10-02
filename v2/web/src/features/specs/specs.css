@@ -1,0 +1,96 @@
+/* Éditeur de spécifications et panneau de prix. Couleurs : variables de la charte uniquement. */
+
+.sp-editor { display: grid; gap: var(--space-4); container-type: inline-size; min-width: 0; }
+
+.sp-modeles { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-1) var(--space-2); font-size: 13px; }
+.sp-modeles > .ev-muted { margin-right: var(--space-1); }
+
+.sp-aucune { padding: var(--space-5); border: 1px dashed var(--line-strong); border-radius: var(--radius-md); background: var(--surface-sunken); }
+
+.sp-ligne {
+  margin: 0; padding: var(--space-4); min-width: 0;
+  border: 1px solid var(--line); border-radius: var(--radius-md); background: var(--surface);
+  display: grid; gap: var(--space-4);
+}
+.sp-ligne__head { display: flex; align-items: center; gap: var(--space-2); margin: calc(var(--space-1) * -1) 0 calc(var(--space-1) * -1); }
+.sp-ligne__num {
+  display: inline-grid; place-items: center; width: 28px; height: 22px; border-radius: var(--radius-sm);
+  background: var(--surface-sunken); color: var(--text-muted); font-size: 12px;
+}
+.sp-ligne__titre { font-weight: 600; font-size: 14px; }
+.sp-ligne__total { font-size: 13px; color: var(--text); margin-right: var(--space-2); }
+
+.sp-grid { display: grid; gap: var(--space-3) var(--space-3); align-items: start; }
+.sp-grid--roland { grid-template-columns: minmax(0, 2.6fr) repeat(2, minmax(0, .9fr)) 72px minmax(0, 1fr); }
+.sp-grid--xerox { grid-template-columns: minmax(0, 2.4fr) repeat(2, minmax(0, 1fr)) auto; }
+.sp-rv { padding-top: 28px; white-space: nowrap; }
+@container (max-width: 620px) {
+  .sp-grid--roland { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .sp-grid--roland .sp-col-support { grid-column: 1 / -1; }
+  .sp-grid--xerox { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .sp-grid--xerox .sp-col-support { grid-column: 1 / -1; }
+  .sp-rv { padding-top: 0; grid-column: 1 / -1; }
+}
+
+.sp-calcul { margin: calc(var(--space-2) * -1) 0 0; font-size: 12px; font-weight: 400; color: var(--text-muted); }
+
+.sp-choix { display: grid; gap: var(--space-2); min-width: 0; }
+.sp-choix__titre { font-size: 13px; font-weight: 500; color: var(--text); }
+.sp-choix__liste { display: flex; flex-wrap: wrap; gap: var(--space-2); }
+.sp-pill-groupe { display: inline-flex; align-items: center; gap: 4px; min-width: 0; max-width: 100%; }
+.sp-pill {
+  position: relative; display: inline-flex; align-items: center; gap: var(--space-2); min-height: 32px; max-width: 100%;
+  padding: 4px var(--space-3) 4px var(--space-2); border: 1px solid var(--line-strong); border-radius: var(--radius-md);
+  background: var(--surface); font-size: 13px; cursor: pointer; user-select: none;
+}
+.sp-pill:hover { background: var(--surface-sunken); }
+.sp-pill input { position: absolute; opacity: 0; width: 1px; height: 1px; }
+.sp-pill .ev-check__box {
+  width: 16px; height: 16px; flex: none; border-radius: 4px; border: 1px solid var(--line-strong); background: var(--surface);
+  display: inline-grid; place-items: center;
+}
+.sp-pill input:checked + .ev-check__box { background: var(--accent); border-color: var(--accent); }
+.sp-pill input:checked + .ev-check__box::after {
+  content: ""; width: 8px; height: 4px; margin-top: -2px;
+  border-left: 2px solid var(--on-accent); border-bottom: 2px solid var(--on-accent); transform: rotate(-45deg);
+}
+.sp-pill input:focus-visible + .ev-check__box { box-shadow: var(--focus-ring); }
+.sp-pill[data-on="true"] { border-color: var(--accent); background: var(--accent-soft); }
+.sp-pill__prix { font-family: var(--font-mono); font-size: 11px; color: var(--text-muted); white-space: nowrap; }
+.sp-pill__prix[data-manquant="true"] { color: var(--warning-ink); }
+.sp-pill__qte { width: 64px !important; height: 32px; padding: 0 var(--space-2); font-size: 13px; }
+
+.sp-bloc { display: grid; gap: var(--space-3); padding-top: var(--space-4); border-top: 1px solid var(--line); }
+.sp-remise { display: grid; gap: var(--space-3); grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) minmax(0, 2fr); }
+@container (max-width: 620px) { .sp-remise { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); } .sp-remise > :last-child { grid-column: 1 / -1; } }
+
+/* Panneau de prix */
+.sp-prix .ev-card__head { padding: var(--space-3) var(--space-5); }
+.sp-prix__note { font-size: 12px; }
+.sp-prix__body { padding: var(--space-4) var(--space-5); display: grid; gap: var(--space-4); }
+.sp-prix__vide { margin: 0; font-size: 13px; }
+.sp-prix__foot { padding: var(--space-4) var(--space-5); border-top: 1px solid var(--line); display: grid; gap: var(--space-3); }
+.sp-tag {
+  display: inline-flex; align-items: center; height: 22px; padding: 0 8px; border-radius: var(--radius-full);
+  background: var(--info-soft); color: var(--info-ink); font-size: 11px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase;
+}
+.sp-erreurs { margin: 4px 0 6px; padding-left: 18px; }
+.sp-erreurs li + li { margin-top: 2px; }
+
+.sp-recu { display: grid; gap: var(--space-4); }
+.sp-recu__groupe { display: grid; gap: var(--space-2); }
+.sp-recu__titre { font-size: 11px; line-height: 16px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; color: var(--text-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sp-recu__ligne { display: grid; grid-template-columns: minmax(0, 1fr) auto; column-gap: var(--space-3); font-size: 13px; }
+.sp-recu__lib { min-width: 0; overflow-wrap: anywhere; }
+.sp-recu__total { text-align: right; font-size: 13px; }
+.sp-recu__calc { grid-column: 1 / -1; font-size: 12px; font-weight: 400; color: var(--text-muted); }
+
+.sp-totaux { margin: 0; display: grid; gap: 6px; padding-top: var(--space-3); border-top: 1px solid var(--line); }
+.sp-totaux > div { display: flex; justify-content: space-between; gap: var(--space-3); font-size: 13px; }
+.sp-totaux dt { color: var(--text-muted); }
+.sp-totaux dd { margin: 0; }
+.sp-totaux__total { align-items: baseline; padding-top: var(--space-2); }
+.sp-totaux .sp-totaux__total dt { color: var(--text); font-weight: 600; font-size: 14px; }
+.sp-totaux .sp-totaux__total dd { font-size: 20px; line-height: 28px; color: var(--ink); }
+.sp-totaux__total[data-barre="true"] dd { text-decoration: line-through; color: var(--text-muted); font-size: 15px; }
+.sp-totaux--retenu { border-top: 0; padding-top: 0; }

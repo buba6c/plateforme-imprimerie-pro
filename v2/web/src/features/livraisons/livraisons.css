@@ -1,0 +1,114 @@
+/* Écrans du livreur (et encaissements du préparateur). Téléphone d'abord.
+   Couleurs : variables de la charte uniquement. */
+
+/* ---------- Bandeau de chiffres ---------- */
+/* Les séparateurs sont les interstices de la grille (fond = couleur de ligne). */
+.lv-resume {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 1px; margin: 0;
+  padding: 0; overflow: hidden; background: var(--line);
+}
+.lv-resume__item { padding: var(--space-4) var(--space-5); background: var(--surface); display: grid; gap: 2px; align-content: start; min-width: 0; }
+.lv-resume dt { font-size: 13px; line-height: 18px; color: var(--text-muted); font-weight: 500; }
+.lv-resume dd { margin: 0; display: grid; gap: 2px; min-width: 0; }
+.lv-resume__valeur { font-family: var(--font-mono); font-variant-numeric: tabular-nums; font-size: 24px; line-height: 30px; font-weight: 500; color: var(--ink); white-space: nowrap; }
+.lv-resume__valeur small { font-size: 13px; color: var(--text-muted); margin-left: 4px; }
+.lv-resume__meta { font-size: 13px; line-height: 18px; color: var(--text-muted); }
+.lv-resume__item[data-tone="alert"] .lv-resume__meta { color: var(--warning-ink); font-weight: 500; }
+.lv-resume__item[data-tone="success"] .lv-resume__valeur { color: var(--success-ink); }
+.lv-resume__item[data-tone="danger"] .lv-resume__valeur { color: var(--danger-ink); }
+@media (max-width: 560px) {
+  .lv-resume { grid-template-columns: 1fr 1fr; }
+  .lv-resume__item { padding: var(--space-3) var(--space-4); }
+  .lv-resume__item[data-large] { grid-column: 1 / -1; }
+  .lv-resume__valeur { font-size: 20px; line-height: 26px; }
+  .lv-resume__item[data-large] .lv-resume__valeur { font-size: 26px; line-height: 32px; }
+}
+
+/* ---------- Onglets pleine largeur sur téléphone ---------- */
+@media (max-width: 560px) {
+  .lv-onglets .ev-tab { flex: 1 1 auto; justify-content: center; gap: 6px; padding: 12px 6px; font-size: 15px; }
+}
+.lv-onglets {
+  position: sticky; top: var(--topbar); z-index: 5; background: var(--canvas); min-width: 0;
+}
+
+/* ---------- Grille de cartes ---------- */
+.lv-grille { display: grid; gap: var(--space-4); grid-template-columns: repeat(auto-fill, minmax(min(100%, 340px), 1fr)); align-items: start; }
+.lv-groupe { display: grid; gap: var(--space-3); }
+.lv-groupe__titre { display: flex; align-items: center; gap: var(--space-2); margin: 0; }
+.lv-groupe[data-groupe="retard"] .lv-groupe__titre { color: var(--warning-ink); }
+.lv-note { font-size: 13px; color: var(--text-muted); margin: 0; }
+
+/* ---------- Carte de livraison ---------- */
+.lv-card { gap: var(--space-3); padding: var(--space-4); }
+.lv-card__top { display: flex; align-items: center; gap: var(--space-2); flex-wrap: wrap; min-height: 22px; }
+.lv-card__ref { color: var(--text-muted); text-decoration: none; }
+.lv-card__ref:hover { color: var(--accent-ink); text-decoration: underline; }
+.lv-card__livreur { margin-left: auto; font-size: 13px; color: var(--text-muted); }
+.lv-card__qui { display: grid; gap: 4px; min-width: 0; }
+.lv-card__client { font-size: 18px; line-height: 24px; font-weight: 600; color: var(--text); text-decoration: none; overflow-wrap: anywhere; }
+.lv-card__client:hover { color: var(--accent-ink); text-decoration: underline; text-underline-offset: 2px; }
+.lv-card__adresse, .lv-card__quand { display: flex; align-items: flex-start; gap: var(--space-2); margin: 0; font-size: 15px; line-height: 22px; color: var(--text); overflow-wrap: anywhere; }
+.lv-card__adresse svg, .lv-card__quand svg { width: 18px; height: 18px; flex: none; margin-top: 2px; color: var(--text-muted); }
+.lv-card__adresse[data-vide="true"] { color: var(--warning-ink); }
+.lv-card__adresse[data-vide="true"] svg { color: currentColor; }
+.lv-card__quand { font-weight: 500; }
+.lv-card__quand[data-tone="retard"] { color: var(--warning-ink); }
+.lv-card__quand[data-tone="retard"] svg { color: currentColor; }
+.lv-card__quand strong { font-weight: 600; }
+.lv-card__notes { margin: 2px 0 0; padding: var(--space-2) var(--space-3); border-radius: var(--radius-md); background: var(--surface-sunken); font-size: 14px; color: var(--text); overflow-wrap: anywhere; }
+.lv-card__montant {
+  display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); flex-wrap: wrap;
+  padding: var(--space-3) var(--space-4); border-radius: var(--radius-md); background: var(--surface-sunken);
+}
+.lv-card__montant-label { display: grid; gap: 2px; font-size: 14px; font-weight: 500; color: var(--text-muted); }
+.lv-card__montant-label small { font-size: 12px; font-weight: 400; }
+.lv-montant { font-size: 22px; line-height: 28px; color: var(--ink); white-space: nowrap; }
+.lv-montant--nul { color: var(--text-muted); font-size: 18px; }
+.lv-card__contact { display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-2); }
+.lv-card__contact[data-seul="true"] { grid-template-columns: 1fr; }
+.lv-card__contact .ev-btn { width: 100%; padding: 0 var(--space-3); }
+.lv-card__contact .ev-btn svg { width: 18px; height: 18px; }
+.lv-card__sans-tel { display: flex; align-items: center; justify-content: center; min-height: var(--control-lg); border: 1px dashed var(--line-strong); border-radius: var(--radius-md); color: var(--text-muted); font-size: 14px; }
+.lv-card__actions { display: grid; gap: var(--space-2); padding-top: var(--space-3); border-top: 1px solid var(--line); }
+.lv-card__secondaires { display: flex; gap: var(--space-2); flex-wrap: wrap; }
+.lv-card__secondaires .ev-btn { flex: 1 1 auto; }
+/* Deuxième action « primaire » du circuit (livrer sans programmer) présentée en secondaire. */
+.lv-secondaire .ev-btn--primary { background: var(--surface); border-color: var(--line-strong); color: var(--text); }
+.lv-secondaire .ev-btn--primary:hover { background: var(--surface-sunken); filter: none; }
+
+/* Boutons choisis dans les raccourcis des dialogues. */
+.lv-raccourcis { display: flex; flex-wrap: wrap; gap: var(--space-2); }
+.lv-raccourcis .lv-choisi { background: var(--accent-soft); border-color: var(--accent); color: var(--accent-ink); }
+
+/* ---------- Listes (livrées, encaissements) ---------- */
+.lv-liste { list-style: none; margin: 0; padding: 0; }
+.lv-ligne { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: var(--space-2) var(--space-4); align-items: center; padding: var(--space-4) var(--space-5); border-bottom: 1px solid var(--line); }
+.lv-liste > li:last-child > .lv-ligne, .lv-liste > li:last-child.lv-ligne { border-bottom: 0; }
+.lv-ligne__lien { display: grid; gap: 4px; min-width: 0; color: var(--text); text-decoration: none; }
+.lv-ligne__lien:hover .lv-ligne__titre { color: var(--accent-ink); text-decoration: underline; text-underline-offset: 2px; }
+.lv-ligne__lien:focus-visible { outline: 2px solid transparent; box-shadow: var(--focus-ring); border-radius: var(--radius-sm); }
+.lv-ligne__haut { display: flex; align-items: baseline; gap: var(--space-2); flex-wrap: wrap; min-width: 0; }
+.lv-ligne__titre { font-size: 16px; line-height: 22px; font-weight: 600; overflow-wrap: anywhere; }
+.lv-ligne__sous { font-size: 14px; color: var(--text-muted); overflow-wrap: anywhere; }
+.lv-ligne__paiement { display: flex; align-items: center; gap: var(--space-2); flex-wrap: wrap; font-size: 14px; }
+.lv-ligne__droite { display: grid; justify-items: end; gap: var(--space-2); text-align: right; }
+.lv-ligne__montant { font-size: 17px; line-height: 24px; color: var(--ink); white-space: nowrap; }
+.lv-refus { margin: 0; padding: var(--space-2) var(--space-3); border-radius: var(--radius-md); background: var(--danger-soft); color: var(--danger-ink); font-size: 14px; overflow-wrap: anywhere; }
+.lv-jour { display: flex; align-items: baseline; justify-content: space-between; gap: var(--space-3); padding: var(--space-3) var(--space-5); background: var(--surface-sunken); border-bottom: 1px solid var(--line); }
+.lv-jour h2 { margin: 0; font-size: 14px; line-height: 20px; font-weight: 600; color: var(--text); }
+.lv-jour span { font-size: 13px; color: var(--text-muted); }
+@media (max-width: 560px) {
+  .lv-ligne { padding: var(--space-4); align-items: start; gap: var(--space-2) var(--space-3); }
+  .lv-ligne__montant { font-size: 16px; }
+  .lv-jour { padding: var(--space-3) var(--space-4); }
+}
+
+/* ---------- Encaissements ---------- */
+.lv-periode { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); flex-wrap: wrap; }
+@media (max-width: 560px) {
+  .lv-periode .ev-segmented { width: 100%; }
+  .lv-periode .ev-segmented span { align-items: center; padding: 10px var(--space-2); }
+}
+.lv-paiement__meta { display: flex; flex-wrap: wrap; gap: 4px var(--space-3); font-size: 14px; color: var(--text-muted); }
+.lv-paiement__meta .ev-ref { color: var(--text); }

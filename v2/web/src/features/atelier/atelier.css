@@ -3,7 +3,7 @@
 .atelier-head-actions { display: flex; align-items: center; gap: var(--space-3); flex-wrap: wrap; }
 .atelier-maj { font-size: 12px; color: var(--text-muted); }
 
-.atelier-compteurs { display: flex; flex-wrap: wrap; gap: var(--space-2) var(--space-5); margin: 6px 0 0; padding: 0; list-style: none; color: var(--text-muted); }
+.atelier-compteurs { display: flex; flex-wrap: wrap; gap: var(--space-1) var(--space-5); color: var(--text-muted); }
 .atelier-compteurs li { display: inline-flex; align-items: baseline; gap: 6px; }
 .atelier-compteurs strong { font-family: var(--font-mono); font-variant-numeric: tabular-nums; font-weight: 600; font-size: 15px; color: var(--ink); }
 .atelier-compteurs .atelier-compteurs__urgent { color: var(--text); }
@@ -42,6 +42,19 @@
   .atelier-item[data-nouveau="true"] > .ev-job { animation: none; }
 }
 
+/* Actions secondaires (révision, remise en attente) en pied de carte. */
+.atelier-item[data-plus="true"] > .ev-job { border-bottom-left-radius: 0; border-bottom-right-radius: 0; }
+.atelier-item__plus {
+  display: flex; justify-content: flex-end; padding: 4px var(--space-3);
+  background: var(--surface-sunken); border: 1px solid var(--line); border-top: 0;
+  border-radius: 0 0 var(--radius-lg) var(--radius-lg);
+}
+.atelier-item__plus .ev-btn-group { justify-content: flex-end; gap: 0 var(--space-1); }
+.atelier-item__plus .ev-btn { background: transparent; border-color: transparent; color: var(--accent-ink); padding: 0 var(--space-2); }
+.atelier-item__plus .ev-btn:hover { background: var(--accent-soft); }
+.atelier-item__plus .ev-btn svg { display: none; }
+.atelier-item[data-nouveau="true"] > .atelier-item__plus { border-color: var(--accent); }
+
 /* Onglets à la place des colonnes sur téléphone. */
 .atelier-onglets { display: none; }
 @media (max-width: 760px) {
@@ -58,6 +71,7 @@
   .atelier-board .ev-job__foot .ev-btn { height: var(--control-lg); padding: 0 var(--space-5); font-size: 15px; }
   .atelier-board .ev-job__foot .ev-btn-group { width: 100%; }
   .atelier-board .ev-job__foot .ev-btn-group .ev-btn { flex: 1 1 auto; }
+  .atelier-item__plus .ev-btn { height: var(--control-md); }
 }
 
 /* Bande « Renvoyés en révision ». */
@@ -79,3 +93,4 @@
   .atelier-rev__client { grid-column: 1 / -1; grid-row: 2; }
   .atelier-rev__motif { grid-column: 1 / -1; }
 }
+.atelier-item:has(> .ev-job[data-urgent="true"]) > .atelier-item__plus { border-color: color-mix(in srgb, var(--coral) 70%, var(--line)); }
