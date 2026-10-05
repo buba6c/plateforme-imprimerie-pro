@@ -37,6 +37,7 @@ export function connectRealtime() {
     queryClient.invalidateQueries({ queryKey: ['caisse'] });
     queryClient.invalidateQueries({ queryKey: ['dossier', e.dossier_id] });
     queryClient.invalidateQueries({ queryKey: ['stats'] });
+    queryClient.invalidateQueries({ queryKey: ['dossiers', 'livraisons'] });
   });
   socket.on('notification', (n) => {
     queryClient.invalidateQueries({ queryKey: ['notifications'] });

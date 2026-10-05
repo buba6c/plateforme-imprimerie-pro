@@ -127,6 +127,15 @@ Aperçu et téléchargement : `GET /fichiers/:id/contenu`.
 | POST | /gestion-fichiers/:id/restaurer | admin | le fichier ; 404 ; 409 s'il n'est pas à la corbeille ; 409 avec `details.dossier_id` si son dossier est à la corbeille ; journal `fichier_restaure` et historique `fichier/restauration` |
 | GET | /gestion-fichiers/integrite | admin | `{verifie_at, duree_ms, fichiers:{nb,taille}, repartition:{actifs,corbeille,dossiers_corbeille}, presents:{nb,taille}, manquants:{nb,taille_declaree,items}, taille_differente:{nb,items}, orphelins:{nb,taille}, espace:{libre_octets,total_octets}\|null}` (listes limitées à 500 ; relit le stockage à chaque appel) |
 
+## Livraisons : planning et historique
+
+| Méthode | Route | Rôles | Réponse |
+|---|---|---|---|
+| GET | /livraisons/planning?debut&fin[&livreur_id] | livreur (ses livraisons en cours, celles sans livreur désigné, celles qu'il a livrées dans la fenêtre `livreur_jours_historique`) ; admin (tout, filtre `livreur_id`) | `{debut, fin, aujourdhui, fuseau, livreur_id, jours_historique, items[], en_retard[], a_programmer[]}` ; élément : `{id, numero, statut, statut_label, urgent, client_nom, client_telephone, adresse_livraison, notes_livraison, date_promise, livraison_prevue_at, livre_at, livreur_id, livreur_nom, montant, mode_paiement_prevu, deja_paye, en_attente_validation, solde, reste_a_encaisser, nb_fichiers, nb_reports, jour, heure, actions[]}` (`jour`, `heure` dans le fuseau des paramètres) ; 400 si période absente, invalide, inversée ou de plus de 62 jours |
+| GET | /livraisons/historique?page&taille&du&au&q&mode_paiement[&livreur_id] | livreur (les siennes, sans limite de durée) ; admin (tout, filtre `livreur_id`) | `{items:[{id, numero, client_nom, adresse_livraison, livre_at, livreur_id, livreur_nom, fiche_accessible, encaissements:[{id, montant, mode, statut, encaisse_at, motif_refus}], encaisse}], total, page, taille, du, au, totaux:{nb_livraisons, encaisse, valide, en_attente_validation, refuse, par_mode:[{mode, libelle, nb, montant, valide, en_attente_validation}]}}` ; ni téléphone, ni prix, ni fichiers ; `taille` 25 (100 max) ; 400 si mode inconnu ou `du` > `au` |
+
+Préparateur et imprimeurs : 403. Droits appliqués dans le SQL (règle de visibilité commune).
+
 ## Écarts
 
 Précisions et ajouts par rapport au tableau ci-dessus (les champs listés dans le contrat sont tous présents ; rien n'a été retiré).
