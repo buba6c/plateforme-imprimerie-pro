@@ -4,6 +4,7 @@ import { Navigate, useLocation } from 'react-router-dom';
 import type { Role } from '@evocom/shared';
 import { api, setUnauthorizedHandler } from '../lib/api';
 import { connectRealtime, disconnectRealtime } from '../lib/realtime';
+import { synchroniserPreferences } from '../lib/theme';
 import type { User } from '../lib/types';
 
 interface AuthCtx {
@@ -41,6 +42,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (user) connectRealtime();
     else disconnectRealtime();
   }, [user]);
+
+  const userId = user?.id;
+  useEffect(() => {
+    if (userId) void synchroniserPreferences();
+  }, [userId]);
 
   const login = useCallback(
     async (email: string, password: string) => {

@@ -7,7 +7,9 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
-    "typecheck": "tsc -p tsconfig.json"
+    "typecheck": "tsc -p tsconfig.json",
+    "tokens": "node scripts/gen-tokens.mjs",
+    "contrastes": "node scripts/verif-contrastes.mjs"
   },
   "dependencies": {
     "@evocom/shared": "*",

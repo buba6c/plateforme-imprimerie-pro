@@ -4,14 +4,14 @@ import { BrowserRouter } from 'react-router-dom';
 import { QueryClientProvider } from '@tanstack/react-query';
 import { AuthProvider } from './auth/AuthContext';
 import { queryClient } from './lib/query';
-import { applyTheme, getTheme } from './lib/theme';
+import { demarrerApparence } from './lib/theme';
 import { ToastProvider } from './ui';
 import App from './App';
 import './styles/tokens.css';
 import './styles/evocom.css';
 import './styles/app.css';
 
-applyTheme(getTheme());
+demarrerApparence();
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>

@@ -1,4 +1,4 @@
-/* Généré à partir de la charte Evocom Print (tokens.json). Ne pas modifier à la main. */
+/* Généré à partir de la charte Evocom Print (tokens.json). Ne pas modifier à la main : npm -w web run tokens. */
 :root {
   --canvas: #f5f7fa;
   --surface: #ffffff;
@@ -9,12 +9,23 @@
   --ink: #0f4c81;
   --text: #1b2733;
   --text-muted: #5f6b7a;
-  --accent: #1a73e8;
+  --accent: #006be0;
+  --accent-end: #007db5;
   --on-accent: #ffffff;
-  --accent-soft: #e8f1fd;
-  --accent-ink: #1559b8;
-  --coral: #ff6f61;
-  --on-coral: #3a0a04;
+  --accent-soft: #e6f2ff;
+  --accent-ink: #0058c7;
+  --brand-start: #007bff;
+  --brand-end: #00c6ff;
+  --on-brand: #06121f;
+  --nav-start: #0062d1;
+  --nav-end: #0070c0;
+  --nav-text: #ffffff;
+  --nav-muted: #e6f3ff;
+  --nav-active-bg: #ffffff;
+  --nav-active-bg-end: #ffffff;
+  --nav-active-text: #0062d1;
+  --coral: #ff4f70;
+  --on-coral: #2b0510;
   --danger: #d92d20;
   --on-danger: #ffffff;
   --danger-soft: #fde4e2;
@@ -35,7 +46,7 @@
   --focus: var(--accent);
   --shadow-card: 0 1px 2px #0000000a;
   --shadow-pop: 0 8px 24px -4px #0f2a4429, 0 2px 6px #0f2a441a;
-  --focus-ring: 0 0 0 2px #ffffff, 0 0 0 4px #1a73e8;
+  --focus-ring: 0 0 0 2px #ffffff, 0 0 0 4px #006be0;
   --space-1: 4px;
   --space-2: 8px;
   --space-3: 12px;
@@ -68,12 +79,23 @@
     --ink: #a5c8f0;
     --text: #e2e8ef;
     --text-muted: #9aa7b6;
-    --accent: #5c9df2;
+    --accent: #3d9bff;
+    --accent-end: #33d1ff;
     --on-accent: #06121f;
-    --accent-soft: #15294a;
-    --accent-ink: #8ebbf6;
-    --coral: #ff7a6b;
-    --on-coral: #2a0603;
+    --accent-soft: #0f2a4d;
+    --accent-ink: #7cc0ff;
+    --brand-start: #007bff;
+    --brand-end: #00c6ff;
+    --on-brand: #06121f;
+    --nav-start: #0a2540;
+    --nav-end: #0b2f4a;
+    --nav-text: #ffffff;
+    --nav-muted: #a9d4ff;
+    --nav-active-bg: #007bff;
+    --nav-active-bg-end: #00c6ff;
+    --nav-active-text: #06121f;
+    --coral: #ff6b85;
+    --on-coral: #2a0610;
     --danger: #f0574a;
     --on-danger: #1a0503;
     --danger-soft: #3a1512;
@@ -94,7 +116,7 @@
     --focus: var(--accent);
     --shadow-card: 0 1px 2px #00000066;
     --shadow-pop: 0 12px 28px -4px #000000cc;
-    --focus-ring: 0 0 0 2px #121b25, 0 0 0 4px #5c9df2;
+    --focus-ring: 0 0 0 2px #121b25, 0 0 0 4px #3d9bff;
     color-scheme: dark;
   }
 }
@@ -108,12 +130,23 @@
   --ink: #a5c8f0;
   --text: #e2e8ef;
   --text-muted: #9aa7b6;
-  --accent: #5c9df2;
+  --accent: #3d9bff;
+  --accent-end: #33d1ff;
   --on-accent: #06121f;
-  --accent-soft: #15294a;
-  --accent-ink: #8ebbf6;
-  --coral: #ff7a6b;
-  --on-coral: #2a0603;
+  --accent-soft: #0f2a4d;
+  --accent-ink: #7cc0ff;
+  --brand-start: #007bff;
+  --brand-end: #00c6ff;
+  --on-brand: #06121f;
+  --nav-start: #0a2540;
+  --nav-end: #0b2f4a;
+  --nav-text: #ffffff;
+  --nav-muted: #a9d4ff;
+  --nav-active-bg: #007bff;
+  --nav-active-bg-end: #00c6ff;
+  --nav-active-text: #06121f;
+  --coral: #ff6b85;
+  --on-coral: #2a0610;
   --danger: #f0574a;
   --on-danger: #1a0503;
   --danger-soft: #3a1512;
@@ -134,7 +167,7 @@
   --focus: var(--accent);
   --shadow-card: 0 1px 2px #00000066;
   --shadow-pop: 0 12px 28px -4px #000000cc;
-  --focus-ring: 0 0 0 2px #121b25, 0 0 0 4px #5c9df2;
+  --focus-ring: 0 0 0 2px #121b25, 0 0 0 4px #3d9bff;
   color-scheme: dark;
 }
 @font-face { font-family: "Geist"; src: url("/fonts/Geist-Variable.woff2") format("woff2"); font-weight: 100 900; font-style: normal; font-display: swap; }

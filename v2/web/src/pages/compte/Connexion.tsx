@@ -18,22 +18,21 @@ export default function Connexion() {
   return (
     <div className="login">
       <aside className="login__aside" aria-hidden="true">
-        <div className="ev-brand" style={{ color: 'var(--surface)', padding: 0, fontSize: 20 }}>
-          Evocom <span style={{ color: 'color-mix(in srgb, var(--surface) 70%, transparent)' }}>Print</span>
+        <div className="ev-brand login__brand">
+          <span className="ev-brand__mark">e</span>
+          Evocom <span>Print</span>
         </div>
-        <svg viewBox="0 0 480 300" style={{ width: '100%', maxWidth: 520, alignSelf: 'center' }}>
-          <rect x="0" y="40" width="150" height="220" rx="12" fill="var(--accent)" />
-          <rect x="166" y="0" width="190" height="200" rx="12" fill="color-mix(in srgb, var(--surface) 14%, transparent)" />
+        <svg className="login__art" viewBox="0 0 480 300">
+          <rect x="0" y="40" width="150" height="220" rx="12" className="login__art-solid" />
+          <rect x="166" y="0" width="190" height="200" rx="12" className="login__art-glass" />
           <rect x="166" y="216" width="56" height="26" rx="13" fill="var(--coral)" />
-          <path d="M140 40h8M150 30v8M140 260h8M150 268v8M366 0h8M366 200h8" stroke="color-mix(in srgb, var(--surface) 55%, transparent)" strokeWidth="1" fill="none" />
-          <circle cx="300" cy="250" r="12" stroke="var(--surface)" strokeWidth="1.25" fill="none" />
-          <path d="M282 250h36M300 232v36" stroke="var(--surface)" strokeWidth="1.25" />
+          <path d="M140 40h8M150 30v8M140 260h8M150 268v8M366 0h8M366 200h8" className="login__art-line" />
+          <circle cx="300" cy="250" r="12" className="login__art-line" />
+          <path d="M282 250h36M300 232v36" className="login__art-line" />
         </svg>
-        <div style={{ maxWidth: 420 }}>
-          <p style={{ fontSize: 24, lineHeight: '30px', fontWeight: 600, margin: 0, letterSpacing: '-0.01em' }}>Du fichier au client, chaque dossier suivi.</p>
-          <p style={{ margin: '12px 0 0', color: 'color-mix(in srgb, var(--surface) 75%, transparent)' }}>
-            Préparation, impression Roland et Xerox, livraison et encaissement au même endroit.
-          </p>
+        <div className="login__pitch">
+          <p className="login__headline">Du fichier au client, chaque dossier suivi.</p>
+          <p>Préparation, impression Roland et Xerox, livraison et encaissement au même endroit.</p>
         </div>
       </aside>
       <main className="login__panel">

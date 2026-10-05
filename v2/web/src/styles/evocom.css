@@ -3,6 +3,17 @@
    et l'application v2 chargent exactement le même CSS. Toutes les couleurs, rayons,
    espacements et ombres viennent des variables de tokens.css. */
 
+/* ---------- Dégradés Evocom ----------
+   brand : le dégradé exact de la marque (#007bff → #00c6ff), pour le décor et les surfaces de marque,
+           avec du texte on-brand ; action : la même teinte assombrie, qui porte du texte on-accent. */
+:root {
+  --brand-gradient: linear-gradient(135deg, var(--brand-start) 0%, var(--brand-end) 100%);
+  --action-gradient: linear-gradient(135deg, var(--accent) 0%, var(--accent-end) 100%);
+  --nav-gradient: linear-gradient(180deg, var(--nav-start) 0%, var(--nav-end) 100%);
+  --nav-active-fill: linear-gradient(135deg, var(--nav-active-bg) 0%, var(--nav-active-bg-end) 100%);
+  --nav-border: transparent;
+}
+
 /* ---------- Base ---------- */
 .ev-root, .ev-root * { box-sizing: border-box; }
 .ev-root {
@@ -51,8 +62,8 @@
 .ev-btn:hover { background: var(--surface-sunken); }
 .ev-btn:active { transform: translateY(1px); }
 .ev-btn svg { width: 16px; height: 16px; flex: none; }
-.ev-btn--primary { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
-.ev-btn--primary:hover { background: var(--accent); filter: brightness(0.94); }
+.ev-btn--primary { background: var(--action-gradient); background-origin: border-box; border-color: transparent; color: var(--on-accent); }
+.ev-btn--primary:hover { background: var(--action-gradient); background-origin: border-box; filter: brightness(0.94); }
 .ev-btn--ghost { background: transparent; border-color: transparent; color: var(--accent-ink); }
 .ev-btn--ghost:hover { background: var(--accent-soft); }
 .ev-btn--danger { background: var(--danger); border-color: var(--danger); color: var(--on-danger); }
@@ -207,7 +218,7 @@
 .ev-card--interactive { transition: border-color .15s ease-out, transform .15s ease-out; cursor: pointer; }
 .ev-card--interactive:hover { border-color: color-mix(in srgb, var(--accent) 35%, var(--line)); transform: translateY(-1px); }
 .ev-kpis { display: grid; gap: var(--space-5); grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); }
-.ev-kpi { padding: var(--space-5) var(--space-6); display: grid; gap: var(--space-1); }
+.ev-kpi { padding: var(--space-5) var(--space-6); display: grid; gap: var(--space-1); background: var(--brand-gradient) top left / 100% 3px no-repeat, var(--surface); }
 .ev-kpi__label { font-size: 13px; line-height: 18px; color: var(--text-muted); font-weight: 500; }
 .ev-kpi__value { font-family: var(--font-mono); font-variant-numeric: tabular-nums; font-size: 28px; line-height: 32px; font-weight: 500; letter-spacing: -0.01em; color: var(--ink); }
 .ev-kpi__value small { font-size: 14px; color: var(--text-muted); margin-left: 4px; letter-spacing: 0; }
@@ -244,7 +255,7 @@
   color: var(--text-muted); font: inherit; font-weight: 500; cursor: pointer; white-space: nowrap;
 }
 .ev-tab:hover { color: var(--text); }
-.ev-tab[aria-selected="true"] { color: var(--ink); border-bottom-color: var(--accent); }
+.ev-tab[aria-selected="true"] { color: var(--ink); border-bottom-color: transparent; background: var(--action-gradient) left bottom / 100% 2px no-repeat; }
 .ev-tab[aria-selected="true"] .ev-count { background: var(--accent-soft); color: var(--accent-ink); }
 .ev-filterbar { display: flex; flex-wrap: wrap; gap: var(--space-2); align-items: center; }
 .ev-filterbar .ev-input, .ev-filterbar .ev-select { width: auto; min-width: 160px; height: var(--control-sm); font-size: 13px; }
@@ -260,34 +271,49 @@
 .ev-shell { display: grid; grid-template-columns: var(--sidebar) minmax(0, 1fr); min-height: 100vh; background: var(--canvas); }
 .ev-sidebar {
   display: flex; flex-direction: column; gap: var(--space-6);
-  padding: var(--space-5) var(--space-4); background: var(--surface); border-right: 1px solid var(--line);
+  padding: var(--space-5) var(--space-4); background: var(--nav-gradient); color: var(--nav-text);
+  border-right: 1px solid var(--nav-border);
   position: sticky; top: 0; height: 100vh; overflow-y: auto;
 }
-.ev-brand { display: flex; align-items: baseline; gap: 6px; padding: 0 var(--space-2); color: var(--ink); font-size: 17px; font-weight: 700; letter-spacing: -0.02em; text-decoration: none; }
+.ev-brand { display: flex; align-items: center; gap: 6px; padding: 0 var(--space-2); color: var(--ink); font-size: 17px; font-weight: 700; letter-spacing: -0.02em; text-decoration: none; }
 .ev-brand span { font-weight: 400; color: var(--text-muted); }
+.ev-brand__mark {
+  width: 28px; height: 28px; flex: none; margin-right: 4px; border-radius: var(--radius-md);
+  display: grid; place-items: center; background: var(--brand-gradient); color: var(--on-brand);
+  font-size: 15px; font-weight: 800; letter-spacing: -0.04em; box-shadow: inset 0 0 0 1px color-mix(in srgb, #ffffff 35%, transparent);
+}
+.ev-sidebar .ev-brand { color: var(--nav-text); }
+.ev-sidebar .ev-brand span { color: var(--nav-muted); }
 .ev-nav { display: grid; gap: 2px; }
-.ev-nav-section { padding: var(--space-4) var(--space-2) var(--space-1); font-size: 11px; line-height: 16px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: var(--text-muted); }
+.ev-nav-section { padding: var(--space-4) var(--space-2) var(--space-1); font-size: 11px; line-height: 16px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: var(--nav-muted); }
 .ev-nav-item {
   display: flex; align-items: center; gap: var(--space-3); min-height: 36px; padding: 0 var(--space-2) 0 var(--space-3);
-  border-radius: var(--radius-md); color: var(--text); text-decoration: none; font-weight: 500; font-size: 14px;
+  border-radius: var(--radius-md); color: var(--nav-text); text-decoration: none; font-weight: 500; font-size: 14px;
 }
-.ev-nav-item svg { width: 18px; height: 18px; color: var(--text-muted); flex: none; }
-.ev-nav-item:hover { background: var(--surface-sunken); }
-.ev-nav-item[aria-current="page"] { background: var(--accent-soft); color: var(--ink); }
-.ev-nav-item[aria-current="page"] svg { color: var(--accent-ink); }
+.ev-nav-item svg { width: 18px; height: 18px; color: var(--nav-muted); flex: none; }
+.ev-nav-item:hover { background: color-mix(in srgb, var(--nav-text) 12%, transparent); }
+.ev-nav-item[aria-current="page"] { background: var(--nav-active-fill); color: var(--nav-active-text); font-weight: 600; }
+.ev-nav-item[aria-current="page"] svg { color: var(--nav-active-text); }
+.ev-sidebar .ev-nav-item:focus-visible, .ev-sidebar .ev-icon-btn:focus-visible { box-shadow: 0 0 0 2px var(--nav-text); }
 .ev-nav-item .ev-count { margin-left: auto; }
-.ev-nav-item[aria-current="page"] .ev-count { background: var(--surface); color: var(--accent-ink); }
-.ev-user { margin-top: auto; display: flex; align-items: center; gap: var(--space-3); padding: var(--space-3) var(--space-2) 0; border-top: 1px solid var(--line); }
+.ev-sidebar .ev-count { background: var(--nav-text); color: var(--nav-active-text); }
+.ev-nav-item[aria-current="page"] .ev-count { background: var(--nav-active-text); color: var(--nav-active-bg); }
+.ev-user { margin-top: auto; display: flex; align-items: center; gap: var(--space-3); padding: var(--space-3) var(--space-2) 0; border-top: 1px solid color-mix(in srgb, var(--nav-text) 22%, transparent); }
+.ev-sidebar .ev-muted { color: var(--nav-muted); }
+.ev-sidebar .ev-icon-btn { color: var(--nav-text); }
+.ev-sidebar .ev-icon-btn:hover { background: color-mix(in srgb, var(--nav-text) 14%, transparent); color: var(--nav-text); }
 .ev-avatar {
   width: 32px; height: 32px; flex: none; border-radius: 50%; display: grid; place-items: center;
-  background: var(--st-closed-bg); color: var(--ink); font-size: 12px; font-weight: 600;
+  background: var(--brand-gradient); color: var(--on-brand); font-size: 12px; font-weight: 700;
 }
+.ev-sidebar .ev-avatar { background: var(--nav-text); color: var(--nav-active-text); }
 .ev-topbar {
   position: sticky; top: 0; z-index: 10; height: var(--topbar);
   display: flex; align-items: center; gap: var(--space-4); padding: 0 var(--space-8);
   background: color-mix(in srgb, var(--canvas) 92%, transparent); border-bottom: 1px solid var(--line);
   backdrop-filter: saturate(1.2) blur(6px);
 }
+.ev-topbar::before { content: ""; position: absolute; inset: 0 0 auto 0; height: 3px; background: var(--brand-gradient); pointer-events: none; }
 .ev-page { padding: var(--space-8); display: grid; gap: var(--space-6); align-content: start; min-width: 0; }
 .ev-page-head { display: flex; align-items: flex-end; justify-content: space-between; gap: var(--space-4); flex-wrap: wrap; }
 .ev-page-head p { margin: 4px 0 0; color: var(--text-muted); }
@@ -302,7 +328,7 @@
 }
 .ev-tabbar a { display: grid; justify-items: center; gap: 2px; padding: 6px 0; color: var(--text-muted); text-decoration: none; font-size: 11px; font-weight: 500; border-radius: var(--radius-md); }
 .ev-tabbar a svg { width: 22px; height: 22px; }
-.ev-tabbar a[aria-current="page"] { color: var(--accent-ink); background: var(--accent-soft); }
+.ev-tabbar a[aria-current="page"] { color: var(--accent-ink); background: var(--accent-soft); box-shadow: inset 0 2px 0 var(--accent); }
 @media (max-width: 900px) {
   .ev-shell { grid-template-columns: minmax(0, 1fr); }
   .ev-sidebar { position: fixed; inset: 0 auto 0 0; width: min(85vw, 300px); z-index: 30; transform: translateX(-100%); transition: transform .2s ease-out; box-shadow: var(--shadow-pop); }
@@ -337,7 +363,7 @@
 .ev-dropzone strong { color: var(--text); font-weight: 600; }
 .ev-dropzone[data-over="true"] { border-color: var(--accent); background: var(--accent-soft); color: var(--accent-ink); }
 .ev-progress { height: 6px; border-radius: var(--radius-full); background: var(--surface-sunken); overflow: hidden; }
-.ev-progress > span { display: block; height: 100%; width: var(--value, 0%); background: var(--accent); border-radius: inherit; transition: width .2s ease-out; }
+.ev-progress > span { display: block; height: 100%; width: var(--value, 0%); background: var(--action-gradient); border-radius: inherit; transition: width .2s ease-out; }
 
 /* ---------- Historique ---------- */
 .ev-timeline { list-style: none; margin: 0; padding: 0; display: grid; }
@@ -401,6 +427,40 @@
 .ev-board { display: grid; gap: var(--space-5); grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); align-items: start; }
 .ev-column { display: grid; gap: var(--space-3); align-content: start; min-width: 0; }
 .ev-column__head { display: flex; align-items: center; justify-content: space-between; padding: 0 var(--space-1); }
+
+/* ---------- Palettes ----------
+   Par défaut : palette Evocom (barre latérale en dégradé, boutons en dégradé).
+   data-palette="sobre" : barre latérale claire, aplats sans dégradé. data-contrast="high" : contraste renforcé.
+   data-mode est posé par l'application (mode effectif clair ou sombre). */
+:root[data-palette="sobre"] {
+  --nav-start: var(--surface); --nav-end: var(--surface); --nav-border: var(--line);
+  --nav-text: var(--text); --nav-muted: var(--text-muted);
+  --nav-active-bg: var(--accent-soft); --nav-active-bg-end: var(--accent-soft); --nav-active-text: var(--ink);
+  --accent-end: var(--accent);
+}
+:root[data-palette="sobre"] .ev-nav-item[aria-current="page"] svg { color: var(--accent-ink); }
+:root[data-palette="sobre"] .ev-sidebar .ev-count { background: var(--surface-sunken); color: var(--text-muted); }
+:root[data-palette="sobre"] .ev-nav-item[aria-current="page"] .ev-count { background: var(--surface); color: var(--accent-ink); }
+:root[data-palette="sobre"] .ev-sidebar .ev-avatar { background: var(--brand-gradient); color: var(--on-brand); }
+:root[data-palette="sobre"] .ev-sidebar .ev-nav-item:focus-visible, :root[data-palette="sobre"] .ev-sidebar .ev-icon-btn:focus-visible { box-shadow: var(--focus-ring); }
+:root[data-contrast="high"][data-mode="light"] {
+  --canvas: #ffffff; --surface-sunken: #eef1f4; --line: #8a96a3; --line-strong: #3d4754;
+  --ink: #0a2f57; --text: #05090d; --text-muted: #2f3a46;
+  --accent: #0050b3; --accent-end: #0050b3; --accent-ink: #003f8f; --accent-soft: #dcebff;
+  --nav-start: #ffffff; --nav-end: #ffffff; --nav-border: #3d4754; --nav-text: #05090d; --nav-muted: #2f3a46;
+  --nav-active-bg: #0050b3; --nav-active-bg-end: #0050b3; --nav-active-text: #ffffff;
+  --focus-ring: 0 0 0 2px #ffffff, 0 0 0 5px #05090d;
+}
+:root[data-contrast="high"][data-mode="dark"] {
+  --canvas: #000000; --surface: #0a0f14; --surface-sunken: #121a22; --line: #6b7a8b; --line-strong: #b8c3cf;
+  --ink: #cfe6ff; --text: #ffffff; --text-muted: #d5dde6;
+  --accent: #66b3ff; --accent-end: #66b3ff; --accent-ink: #9dceff; --accent-soft: #10284a; --on-accent: #000000;
+  --nav-start: #000000; --nav-end: #000000; --nav-border: #b8c3cf; --nav-text: #ffffff; --nav-muted: #d5dde6;
+  --nav-active-bg: #66b3ff; --nav-active-bg-end: #66b3ff; --nav-active-text: #000000;
+  --focus-ring: 0 0 0 2px #000000, 0 0 0 5px #ffffff;
+}
+:root[data-contrast="high"] .ev-kpi { background: var(--surface); }
+:root[data-contrast="high"] .ev-card, :root[data-contrast="high"] .ev-table-wrap, :root[data-contrast="high"] .ev-job { border-color: var(--line-strong); }
 
 @media (prefers-reduced-motion: reduce) {
   .ev-root *, .ev-btn, .ev-card--interactive, .ev-sidebar, .ev-progress > span { transition: none !important; animation: none !important; }

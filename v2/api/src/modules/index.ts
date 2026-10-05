@@ -19,6 +19,7 @@ import { iaRouter } from './ia/routes';
 import { fichiersAdminRouter } from './fichiers-admin/routes';
 import { livraisonsRouter } from './livraisons/routes';
 import { systemeRouter } from './systeme/routes';
+import { apparenceRouter, preferencesRouter } from './apparence/routes';
 
 export function registerModules(app: Express, config: Config) {
   app.use('/api/notifications', notificationsRouter);
@@ -40,4 +41,6 @@ export function registerModules(app: Express, config: Config) {
   app.use('/api/fichiers', fichiersAdminRouter);
   app.use('/api/livraisons', livraisonsRouter);
   app.use('/api/systeme', systemeRouter);
+  app.use('/api/apparence', apparenceRouter);
+  app.use('/api/preferences', preferencesRouter);
 }

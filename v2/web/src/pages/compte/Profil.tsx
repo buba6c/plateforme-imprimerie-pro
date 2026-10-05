@@ -3,6 +3,7 @@ import { ROLE_LABELS } from '@evocom/shared';
 import { useAuth, useUser } from '../../auth/AuthContext';
 import { api, messageErreur } from '../../lib/api';
 import { Alert, Button, Card, PageHeader, TextField, useToast } from '../../ui';
+import { ChoixApparence } from '../../features/apparence/ChoixApparence';
 
 export default function Profil() {
   const user = useUser();
@@ -31,6 +32,7 @@ export default function Profil() {
             <dd>{user.telephone ?? '—'}</dd>
           </dl>
         </Card>
+        <ChoixApparence />
         <Card title="Changer de mot de passe">
           <form
             className="stack"

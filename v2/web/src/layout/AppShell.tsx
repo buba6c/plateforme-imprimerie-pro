@@ -6,7 +6,7 @@ import { ROLE_LABELS } from '@evocom/shared';
 import { useAuth, useUser } from '../auth/AuthContext';
 import { api } from '../lib/api';
 import { onConnexion } from '../lib/realtime';
-import { applyTheme, getTheme, type Theme } from '../lib/theme';
+import { abonnerApparence, changerPreferences, getPreferences, type Theme } from '../lib/theme';
 import { NotificationBell } from './NotificationBell';
 import { navigationPour } from './nav';
 
@@ -28,13 +28,14 @@ export function AppShell() {
   const navigate = useNavigate();
   const loc = useLocation();
   const [open, setOpen] = useState(false);
-  const [theme, setTheme] = useState<Theme>(getTheme());
+  const [theme, setTheme] = useState<Theme>(getPreferences().theme);
   const [online, setOnline] = useState(true);
   const [q, setQ] = useState('');
   const sections = useMemo(() => navigationPour(user.role), [user.role]);
   const mobileItems = sections.flatMap((s) => s.items).filter((i) => i.mobile).slice(0, 4);
 
   useEffect(() => onConnexion(setOnline), []);
+  useEffect(() => abonnerApparence(() => setTheme(getPreferences().theme)), []);
   useEffect(() => setOpen(false), [loc.pathname]);
 
   const compteurs = useQuery({
@@ -53,6 +54,7 @@ export function AppShell() {
       {open && <div className="drawer-backdrop" onClick={() => setOpen(false)} aria-hidden="true" />}
       <aside className="ev-sidebar" data-open={open} aria-label="Navigation principale">
         <a className="ev-brand" href="/" onClick={(e) => { e.preventDefault(); navigate('/'); }}>
+          <span className="ev-brand__mark" aria-hidden="true">e</span>
           Evocom <span>Print</span>
         </a>
         <nav className="ev-nav">
@@ -116,9 +118,7 @@ export function AppShell() {
             aria-label={THEME_LABEL[theme]}
             title={THEME_LABEL[theme]}
             onClick={() => {
-              const t = THEME_NEXT[theme];
-              setTheme(t);
-              applyTheme(t);
+              void changerPreferences({ theme: THEME_NEXT[theme] });
             }}
           >
             <ThemeIcon />
