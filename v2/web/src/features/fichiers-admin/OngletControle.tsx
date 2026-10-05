@@ -17,59 +17,94 @@ const ETAT_LABELS: Record<EtatFichier, string> = {
 
 const pluriel = (n: number, mot: string, pl = `${mot}s`) => `${formatEntier(n)} ${n > 1 ? pl : mot}`;
 
+function LienDossier({ f }: { f: FichierControle }) {
+  // Un dossier à la corbeille ne s'ouvre pas : renvoi vers la corbeille des dossiers.
+  return (
+    <Link className="ev-link ev-ref" to={f.etat === 'dossier_corbeille' ? '/admin/corbeille' : `/dossiers/${f.dossier_id}`}>
+      {f.dossier_numero}
+    </Link>
+  );
+}
+
 function TableControle({ items, avecTailleDisque }: { items: FichierControle[]; avecTailleDisque?: boolean }) {
   return (
-    <div className="ev-table-wrap">
-      <table className="ev-table">
-        <thead>
-          <tr>
-            <th scope="col">Fichier</th>
-            <th scope="col">Dossier</th>
-            <th scope="col">État</th>
-            <th scope="col" style={{ textAlign: 'right' }}>
-              {avecTailleDisque ? 'Enregistrée' : 'Taille'}
-            </th>
-            {avecTailleDisque && (
-              <th scope="col" style={{ textAlign: 'right' }}>
-                Sur le disque
-              </th>
-            )}
-            <th scope="col">Envoyé le</th>
-          </tr>
-        </thead>
-        <tbody>
-          {items.map((f) => (
-            <tr key={f.id}>
-              <td>
-                <span className="ev-cell-main" style={{ overflowWrap: 'anywhere' }}>
-                  {f.nom_original}
-                </span>
-                <span className="fa-chemin" title="Chemin attendu dans le dossier de stockage">
-                  {f.chemin}
-                </span>
-                {f.importe && <span className="fa-sub">Importé de l’ancienne plateforme</span>}
-              </td>
-              <td className="nowrap">
-                {f.etat === 'dossier_corbeille' ? (
-                  <Link className="ev-link ev-ref" to="/admin/corbeille">
-                    {f.dossier_numero}
-                  </Link>
-                ) : (
-                  <Link className="ev-link ev-ref" to={`/dossiers/${f.dossier_id}`}>
-                    {f.dossier_numero}
-                  </Link>
+    <>
+      <div className="fa-etroit fa-cartes">
+        {items.map((f) => (
+          <article key={f.id} className="ev-card fa-carte">
+            <div className="stack-sm" style={{ gap: 2 }}>
+              <span className="ev-cell-main" style={{ overflowWrap: 'anywhere' }}>
+                {f.nom_original}
+              </span>
+              <span className="fa-chemin">{f.chemin}</span>
+            </div>
+            <div className="fa-carte__ligne">
+              <LienDossier f={f} />
+              <span>· {f.client_nom}</span>
+            </div>
+            <div className="fa-carte__ligne">
+              <span>{ETAT_LABELS[f.etat]}</span>
+              <span>
+                · <span className="ev-num">{formatTaille(f.taille)}</span>
+                {avecTailleDisque && (
+                  <>
+                    {' '}
+                    enregistrés, <span className="ev-num">{formatTaille(f.taille_disque)}</span> sur le disque
+                  </>
                 )}
-                <span className="fa-sub">{f.client_nom}</span>
-              </td>
-              <td className="nowrap">{ETAT_LABELS[f.etat]}</td>
-              <td className="ev-cell-num">{formatTaille(f.taille)}</td>
-              {avecTailleDisque && <td className="ev-cell-num">{formatTaille(f.taille_disque)}</td>}
-              <td className="ev-ref nowrap">{formatDateHeure(f.created_at)}</td>
+              </span>
+              <span>
+                · envoyé le <span className="ev-ref">{formatDateHeure(f.created_at)}</span>
+              </span>
+              {f.importe && <span>· importé de l’ancienne plateforme</span>}
+            </div>
+          </article>
+        ))}
+      </div>
+      <div className="ev-table-wrap fa-large">
+        <table className="ev-table">
+          <thead>
+            <tr>
+              <th scope="col">Fichier</th>
+              <th scope="col">Dossier</th>
+              <th scope="col">État</th>
+              <th scope="col" style={{ textAlign: 'right' }}>
+                {avecTailleDisque ? 'Enregistrée' : 'Taille'}
+              </th>
+              {avecTailleDisque && (
+                <th scope="col" style={{ textAlign: 'right' }}>
+                  Sur le disque
+                </th>
+              )}
+              <th scope="col">Envoyé le</th>
             </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
+          </thead>
+          <tbody>
+            {items.map((f) => (
+              <tr key={f.id}>
+                <td>
+                  <span className="ev-cell-main" style={{ overflowWrap: 'anywhere' }}>
+                    {f.nom_original}
+                  </span>
+                  <span className="fa-chemin" title="Chemin attendu dans le dossier de stockage">
+                    {f.chemin}
+                  </span>
+                  {f.importe && <span className="fa-sub">Importé de l’ancienne plateforme</span>}
+                </td>
+                <td className="nowrap">
+                  <LienDossier f={f} />
+                  <span className="fa-sub">{f.client_nom}</span>
+                </td>
+                <td className="nowrap">{ETAT_LABELS[f.etat]}</td>
+                <td className="ev-cell-num">{formatTaille(f.taille)}</td>
+                {avecTailleDisque && <td className="ev-cell-num">{formatTaille(f.taille_disque)}</td>}
+                <td className="ev-ref nowrap">{formatDateHeure(f.created_at)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </>
   );
 }
 

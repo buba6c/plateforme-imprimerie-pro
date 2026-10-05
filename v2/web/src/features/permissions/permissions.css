@@ -2,6 +2,8 @@
 
 .pm-intro { margin: 0; max-width: 80ch; font-size: 13px; line-height: 18px; }
 .pm-table th, .pm-table td { vertical-align: top; }
+/* Les libellés « sr-only » (absolus) restent dans le conteneur qui défile. */
+.pm-table td { position: relative; }
 .pm-table tbody th { text-align: left; font-weight: 500; color: var(--text); text-transform: none; letter-spacing: 0; font-size: 14px; line-height: 20px; white-space: normal; }
 .pm-table .pm-role { text-align: center; }
 .pm-table th.pm-role { white-space: normal; min-width: 104px; }

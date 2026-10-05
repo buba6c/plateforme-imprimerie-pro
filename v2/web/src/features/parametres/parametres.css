@@ -72,7 +72,7 @@
   border-radius: var(--radius-full);
   background: var(--accent);
 }
-.prm-retour {
+.prm-contenu .prm-retour {
   display: none;
 }
 
@@ -120,7 +120,7 @@
   .prm-layout[data-vue='section'] .prm-nav {
     display: none;
   }
-  .prm-retour {
+  .prm-contenu .prm-retour {
     display: inline-flex;
     justify-self: start;
   }
@@ -164,4 +164,9 @@
 .prm-cellule {
   overflow-wrap: anywhere;
   min-width: 120px;
+}
+
+/* Champs côte à côte alignés en haut, quelle que soit la longueur de leur aide. */
+.prm-contenu .ev-form-grid {
+  align-items: start;
 }

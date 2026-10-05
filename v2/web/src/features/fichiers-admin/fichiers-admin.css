@@ -101,4 +101,4 @@
   .fa-kpis .ev-kpi { padding: var(--space-4); }
   .fa-kpis .ev-kpi__value { font-size: 22px; line-height: 28px; }
 }
-.fa-chemin { font-family: var(--font-mono); font-size: 12px; color: var(--text-muted); overflow-wrap: anywhere; max-width: 360px; }
+.fa-chemin { display: block; font-family: var(--font-mono); font-size: 12px; color: var(--text-muted); overflow-wrap: anywhere; max-width: 360px; }

@@ -33,7 +33,7 @@
 .lp-jour[data-aujourdhui="true"] .lp-jour__titre { color: var(--accent-ink); }
 .lp-jour[data-retard="true"] .lp-jour__titre { color: var(--warning-ink); }
 .lp-jour__vide { margin: 0; padding: var(--space-3) var(--space-4); border: 1px dashed var(--line-strong); border-radius: var(--radius-md); font-size: 14px; color: var(--text-muted); }
-.lp-jour__liste { display: grid; gap: var(--space-2); }
+.lp-jour__liste { display: grid; gap: var(--space-2); grid-template-columns: repeat(auto-fill, minmax(min(100%, 340px), 1fr)); align-items: start; }
 
 /* ---------- Livraison (rendez-vous) ---------- */
 .lp-rdv {

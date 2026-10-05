@@ -77,7 +77,7 @@ export function SectionSecurite({ p, onModifie }: SectionProps) {
               help="Un administrateur peut débloquer avant en réinitialisant le mot de passe (1 à 1 440 min)."
             />
           </div>
-          {session !== null && echecs !== null && blocage !== null && (
+          {session !== null && session >= 1 && echecs !== null && echecs >= 1 && blocage !== null && blocage >= 1 && (
             <div className="adm-example" aria-live="polite">
               <strong>En pratique</strong>
               <br />
