@@ -28,7 +28,8 @@ dimanche, avec l'équipe prévenue.
    systemctl enable --now fail2ban
    ```
    Vérification : `ufw status` n'autorise que 22, 80 et 443. Les ports 5001 (ancienne API) et 4000 (nouvelle API)
-   ne doivent plus être joignables depuis Internet.
+   ne doivent plus être joignables depuis Internet. (Pendant un essai par adresse IP, l'installation ouvre aussi le port choisi,
+   par exemple 8080 ; le refermer après la bascule : `ufw delete allow 8080/tcp`.)
 5. Changer les secrets de l'ancienne application, publiés sur GitHub : mot de passe PostgreSQL de
    `imprimerie_prod_user`, `JWT_SECRET`, clé OpenAI, et les mots de passe des comptes de démonstration.
    ```bash
@@ -75,7 +76,7 @@ Vérifications :
 ## 2. Préparer l'installation de la nouvelle version
 
 1. Créer l'adresse de test : chez votre gestionnaire de domaine, un enregistrement **A** `test` → `72.61.145.37`
-   (donne `test.evocomprint.site`).
+   (donne `test.evocomprint.site`). Sans attendre le DNS, on peut aussi essayer par l'adresse IP (voir l'étape 3, option B).
 2. Installer Node 22 (l'ancienne application fonctionne aussi avec Node 22) :
    ```bash
    node -v   # si < 22 :
@@ -89,17 +90,32 @@ Vérifications :
 
 ## 3. Installer la nouvelle version en test
 
+Option A, avec l'adresse de test (recommandée) :
+
 ```bash
 cd /var/www/evocom
 DOMAINE=test.evocomprint.site ADMIN_EMAIL=votre@adresse.com bash v2/deploy/install.sh
 certbot --nginx -d test.evocomprint.site      # HTTPS (apt-get install -y certbot python3-certbot-nginx si absent)
 ```
 
+Option B, sans nom de domaine, par l'adresse IP du serveur (essai seulement : pas de HTTPS) :
+
+```bash
+cd /var/www/evocom
+PORT_WEB=8080 ADMIN_EMAIL=votre@adresse.com bash v2/deploy/install.sh
+# puis ouvrir http://72.61.145.37:8080 ; si la page ne s'ouvre pas, ouvrir le port 8080
+# dans le pare-feu du panneau Hostinger (VPS → Pare-feu).
+```
+
+Le script ne touche ni à l'ancienne application ni à ses sites Nginx ; il refuse de continuer si un port est déjà
+pris (choisir alors `PORT_API=4100` ou `PORT_WEB=8081`). Relancé, il reprend là où il s'était arrêté et redonne un
+mot de passe provisoire valable pour l'administrateur indiqué.
+
 Le script affiche à la fin le mot de passe provisoire de l'administrateur (une seule fois).
 
 Vérifications :
 - `curl -s http://127.0.0.1:4000/api/health` renvoie `{"ok":true,...}`.
-- https://test.evocomprint.site affiche la page de connexion ; la connexion admin demande de changer le mot de passe.
+- https://test.evocomprint.site (ou http://72.61.145.37:8080) affiche la page de connexion ; la connexion admin demande de changer le mot de passe.
 - `ls /var/backups/evocom/base` contient une première sauvegarde.
 
 ## 4. Importer les données de l'ancienne plateforme (essai)
@@ -161,7 +177,9 @@ Noter ce qui manque ou gêne, et le corriger avant la bascule.
    ln -s /etc/nginx/sites-available/evocom-v2-prod.conf /etc/nginx/sites-enabled/
    nginx -t && systemctl reload nginx
    certbot --nginx -d evocomprint.site -d www.evocomprint.site
-   sed -i 's#^APP_URL=.*#APP_URL=https://evocomprint.site#' v2/api/.env && pm2 reload evocom-v2 --update-env
+   sed -i -e 's#^APP_URL=.*#APP_URL=https://evocomprint.site#' -e 's#^COOKIE_SECURE=.*#COOKIE_SECURE=true#' v2/api/.env
+   pm2 reload evocom-v2 --update-env
+   rm -f /etc/nginx/sites-enabled/evocom-v2-port-*.conf && nginx -t && systemctl reload nginx   # si l'essai par IP avait été installé
    ```
 5. Vérifier : connexion, un dossier importé avec ses fichiers, la file Roland, la file Xerox, le livreur.
 6. Garder l'ancienne application arrêtée (ne pas supprimer `/var/www/imprimerie` ni sa base pendant au moins un mois).
