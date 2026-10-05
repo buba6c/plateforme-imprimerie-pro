@@ -10,12 +10,19 @@ const pool = initPool(url);
 const demo = process.argv.includes('--demo');
 const admin =
   process.env.ADMIN_EMAIL && process.env.ADMIN_PASSWORD
-    ? { email: process.env.ADMIN_EMAIL, password: process.env.ADMIN_PASSWORD, nom: process.env.ADMIN_NOM }
+    ? {
+        email: process.env.ADMIN_EMAIL,
+        password: process.env.ADMIN_PASSWORD,
+        nom: process.env.ADMIN_NOM,
+        reinitialiser: process.env.ADMIN_REINITIALISER === '1',
+      }
     : undefined;
 (async () => {
-  await seedBase(pool, admin);
+  const etat = await seedBase(pool, admin);
   if (demo) await seedDemoUsers(pool);
   console.log(`Données de base en place${demo ? ' (avec comptes de démonstration)' : ''}.`);
+  // Ligne lue par deploy/install.sh.
+  if (admin) console.log(`ADMIN:${etat}`);
   if (!admin && !demo) console.log('Astuce : ADMIN_EMAIL et ADMIN_PASSWORD créent le premier administrateur.');
 })()
   .catch((e) => {

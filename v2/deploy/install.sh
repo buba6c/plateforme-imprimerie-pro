@@ -113,7 +113,11 @@ npm -w web run build
 cd "$V2/api"
 node --env-file=.env dist/migrate.js
 ADMIN_PASSWORD="$(openssl rand -base64 12 | tr -d '/+=' | cut -c1-14)"
-ADMIN_EMAIL="$ADMIN_EMAIL" ADMIN_PASSWORD="$ADMIN_PASSWORD" ADMIN_NOM="${ADMIN_NOM:-Administrateur}" node --env-file=.env dist/seed.js
+ETAT_ADMIN="$(ADMIN_EMAIL="$ADMIN_EMAIL" ADMIN_PASSWORD="$ADMIN_PASSWORD" ADMIN_NOM="${ADMIN_NOM:-Administrateur}" ADMIN_REINITIALISER=1 node --env-file=.env dist/seed.js | tee /dev/stderr | sed -n 's/^ADMIN://p')"
+case "$ETAT_ADMIN" in
+  cree|reinitialise) LIGNE_MDP="$LIGNE_MDP" ;;
+  *) LIGNE_MDP="  Un autre administrateur existe déjà : son mot de passe n'a pas été changé." ;;
+esac
 
 info "5/6 Démarrage et Nginx"
 pm2 start "$V2/deploy/ecosystem.config.cjs"
@@ -146,7 +150,7 @@ Installation terminée.
   Adresse : $ADRESSE
 $( [ -n "$DOMAINE" ] && echo "  (activez HTTPS : certbot --nginx -d $DOMAINE ; d'ici là, ouvrez http://$DOMAINE)" || echo "  (essai sans HTTPS : si la page ne s'ouvre pas, ouvrez le port $PORT_WEB dans le pare-feu de l'hébergeur)" )
   Administrateur : $ADMIN_EMAIL
-  Mot de passe provisoire : $ADMIN_PASSWORD   (à changer à la première connexion ; il n'est affiché qu'ici)
+$LIGNE_MDP
 
 Étape suivante : importer les données de l'ancienne plateforme (voir v2/deploy/GUIDE_MISE_EN_LIGNE.md).
 FIN
