@@ -54,6 +54,7 @@ export function loadConfig(): Config {
     maxUploadBytes: Number(env('MAX_UPLOAD_MB', '4096')) * 1024 * 1024,
     serveWebDir: env('SERVE_WEB_DIR') ? path.resolve(env('SERVE_WEB_DIR')!) : null,
     appUrl: env('APP_URL', 'http://localhost:5173')!,
-    allowSystemReset: false,
+    // Réinitialisation de la plateforme (Paramètres > Zone dangereuse) : désactivée sauf activation explicite.
+    allowSystemReset: env('ALLOW_SYSTEM_RESET', 'false') === 'true',
   };
 }

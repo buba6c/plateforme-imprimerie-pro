@@ -9,6 +9,7 @@ import { Server } from 'socket.io';
 import { machineOfRole, STATUTS_LIVREUR, type Machine, type Role, type Statut } from '@evocom/shared';
 import { COOKIE_NAME, userFromToken } from './lib/auth';
 import { query, type Db } from './db/pool';
+import { getParametres } from './lib/params';
 
 let io: Server | null = null;
 
@@ -83,12 +84,14 @@ export interface NotificationInput {
   dossier_id?: number | null;
 }
 
-/** Enregistre une notification pour chaque destinataire et la pousse en temps réel. */
+/** Enregistre une notification pour chaque destinataire et la pousse en temps réel (sauf type désactivé dans les paramètres). */
 export async function notifier(
   db: Db,
   destinataires: { userIds?: number[]; roles?: Role[]; machine?: Machine; exclure?: number },
   n: NotificationInput,
 ): Promise<void> {
+  const reglages = (await getParametres(db)).notifications as Record<string, boolean>;
+  if (reglages[n.type] === false) return;
   const conditions: string[] = [];
   const params: unknown[] = [];
   if (destinataires.userIds?.length) {

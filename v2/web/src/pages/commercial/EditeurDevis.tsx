@@ -22,6 +22,7 @@ import { ClientAutocomplete } from '../../features/dossiers-ui/ClientAutocomplet
 import { convertirSpecs, ligneRolandVide, ligneXeroxVide, lignesDe, specsDraftVide, specsVersDraft, type SpecsDraft } from '../../features/specs/draft';
 import { PrixPanel, usePrix } from '../../features/specs/PrixPanel';
 import { SpecsEditor } from '../../features/specs/SpecsEditor';
+import { SuggestionIA } from '../../features/ia/SuggestionIA';
 import { useLibelles, useParamsPrix, useTarifs } from '../../features/specs/useTarifs';
 import { Alert, Button, Card, EmptyState, LoadingRows, PageHeader, Segmented, TextareaField, TextField, useToast } from '../../ui';
 import '../../features/dossiers-ui/dossiers-ui.css';
@@ -275,6 +276,7 @@ export default function EditeurDevis() {
 
       <form id="form-devis" className="nd-layout" onSubmit={soumettre} noValidate>
         <fieldset disabled={!modifiable} className="nd-main" style={{ border: 0, padding: 0, margin: 0, minWidth: 0 }}>
+          {modifiable && <SuggestionIA brouillon={f.specs} onAppliquer={(machine, specs) => setF((x) => ({ ...x, machine, specs }))} />}
           <Card title={<><span className="nd-section__num">1</span>Client</>} className="nd-section">
             <div className="nd-grid nd-grid--3">
               <ClientAutocomplete

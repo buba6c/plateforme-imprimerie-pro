@@ -38,7 +38,7 @@ export function registerModules(app: Express, config: Config) {
   app.use('/api/dossiers', dossierFactureRouter);
   app.use('/api/dossiers', bonDeTravailRouter);
   app.use('/api/ia', iaRouter);
-  app.use('/api/fichiers', fichiersAdminRouter);
+  app.use('/api/gestion-fichiers', fichiersAdminRouter(config));
   app.use('/api/livraisons', livraisonsRouter);
   app.use('/api/systeme', systemeRouter);
   app.use('/api/apparence', apparenceRouter);

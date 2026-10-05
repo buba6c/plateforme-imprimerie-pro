@@ -205,6 +205,7 @@ devisRouter.post('/', async (req, res) => {
   const id = await tx(async (db) => {
     const { specs, prix, detail } = await chiffrer(input.machine, input.specs, db);
     const clientId = await clientExistant(db, input.client_id);
+    const validite = input.validite_jours ?? (await getParametres(db)).documents.devis_validite_jours;
     const numero = await prochainNumero(db, 'DEV');
     const r = await one<{ id: number }>(
       `INSERT INTO devis (numero, machine, client_id, client_nom, client_telephone, client_email, description, specs, detail_prix,
@@ -223,7 +224,7 @@ devisRouter.post('/', async (req, res) => {
         prix.total_ht,
         prix.tva,
         prix.total_ttc,
-        input.validite_jours ?? 15,
+        validite,
         input.notes ?? null,
         user.id,
       ],
@@ -255,7 +256,7 @@ devisRouter.patch('/:id', async (req, res) => {
       sets.push(`${col} = $${args.length}`);
     };
     for (const k of ['client_nom', 'client_telephone', 'client_email', 'description', 'notes', 'validite_jours'] as const) {
-      if (input[k] !== undefined) set(k, input[k] ?? (k === 'validite_jours' ? 15 : null));
+      if (input[k] !== undefined) set(k, input[k] ?? (k === 'validite_jours' ? (await getParametres(db)).documents.devis_validite_jours : null));
     }
     if (input.client_id !== undefined) set('client_id', await clientExistant(db, input.client_id));
     if (input.machine !== undefined || input.specs !== undefined) {

@@ -7,6 +7,7 @@ import { me, requireAuth, requireRole } from '../../lib/auth';
 import { journal } from '../../lib/audit';
 import { badRequest, conflict, notFound } from '../../lib/errors';
 import { intParam } from '../../lib/http';
+import { getParametres } from '../../lib/params';
 
 export const usersRouter = Router();
 usersRouter.use(requireAuth);
@@ -28,6 +29,10 @@ usersRouter.get('/', requireRole('admin'), async (_req, res) => {
 
 usersRouter.post('/', requireRole('admin'), async (req, res) => {
   const input = userCreateSchema.parse(req.body);
+  const min = (await getParametres()).securite.mdp_longueur_min;
+  if (input.password.length < min) {
+    throw badRequest(`Le mot de passe doit contenir au moins ${min} caractères.`, { champs: { password: `Au moins ${min} caractères` } });
+  }
   const exists = await one(`SELECT 1 FROM users WHERE lower(email) = lower($1)`, [input.email]);
   if (exists) throw conflict('Un compte existe déjà avec cette adresse e-mail.');
   const hash = await bcrypt.hash(input.password, 12);
@@ -67,7 +72,9 @@ usersRouter.patch('/:id', requireRole('admin'), async (req, res) => {
 /** Génère un mot de passe provisoire, affiché une seule fois à l'administrateur. */
 usersRouter.post('/:id/reinitialiser-mot-de-passe', requireRole('admin'), async (req, res) => {
   const id = intParam(req);
-  const provisoire = crypto.randomBytes(9).toString('base64url');
+  // 4 caractères pour 3 octets : au moins 12 caractères, et jamais moins que la longueur minimale réglée.
+  const min = (await getParametres()).securite.mdp_longueur_min;
+  const provisoire = crypto.randomBytes(Math.max(9, Math.ceil((min * 3) / 4))).toString('base64url');
   const hash = await bcrypt.hash(provisoire, 12);
   const u = await one(
     `UPDATE users SET password_hash = $2, token_version = token_version + 1, doit_changer_mdp = true, echecs_connexion = 0, bloque_jusqu_a = NULL

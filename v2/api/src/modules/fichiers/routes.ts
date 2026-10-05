@@ -15,6 +15,7 @@ import { getPool, one, query, tx } from '../../db/pool';
 import { COOKIE_NAME, me, requireAuth, userFromToken } from '../../lib/auth';
 import { forbidden, notFound } from '../../lib/errors';
 import { intParam } from '../../lib/http';
+import { getParametres } from '../../lib/params';
 import { signalDossier } from '../../realtime';
 import type { AuthUser } from '../../types';
 import { chargerDossier, evenement, peutDeposer } from '../dossiers/service';
@@ -70,10 +71,13 @@ export function mountUploads(app: Express, config: Config) {
     return user;
   };
 
+  // Limites de Paramètres > Fichiers, sans jamais dépasser le plafond du serveur (MAX_UPLOAD_MB).
+  const tailleMax = async () => Math.min(config.maxUploadBytes, (await getParametres()).fichiers.taille_max_mo * 1024 * 1024);
+
   const tus = new TusServer({
     path: '/api/uploads',
     datastore,
-    maxSize: config.maxUploadBytes,
+    maxSize: tailleMax,
     respectForwardedHeaders: true,
     relativeLocation: true,
     namingFunction: () => crypto.randomUUID(),
@@ -89,6 +93,11 @@ export function mountUploads(app: Express, config: Config) {
       const dossierId = Number(upload.metadata?.dossierId);
       const filename = upload.metadata?.filename ?? '';
       if (!Number.isInteger(dossierId) || dossierId <= 0 || !filename) throw new TusRefus(400, 'Dossier ou nom de fichier manquant.');
+      const { extensions } = (await getParametres()).fichiers;
+      const ext = path.extname(nomDisque(filename)).slice(1).toLowerCase();
+      if (extensions.length && !extensions.includes(ext)) {
+        throw new TusRefus(415, `Type de fichier refusé${ext ? ` (.${ext})` : ''}. Extensions acceptées : ${extensions.map((e) => `.${e}`).join(', ')}.`);
+      }
       let d;
       try {
         d = await chargerDossier(user, dossierId);
@@ -131,8 +140,11 @@ export function mountUploads(app: Express, config: Config) {
       signalDossier({ ...row.d, ancien_statut: row.d.statut });
       return { status_code: 204, headers: { 'X-Fichier-Id': String(row.fichierId) } };
     },
-    onResponseError(_req, err) {
+    async onResponseError(_req, err) {
       if (err instanceof TusRefus) return { status_code: err.status_code, body: err.body };
+      if ((err as { status_code?: number }).status_code === 413) {
+        return { status_code: 413, body: `Fichier trop volumineux : ${Math.floor((await tailleMax()) / 1024 / 1024)} Mo au maximum par fichier.` };
+      }
       return undefined;
     },
   });

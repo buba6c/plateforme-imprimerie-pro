@@ -4,6 +4,7 @@ import type { Role } from '@evocom/shared';
 import type { Config } from '../config';
 import { one } from '../db/pool';
 import { forbidden, unauthorized } from './errors';
+import { getParametres } from './params';
 import type { AuthUser } from '../types';
 
 export const COOKIE_NAME = 'evocom_session';
@@ -18,21 +19,27 @@ export function initAuth(config: Config) {
   cfg = config;
 }
 
-export function signSession(user: { id: number; token_version: number }): string {
+export function signSession(user: { id: number; token_version: number }, heures = cfg.sessionHours): string {
   return jwt.sign({ sub: user.id, tv: user.token_version } satisfies TokenPayload, cfg.jwtSecret, {
-    expiresIn: `${cfg.sessionHours}h`,
+    expiresIn: `${heures}h`,
     algorithm: 'HS256',
   });
 }
 
-export function setSessionCookie(res: Response, token: string) {
+export function setSessionCookie(res: Response, token: string, heures = cfg.sessionHours) {
   res.cookie(COOKIE_NAME, token, {
     httpOnly: true,
     secure: cfg.cookieSecure,
     sameSite: 'lax',
-    maxAge: cfg.sessionHours * 3600 * 1000,
+    maxAge: heures * 3600 * 1000,
     path: '/',
   });
+}
+
+/** Ouvre une session (jeton et cookie) pour la durée fixée dans Paramètres > Sécurité. */
+export async function ouvrirSession(res: Response, user: { id: number; token_version: number }) {
+  const { session_heures } = (await getParametres()).securite;
+  setSessionCookie(res, signSession(user, session_heures), session_heures);
 }
 
 export function clearSessionCookie(res: Response) {

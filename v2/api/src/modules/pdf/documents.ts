@@ -154,6 +154,7 @@ export async function pdfDevis(d: DevisPdf, params: Parametres): Promise<Buffer>
     'Conditions',
     `Devis valable ${d.validite_jours} jour${d.validite_jours > 1 ? 's' : ''} à compter du ${jourFr(creation, tz)}. Montants en francs CFA (FCFA)${tvaApplicable ? '' : ', TVA non applicable'}. Le travail est lancé après acceptation du devis.`,
   );
+  if (params.documents.mentions_devis) y = paragraphe(doc, y + 6, 'Mentions', params.documents.mentions_devis);
   y = place(doc, y + 10, 60);
   etiquette(doc, 'Bon pour accord (date et signature du client)', doc.page.margins.left + largeurUtile(doc) - 240, y);
   doc.save().rect(doc.page.margins.left + largeurUtile(doc) - 240, y + 12, 240, 50).lineWidth(0.75).strokeColor(COULEURS.filet).stroke().restore();
@@ -236,12 +237,13 @@ export async function pdfFacture(f: FacturePdf, params: Parametres): Promise<Buf
       { label: 'Reste à payer', valeur: formatFCFA(f.reste) },
     ]);
   }
-  paragraphe(
+  y = paragraphe(
     doc,
     y + 8,
     'Mentions',
     `Montants en francs CFA (FCFA)${f.tva_taux > 0 ? '' : ', TVA non applicable'}. Facture établie pour le dossier ${f.dossier_numero}.`,
   );
+  if (params.documents.conditions_paiement) paragraphe(doc, y + 6, 'Conditions de paiement', params.documents.conditions_paiement);
 
   if (f.statut === 'annulee') filigrane(doc, 'ANNULÉE');
   piedsDePage(doc, params.entreprise.pied_facture, `Facture ${f.numero}`);

@@ -25,6 +25,7 @@ import { ClientAutocomplete } from '../../features/dossiers-ui/ClientAutocomplet
 import { convertirSpecs, lignesDe, specsDraftVide, specsVersDraft, ligneRolandVide, ligneXeroxVide, type SpecsDraft } from '../../features/specs/draft';
 import { PrixPanel, usePrix } from '../../features/specs/PrixPanel';
 import { SpecsEditor } from '../../features/specs/SpecsEditor';
+import { SuggestionIA } from '../../features/ia/SuggestionIA';
 import { useLibelles, useParamsPrix, useTarifs } from '../../features/specs/useTarifs';
 import { Alert, Button, Card, Checkbox, EmptyState, LoadingRows, MachineChip, PageHeader, Segmented, SelectField, TextareaField, TextField, useToast } from '../../ui';
 import '../../features/dossiers-ui/dossiers-ui.css';
@@ -301,6 +302,11 @@ export default function NouveauDossier() {
 
       <form id="form-dossier" className="nd-layout" onSubmit={soumettre} noValidate>
         <div className="nd-main">
+          <SuggestionIA
+            brouillon={f.specs}
+            machineImposee={machineModifiable ? undefined : f.machine}
+            onAppliquer={(machine, specs) => setF((x) => ({ ...x, machine, specs }))}
+          />
           <Card title={<><span className="nd-section__num">1</span>Machine</>} className="nd-section">
             {machineModifiable ? (
               <div className="nd-machine">

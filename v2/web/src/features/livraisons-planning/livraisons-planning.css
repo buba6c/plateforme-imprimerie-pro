@@ -1,0 +1,113 @@
+/* Planning et historique du livreur. Téléphone d'abord ; couleurs de la charte uniquement.
+   Complète livraisons.css (bandeau de chiffres, listes), importé par les mêmes pages. */
+
+/* ---------- Barre de semaine ---------- */
+.lp-nav { display: flex; align-items: center; gap: var(--space-2); flex-wrap: wrap; min-width: 0; }
+.lp-nav__titre { margin: 0 0 0 var(--space-2); font-size: 16px; line-height: 22px; font-weight: 600; color: var(--text); }
+.lp-livreur { width: min(100%, 260px); }
+@media (max-width: 560px) {
+  .lp-nav__titre { flex: 1 0 100%; margin: var(--space-1) 0 0; font-size: 15px; }
+  .lp-livreur { width: 100%; }
+}
+
+/* ---------- Semaine en colonnes (ordinateur) ---------- */
+.lp-semaine { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: var(--space-2); align-items: stretch; }
+.lp-colonne {
+  display: grid; align-content: start; gap: var(--space-2); min-width: 0; min-height: 240px; padding: var(--space-2);
+  border: 1px solid var(--line); border-radius: var(--radius-lg); background: var(--surface-sunken);
+}
+.lp-colonne[data-aujourdhui="true"] { border-color: var(--accent); box-shadow: inset 0 3px 0 var(--accent); }
+.lp-colonne[data-passe="true"] .lp-colonne__tete { color: var(--text-muted); }
+.lp-colonne__tete { display: flex; align-items: baseline; justify-content: space-between; gap: var(--space-1); padding: var(--space-1) var(--space-1) 0; color: var(--text); }
+.lp-colonne__jour { display: grid; margin: 0; font-size: 14px; line-height: 20px; font-weight: 600; color: inherit; }
+.lp-colonne__jour small { font-size: 12px; line-height: 16px; font-weight: 400; color: var(--text-muted); }
+.lp-colonne[data-aujourdhui="true"] .lp-colonne__jour small { color: var(--accent-ink); font-weight: 600; }
+.lp-colonne__vide { margin: 0; padding: var(--space-2) var(--space-1); font-size: 13px; color: var(--text-muted); }
+
+/* ---------- Liste par jour (téléphone) ---------- */
+.lp-jours { display: grid; gap: var(--space-5); }
+.lp-jour { display: grid; gap: var(--space-2); }
+.lp-jour__tete { display: flex; align-items: center; justify-content: space-between; gap: var(--space-2); }
+.lp-jour__titre { margin: 0; font-size: 15px; line-height: 22px; font-weight: 600; color: var(--text); }
+.lp-jour__titre small { font-weight: 400; color: var(--text-muted); }
+.lp-jour[data-aujourdhui="true"] .lp-jour__titre { color: var(--accent-ink); }
+.lp-jour[data-retard="true"] .lp-jour__titre { color: var(--warning-ink); }
+.lp-jour__vide { margin: 0; padding: var(--space-3) var(--space-4); border: 1px dashed var(--line-strong); border-radius: var(--radius-md); font-size: 14px; color: var(--text-muted); }
+.lp-jour__liste { display: grid; gap: var(--space-2); }
+
+/* ---------- Livraison (rendez-vous) ---------- */
+.lp-rdv {
+  display: grid; gap: 4px; min-width: 0; padding: var(--space-2) var(--space-3);
+  background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius-md); box-shadow: var(--shadow-card);
+}
+.lp-rdv[data-urgent="true"] { border-color: color-mix(in srgb, var(--coral) 70%, var(--line)); }
+.lp-rdv[data-retard="true"] { border-color: var(--warning-ink); }
+.lp-rdv[data-fait="true"] { background: transparent; box-shadow: none; border-style: dashed; }
+.lp-rdv__haut { display: flex; align-items: center; gap: var(--space-2); flex-wrap: wrap; min-width: 0; }
+.lp-rdv__quand { display: inline-flex; align-items: baseline; gap: 6px; flex-wrap: wrap; }
+.lp-rdv__heure { font-size: 13px; font-weight: 600; color: var(--text); }
+.lp-rdv__date { font-size: 12px; font-weight: 600; color: var(--text-muted); white-space: nowrap; }
+.lp-rdv[data-retard="true"] .lp-rdv__date { color: var(--warning-ink); }
+.lp-rdv__etat { display: inline-flex; align-items: center; gap: 4px; font-size: 12px; font-weight: 600; }
+.lp-rdv__etat svg { width: 14px; height: 14px; }
+.lp-rdv__etat[data-tone="succes"] { color: var(--success-ink); }
+.lp-rdv__etat[data-tone="retard"] { color: var(--warning-ink); }
+.lp-rdv__client { font-size: 14px; line-height: 20px; font-weight: 600; color: var(--text); text-decoration: none; overflow-wrap: anywhere; }
+.lp-rdv__client:hover { color: var(--accent-ink); text-decoration: underline; text-underline-offset: 2px; }
+.lp-rdv__client:focus-visible, .lp-rdv__tel:focus-visible { outline: 2px solid transparent; box-shadow: var(--focus-ring); border-radius: var(--radius-sm); }
+.lp-rdv__ligne { display: flex; align-items: flex-start; gap: 6px; margin: 0; font-size: 13px; line-height: 18px; color: var(--text-muted); overflow-wrap: anywhere; min-width: 0; }
+.lp-rdv__ligne svg { width: 14px; height: 14px; flex: none; margin-top: 2px; }
+.lp-rdv__ligne[data-vide="true"] { color: var(--warning-ink); }
+.lp-rdv__tel { color: var(--text); text-decoration: none; }
+.lp-rdv__tel .ev-mono { white-space: nowrap; font-size: 12px; }
+.lp-rdv__tel:hover { color: var(--accent-ink); text-decoration: underline; }
+.lp-rdv__bas { display: flex; align-items: baseline; justify-content: space-between; gap: 4px var(--space-2); flex-wrap: wrap; padding-top: 4px; border-top: 1px solid var(--line); font-size: 12px; color: var(--text-muted); }
+.lp-rdv__a-encaisser { display: inline-flex; align-items: baseline; gap: 6px; flex-wrap: wrap; }
+.lp-rdv__montant { font-size: 13px; color: var(--ink); white-space: nowrap; }
+.lp-rdv__montant[data-nul="true"] { color: var(--text-muted); font-family: var(--font-sans); font-weight: 400; }
+.lp-rdv__report { color: var(--warning-ink); font-weight: 500; }
+
+/* En liste (téléphone) : l'heure à gauche, de quoi appeler sous la main. */
+.lp-rdv[data-variante="liste"] { grid-template-columns: minmax(56px, max-content) minmax(0, 1fr); gap: 2px var(--space-3); padding: var(--space-3); }
+.lp-rdv[data-variante="liste"] > * { grid-column: 2; }
+.lp-rdv[data-variante="liste"] > .lp-rdv__heure-col { grid-column: 1; grid-row: 1 / span 6; display: grid; align-content: start; gap: 4px; }
+.lp-rdv[data-variante="liste"] .lp-rdv__quand { display: grid; gap: 0; }
+.lp-rdv[data-variante="liste"] .lp-rdv__heure { font-size: 16px; line-height: 22px; }
+.lp-rdv[data-variante="liste"] .lp-rdv__client { font-size: 16px; line-height: 22px; }
+.lp-rdv[data-variante="liste"] .lp-rdv__ligne { font-size: 14px; line-height: 20px; }
+.lp-rdv[data-variante="liste"] .lp-rdv__tel { display: inline-flex; align-items: center; gap: 6px; min-height: 36px; font-size: 15px; font-weight: 500; color: var(--accent-ink); }
+.lp-rdv[data-variante="liste"] .lp-rdv__tel .ev-mono { font-size: 15px; }
+.lp-rdv[data-variante="liste"] .lp-rdv__montant { font-size: 15px; }
+.lp-rdv__livreur { font-size: 12px; color: var(--text-muted); }
+
+/* ---------- Retards et « à programmer » ---------- */
+.lp-retards { border-color: var(--warning-ink); }
+.lp-retards .ev-card__title { color: var(--warning-ink); }
+.lp-grille { display: grid; gap: var(--space-2); grid-template-columns: repeat(auto-fill, minmax(min(100%, 260px), 1fr)); align-items: start; }
+.lp-prog__droite { display: flex; align-items: center; justify-content: flex-end; gap: var(--space-3); flex-wrap: wrap; }
+@media (max-width: 560px) {
+  .lp-prog .lv-ligne { grid-template-columns: minmax(0, 1fr); }
+  .lp-prog__droite { justify-content: space-between; }
+}
+
+/* ---------- Historique ---------- */
+.lp-filtres { display: grid; gap: var(--space-3); grid-template-columns: repeat(auto-fit, minmax(min(100%, 180px), 1fr)); align-items: end; }
+.lp-filtres .lp-filtres__recherche { grid-column: span 2; }
+@media (max-width: 560px) { .lp-filtres .lp-filtres__recherche { grid-column: auto; } }
+.lp-modes { display: flex; flex-wrap: wrap; gap: var(--space-2) var(--space-5); margin: 0; padding: var(--space-3) var(--space-5); }
+.lp-modes div { display: grid; gap: 2px; }
+.lp-modes dt { font-size: 13px; color: var(--text-muted); }
+.lp-modes dd { margin: 0; font-size: 15px; }
+.lp-modes dd small { margin-left: 6px; font-family: var(--font-sans); font-size: 12px; color: var(--text-muted); }
+.lp-enc { display: grid; gap: 4px; justify-items: end; }
+.lp-enc__item { display: grid; gap: 2px; justify-items: inherit; }
+.lp-pleine { grid-column: 1 / -1; min-width: 0; }
+.lp-enc__ligne { display: flex; align-items: center; justify-content: flex-end; gap: var(--space-2); flex-wrap: wrap; font-size: 13px; color: var(--text-muted); }
+.lp-enc__ligne .ev-num { font-size: 14px; color: var(--ink); }
+.lp-enc__ligne[data-refuse="true"] .ev-num { color: var(--text-muted); text-decoration: line-through; }
+.lp-enc__motif { margin: 0; font-size: 12px; color: var(--danger-ink); text-align: right; }
+@media (max-width: 760px) {
+  .lp-enc { justify-items: start; }
+  .lp-enc__ligne { justify-content: flex-start; }
+  .lp-enc__motif { text-align: left; }
+}
