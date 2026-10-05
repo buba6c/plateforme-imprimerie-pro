@@ -57,12 +57,16 @@ function prefsInitiales(): Preferences {
 let prefs: Preferences = prefsInitiales();
 let apparence: Apparence = lire<Apparence>(CLE_APPARENCE) ?? APPARENCE_DEFAUT;
 let variablesPosees: string[] = [];
+/** Vrai quand c'est l'application qui a posé data-theme (sinon il vient de la page hôte, ex. un aperçu intégré). */
+let themePoseParApp = false;
 const abonnes = new Set<() => void>();
 
 const sombreSysteme = typeof window !== 'undefined' && window.matchMedia ? window.matchMedia('(prefers-color-scheme: dark)') : null;
 
 export function modeEffectif(): 'light' | 'dark' {
   if (prefs.theme !== 'system') return prefs.theme;
+  const hote = themePoseParApp ? null : document.documentElement.getAttribute('data-theme');
+  if (hote === 'light' || hote === 'dark') return hote;
   return sombreSysteme?.matches ? 'dark' : 'light';
 }
 
@@ -74,8 +78,14 @@ export function paletteEffective(): Palette {
 
 function appliquer() {
   const root = document.documentElement;
-  if (prefs.theme === 'system') root.removeAttribute('data-theme');
-  else root.setAttribute('data-theme', prefs.theme);
+  if (prefs.theme === 'system') {
+    // En automatique, on ne retire que ce que l'application a posé : un choix de la page hôte est respecté.
+    if (themePoseParApp) root.removeAttribute('data-theme');
+    themePoseParApp = false;
+  } else {
+    root.setAttribute('data-theme', prefs.theme);
+    themePoseParApp = true;
+  }
   const mode = modeEffectif();
   root.setAttribute('data-mode', mode);
   const palette = paletteEffective();
@@ -97,6 +107,13 @@ function appliquer() {
 sombreSysteme?.addEventListener('change', () => {
   if (prefs.theme === 'system') appliquer();
 });
+
+// La page hôte peut changer de thème pendant que l'application est ouverte.
+if (typeof MutationObserver !== 'undefined' && typeof document !== 'undefined') {
+  new MutationObserver(() => {
+    if (prefs.theme === 'system' && !themePoseParApp) appliquer();
+  }).observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
+}
 
 export function demarrerApparence() {
   appliquer();

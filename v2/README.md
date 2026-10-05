@@ -57,6 +57,14 @@ npm run build
 Les tests de l'API attendent un PostgreSQL local (`postgres://evocom:evocom_dev@localhost:5432/evocom_test`, modifiable
 avec `TEST_DATABASE_URL`).
 
+## Démonstration hors ligne
+
+`npm -w web run build:demo` produit `web/dist-demo/` : la vraie interface avec une API simulée dans le navigateur
+(données fictives, cinq rôles, aucun serveur). `node web/src/demo/outils/page-artifact.mjs` en tire `artifact.html`,
+la page publiée comme Artifact claude.ai avec `assets/` et `fonts/`. Quand les écrans changent, réenregistrer les
+données depuis une API de démonstration (`web/src/demo/outils/enregistrer.mjs`), puis vérifier le parcours complet
+(`web/src/demo/outils/verifier.mjs`). Le code de démonstration est absent du build normal.
+
 ## Mettre en ligne
 
 Voir `deploy/GUIDE_MISE_EN_LIGNE.md` : sécurité du VPS, installation à côté de l'ancienne application, import d'essai,
