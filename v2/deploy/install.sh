@@ -4,6 +4,12 @@
 #
 #   DOMAINE=test.evocomprint.site ADMIN_EMAIL=moi@exemple.com bash v2/deploy/install.sh
 #
+# Sans nom de domaine (essai par l'adresse IP du serveur, sans HTTPS) :
+#   PORT_WEB=8080 ADMIN_EMAIL=moi@exemple.com bash v2/deploy/install.sh
+#   puis ouvrir http://IP-DU-SERVEUR:8080
+#
+# Variables facultatives : PORT_API (4000 par défaut, port interne de l'API), STOCKAGE, DB_NOM, DB_USER.
+#
 # Ce que fait le script, dans l'ordre :
 #  1. vérifie Node 22+, PostgreSQL, Nginx, PM2, rsync ;
 #  2. crée l'utilisateur et la base PostgreSQL « evocom » (mot de passe aléatoire) ;
@@ -15,7 +21,13 @@ set -euo pipefail
 
 RACINE="$(cd "$(dirname "$0")/../.." && pwd)"
 V2="$RACINE/v2"
-DOMAINE="${DOMAINE:?Indiquez le domaine, ex. DOMAINE=test.evocomprint.site}"
+DOMAINE="${DOMAINE:-}"
+PORT_WEB="${PORT_WEB:-}"
+PORT_API="${PORT_API:-4000}"
+if [ -z "$DOMAINE" ] && [ -z "$PORT_WEB" ]; then
+  printf 'ERREUR : indiquez DOMAINE=test.evocomprint.site, ou PORT_WEB=8080 pour un essai par adresse IP.\n' >&2
+  exit 1
+fi
 ADMIN_EMAIL="${ADMIN_EMAIL:?Indiquez l’adresse e-mail du premier administrateur, ex. ADMIN_EMAIL=vous@exemple.com}"
 DB_NOM="${DB_NOM:-evocom}"
 DB_USER="${DB_USER:-evocom}"
@@ -25,6 +37,26 @@ info() { printf '\n\033[1m%s\033[0m\n' "$*"; }
 fail() { printf '\nERREUR : %s\n' "$*" >&2; exit 1; }
 
 [ "$(id -u)" -eq 0 ] || fail "lancez ce script en root (sudo)."
+
+if [ -n "$DOMAINE" ]; then
+  PORT_WEB="${PORT_WEB:-80}"
+  ADRESSE="https://$DOMAINE"
+  COOKIE_SECURE=true
+  NOM_SERVEUR="$DOMAINE"
+else
+  IP_PUBLIQUE="${IP_PUBLIQUE:-$(curl -fsS -4 --max-time 5 https://api.ipify.org 2>/dev/null || hostname -I | awk '{print $1}')}"
+  ADRESSE="http://$IP_PUBLIQUE:$PORT_WEB"
+  # Sans HTTPS, le cookie de session ne peut pas être marqué « Secure » : mode réservé aux essais.
+  COOKIE_SECURE=false
+  NOM_SERVEUR="_"
+fi
+port_occupe() { ss -ltnH "( sport = :$1 )" 2>/dev/null | grep -q .; }
+if port_occupe "$PORT_API" && ! pm2 describe evocom-v2 >/dev/null 2>&1; then
+  fail "le port $PORT_API est déjà utilisé par une autre application. Relancez avec PORT_API=4100 (par exemple)."
+fi
+if [ "$PORT_WEB" != "80" ] && port_occupe "$PORT_WEB" && [ ! -f "/etc/nginx/sites-enabled/evocom-v2-port-$PORT_WEB.conf" ]; then
+  fail "le port $PORT_WEB est déjà utilisé. Choisissez-en un autre, par exemple PORT_WEB=8081."
+fi
 
 info "1/6 Vérification des prérequis"
 command -v node >/dev/null || fail "Node.js est absent. Installez Node 22 : curl -fsSL https://deb.nodesource.com/setup_22.x | bash - && apt-get install -y nodejs"
@@ -55,12 +87,12 @@ if [ ! -f "$V2/api/.env" ]; then
   cat > "$V2/api/.env" <<ENV
 NODE_ENV=production
 HOST=127.0.0.1
-PORT=4000
+PORT=$PORT_API
 DATABASE_URL=postgres://$DB_USER:${DB_PASS}@127.0.0.1:5432/$DB_NOM
 JWT_SECRET=$(openssl rand -hex 48)
 STORAGE_DIR=$STOCKAGE
-APP_URL=https://$DOMAINE
-COOKIE_SECURE=true
+APP_URL=$ADRESSE
+COOKIE_SECURE=$COOKIE_SECURE
 TRUST_PROXY=1
 MAX_UPLOAD_MB=4096
 BACKUP_DIR=/var/backups/evocom
@@ -87,11 +119,19 @@ info "5/6 Démarrage et Nginx"
 pm2 start "$V2/deploy/ecosystem.config.cjs"
 pm2 save
 sleep 3
-curl -fsS http://127.0.0.1:4000/api/health >/dev/null || fail "l'API ne répond pas : consultez « pm2 logs evocom-v2 »."
-CONF="/etc/nginx/sites-available/evocom-v2-$DOMAINE.conf"
-sed -e "s#DOMAINE#$DOMAINE#g" -e "s#RACINE#$RACINE#g" "$V2/deploy/nginx-evocom-v2.conf" > "$CONF"
+curl -fsS "http://127.0.0.1:$PORT_API/api/health" >/dev/null || fail "l'API ne répond pas : consultez « pm2 logs evocom-v2 »."
+if [ -n "$DOMAINE" ]; then CONF="/etc/nginx/sites-available/evocom-v2-$DOMAINE.conf"; else CONF="/etc/nginx/sites-available/evocom-v2-port-$PORT_WEB.conf"; fi
+sed -e "s#server_name DOMAINE;#server_name $NOM_SERVEUR;#" -e "s#RACINE#$RACINE#g" \
+    -e "s#listen 80;#listen $PORT_WEB;#" -e "s#listen \[::\]:80;#listen [::]:$PORT_WEB;#" \
+    -e "s#127.0.0.1:4000#127.0.0.1:$PORT_API#g" "$V2/deploy/nginx-evocom-v2.conf" > "$CONF"
+# Serveur sans IPv6 : la ligne « listen [::] » ferait échouer Nginx.
+[ -f /proc/net/if_inet6 ] || sed -i '/listen \[::\]/d' "$CONF"
 ln -sf "$CONF" "/etc/nginx/sites-enabled/"
-nginx -t && systemctl reload nginx
+nginx -t || { rm -f "/etc/nginx/sites-enabled/$(basename "$CONF")"; fail "configuration Nginx refusée : rien n'a été changé pour les autres sites."; }
+systemctl reload nginx
+if [ "$PORT_WEB" != "80" ] && command -v ufw >/dev/null && ufw status | grep -q "Status: active"; then
+  ufw allow "$PORT_WEB/tcp" >/dev/null && echo "Pare-feu : port $PORT_WEB ouvert."
+fi
 chmod o+x "$RACINE" "$V2" "$V2/web" 2>/dev/null || true
 
 info "6/6 Sauvegarde quotidienne"
@@ -103,7 +143,8 @@ chmod 644 "$CRON"
 cat <<FIN
 
 Installation terminée.
-  Adresse : http://$DOMAINE  (activez HTTPS : certbot --nginx -d $DOMAINE)
+  Adresse : $ADRESSE
+$( [ -n "$DOMAINE" ] && echo "  (activez HTTPS : certbot --nginx -d $DOMAINE ; d'ici là, ouvrez http://$DOMAINE)" || echo "  (essai sans HTTPS : si la page ne s'ouvre pas, ouvrez le port $PORT_WEB dans le pare-feu de l'hébergeur)" )
   Administrateur : $ADMIN_EMAIL
   Mot de passe provisoire : $ADMIN_PASSWORD   (à changer à la première connexion ; il n'est affiché qu'ici)
 

@@ -29,7 +29,8 @@ echo "Migrations de la base"
 echo "Redémarrage"
 pm2 reload evocom-v2 --update-env
 sleep 3
-if curl -fsS http://127.0.0.1:4000/api/health >/dev/null; then
+PORT_API="$(grep -E '^PORT=' "$V2/api/.env" | cut -d= -f2)"
+if curl -fsS "http://127.0.0.1:${PORT_API:-4000}/api/health" >/dev/null; then
   echo "Mise à jour terminée : $(git -C "$RACINE" log --oneline -1)"
 else
   echo "L'API ne répond pas après la mise à jour."

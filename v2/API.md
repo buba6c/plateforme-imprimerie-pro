@@ -85,6 +85,15 @@ Socket.IO (`/socket.io`, cookie) : événements `dossier {type,id,numero,statut,
 | GET | /sante | admin | `{version, base:{ok}, stockage:{chemin, libre_octets}, derniere_sauvegarde:{ok,created_at,taille,message}\|null, migrations}` |
 | GET | /dossiers/:id/bon-de-travail.pdf | admin, preparateur, imprimeur de la machine | fiche atelier imprimable (sans montant), QR code vers la fiche |
 
+## Apparence
+
+| Méthode | Route | Rôles | Réponse |
+|---|---|---|---|
+| GET | /apparence | public (aussi avant connexion) | `{palette_defaut: evocom\|sobre\|perso, couleurs_perso: {debut,fin}\|null}` |
+| PUT | /apparence `{palette_defaut, couleurs_perso}` | admin | idem ; couleurs `#rrvvbb` ; `perso` exige les deux couleurs ; journalisé `apparence_modifiee` |
+| GET | /preferences | tous | `{theme: system\|light\|dark, palette: evocom\|sobre\|perso\|null, contraste: normal\|eleve}` (`palette: null` = celle de l'entreprise) |
+| PUT | /preferences `{theme?, palette?, contraste?}` | tous | préférences complètes ; un champ absent ne change pas |
+
 ## Écarts
 
 Précisions et ajouts par rapport au tableau ci-dessus (les champs listés dans le contrat sont tous présents ; rien n'a été retiré).
