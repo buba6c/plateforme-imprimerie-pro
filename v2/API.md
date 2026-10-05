@@ -94,6 +94,25 @@ Socket.IO (`/socket.io`, cookie) : événements `dossier {type,id,numero,statut,
 | GET | /preferences | tous | `{theme: system\|light\|dark, palette: evocom\|sobre\|perso\|null, contraste: normal\|eleve}` (`palette: null` = celle de l'entreprise) |
 | PUT | /preferences `{theme?, palette?, contraste?}` | tous | préférences complètes ; un champ absent ne change pas |
 
+## Assistant IA (suggestion seulement)
+
+L'assistant propose des spécifications ; la personne les applique au formulaire, relit et enregistre elle-même.
+Le prix est toujours recalculé par le moteur (`calculerPrix`) et la grille, jamais repris de l'IA.
+
+| Méthode | Route | Rôles | Réponse |
+|---|---|---|---|
+| GET | /ia/statut | admin, preparateur | `{actif}` : vrai seulement si l'assistant est activé et qu'une clé est enregistrée |
+| GET | /ia/config | admin | `{actif, modele, modeles[], cle_configuree, cle_fin, cle_lisible, updated_at, updated_by_nom}` ; la clé n'est jamais renvoyée |
+| PUT | /ia/config `{actif?, modele?: gpt-4o-mini\|gpt-4o\|gpt-4.1-mini, cle?: string\|null}` | admin | configuration ; `cle: null` efface la clé et désactive ; 409 si activation sans clé ; clé `sk-…` (20 à 300 caractères), chiffrée AES-256-GCM ; journalisé `ia_config_modifiee` sans la clé |
+| POST | /ia/test `{cle?, modele?}` | admin | `{ok, modele, duree_ms}` ; teste la clé fournie ou l'enregistrée ; 409 si absente ou illisible |
+| POST | /ia/suggestion `{description (1 à 2000), machine?: roland\|xerox}` | admin, preparateur | `{machine, specs, prix: {total, …ResultatPrix}\|null, erreur_prix?, avertissements[], remarques?}` ; codes de tarif inconnus ou sans prix retirés avec un avertissement |
+| GET | /ia/usages?limit (50, 200 max) | admin | `{items:[{id,user_nom,type,statut,modele,duree_ms,jetons_entree,jetons_sortie,longueur_demande,extrait,created_at}], totaux_30_jours}` (extrait ≤ 120 caractères ; ni la demande complète ni la réponse ne sont gardées) |
+
+Erreurs de `/ia/suggestion` : 409 `ia_inactif`, 409 `ia_cle_illisible` (secret de chiffrement changé : ressaisir la clé),
+429 (plus de 30 propositions par utilisateur et par heure), 502 (clé refusée, modèle indisponible, service injoignable,
+réponse illisible), 503 (crédit ou débit OpenAI épuisé), 504 (pas de réponse en 25 s). Une erreur 401 d'OpenAI n'est
+jamais renvoyée telle quelle (elle déconnecterait l'utilisateur).
+
 ## Écarts
 
 Précisions et ajouts par rapport au tableau ci-dessus (les champs listés dans le contrat sont tous présents ; rien n'a été retiré).
