@@ -18,6 +18,15 @@ export const ACTION_LABELS: Record<string, string> = {
   dossier_supprime: 'Dossier mis à la corbeille',
   dossier_restaure: 'Dossier restauré',
   dossier_statut_force: 'Statut de dossier forcé',
+  fichier_restaure: 'Fichier restauré',
+  apparence_modifiee: "Couleurs de l'entreprise modifiées",
+  ia_config_modifiee: "Assistant IA configuré",
+  numerotation_modifiee: 'Numérotation modifiée',
+  configuration_exportee: 'Configuration exportée',
+  configuration_importee: 'Configuration importée',
+  reinitialisation_refusee: 'Réinitialisation refusée',
+  reinitialisation_echouee: 'Réinitialisation échouée',
+  plateforme_reinitialisee: 'Plateforme réinitialisée',
 };
 
 export function libelleAction(a: string): string {
@@ -35,6 +44,11 @@ export const CIBLE_LABELS: Record<string, string> = {
   client: 'Client',
   dossier: 'Dossier',
   devis: 'Devis',
+  fichier: 'Fichier',
+  ia_config: 'Assistant IA',
+  compteurs: 'Numérotation',
+  configuration: 'Configuration',
+  systeme: 'Système',
 };
 
 const CLE_LABELS: Record<string, string> = {

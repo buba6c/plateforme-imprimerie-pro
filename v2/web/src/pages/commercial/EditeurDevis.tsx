@@ -24,6 +24,7 @@ import { PrixPanel, usePrix } from '../../features/specs/PrixPanel';
 import { SpecsEditor } from '../../features/specs/SpecsEditor';
 import { SuggestionIA } from '../../features/ia/SuggestionIA';
 import { useLibelles, useParamsPrix, useTarifs } from '../../features/specs/useTarifs';
+import { useRegles } from '../../features/parametres/api';
 import { Alert, Button, Card, EmptyState, LoadingRows, PageHeader, Segmented, TextareaField, TextField, useToast } from '../../ui';
 import '../../features/dossiers-ui/dossiers-ui.css';
 
@@ -137,6 +138,16 @@ export default function EditeurDevis() {
       setPret(true);
     }
   }, [edition, devis.data]);
+
+  // Nouveau devis : validité par défaut fixée dans Paramètres > Documents, tant que la personne ne l'a pas changée.
+  const regles = useRegles();
+  const validiteTouchee = useRef(false);
+  useEffect(() => {
+    const jours = regles.data?.documents.devis_validite_jours;
+    if (edition || !jours || validiteTouchee.current) return;
+    setF((x) => ({ ...x, validite: String(jours) }));
+    if (initial.current) initial.current = { ...initial.current, validite: String(jours) };
+  }, [edition, regles.data]);
 
   const maj = <K extends keyof Formulaire>(k: K, v: Formulaire[K]) => setF((x) => ({ ...x, [k]: v }));
   const changerMachine = (m: Machine) =>
@@ -332,7 +343,7 @@ export default function EditeurDevis() {
 
           <Card title={<><span className="nd-section__num">4</span>Conditions</>} className="nd-section">
             <div className="nd-grid nd-grid--conditions">
-              <TextField label="Validité" required mono addon="jours" inputMode="numeric" value={f.validite} onChange={(e) => maj('validite', e.target.value)} error={erreursForm.validite_jours} />
+              <TextField label="Validité" required mono addon="jours" inputMode="numeric" value={f.validite} onChange={(e) => { validiteTouchee.current = true; maj('validite', e.target.value); }} error={erreursForm.validite_jours} />
               <TextareaField
                 label="Remarques"
                 rows={3}

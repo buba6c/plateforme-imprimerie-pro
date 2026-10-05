@@ -97,6 +97,8 @@ TRUST_PROXY=1
 MAX_UPLOAD_MB=4096
 BACKUP_DIR=/var/backups/evocom
 BACKUP_JOURS=14
+# Réinitialisation complète (Paramètres > Zone dangereuse) : laisser à false.
+ALLOW_SYSTEM_RESET=false
 # RCLONE_DEST=b2:evocom-sauvegardes
 ENV
   chmod 600 "$V2/api/.env"

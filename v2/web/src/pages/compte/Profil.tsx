@@ -4,6 +4,7 @@ import { useAuth, useUser } from '../../auth/AuthContext';
 import { api, messageErreur } from '../../lib/api';
 import { Alert, Button, Card, PageHeader, TextField, useToast } from '../../ui';
 import { ChoixApparence } from '../../features/apparence/ChoixApparence';
+import { useRegles } from '../../features/parametres/api';
 
 export default function Profil() {
   const user = useUser();
@@ -15,6 +16,7 @@ export default function Profil() {
   const [busy, setBusy] = useState(false);
   const [erreur, setErreur] = useState<string | null>(null);
   const differents = confirmation.length > 0 && nouveau !== confirmation;
+  const mdpMin = useRegles().data?.securite.mdp_longueur_min ?? 8;
   return (
     <>
       <PageHeader title="Mon compte" subtitle={`${user.nom} · ${ROLE_LABELS[user.role]}`} />
@@ -56,10 +58,10 @@ export default function Profil() {
           >
             {erreur && <Alert tone="error">{erreur}</Alert>}
             <TextField label="Mot de passe actuel" type="password" autoComplete="current-password" required value={actuel} onChange={(e) => setActuel(e.target.value)} />
-            <TextField label="Nouveau mot de passe" type="password" autoComplete="new-password" required minLength={8} value={nouveau} onChange={(e) => setNouveau(e.target.value)} help="Au moins 8 caractères." />
+            <TextField label="Nouveau mot de passe" type="password" autoComplete="new-password" required minLength={mdpMin} value={nouveau} onChange={(e) => setNouveau(e.target.value)} help={`Au moins ${mdpMin} caractères.`} />
             <TextField label="Confirmer le nouveau mot de passe" type="password" autoComplete="new-password" required value={confirmation} onChange={(e) => setConfirmation(e.target.value)} error={differents ? 'Les deux mots de passe ne correspondent pas.' : null} />
             <div>
-              <Button type="submit" variant="primary" busy={busy} disabled={!actuel || nouveau.length < 8 || nouveau !== confirmation}>
+              <Button type="submit" variant="primary" busy={busy} disabled={!actuel || nouveau.length < mdpMin || nouveau !== confirmation}>
                 Enregistrer le mot de passe
               </Button>
             </div>

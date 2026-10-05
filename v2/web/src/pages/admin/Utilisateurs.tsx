@@ -8,12 +8,13 @@ import { Alert, Button, Checkbox, ConfirmDialog, Dialog, EmptyState, IconButton,
 import { champsErreur, useUsers } from '../../features/admin/hooks';
 import type { UserAdmin } from '../../features/admin/types';
 import '../../features/admin/admin.css';
+import { useRegles } from '../../features/parametres/api';
 
 const ROLE_OPTIONS = ROLES.map((r) => ({ value: r, label: ROLE_LABELS[r] }));
 
-function genererMotDePasse(): string {
+function genererMotDePasse(longueurMin = 8): string {
   const alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789';
-  const bytes = new Uint32Array(12);
+  const bytes = new Uint32Array(Math.max(12, longueurMin));
   crypto.getRandomValues(bytes);
   return Array.from(bytes, (b) => alphabet[b % alphabet.length]).join('');
 }
@@ -183,6 +184,7 @@ export default function Utilisateurs() {
 const VIDE = { nom: '', email: '', role: 'preparateur' as Role, telephone: '', password: '' };
 
 function CreerDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
+  const mdpMin = useRegles().data?.securite.mdp_longueur_min ?? 8;
   const qc = useQueryClient();
   const toast = useToast();
   const [f, setF] = useState(VIDE);
@@ -215,7 +217,7 @@ function CreerDialog({ open, onClose }: { open: boolean; onClose: () => void }) 
     const local: Record<string, string> = {};
     if (!f.nom.trim()) local.nom = 'Indiquez le nom.';
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(f.email.trim())) local.email = 'Adresse e-mail invalide.';
-    if (f.password.length < 8) local.password = 'Au moins 8 caractères.';
+    if (f.password.length < mdpMin) local.password = `Au moins ${mdpMin} caractères.`;
     setErreurs(local);
     if (Object.keys(local).length) return;
     m.mutate();
@@ -283,11 +285,11 @@ function CreerDialog({ open, onClose }: { open: boolean; onClose: () => void }) 
             value={f.password}
             onChange={(e) => setF({ ...f, password: e.target.value })}
             error={erreurs.password}
-            help="Au moins 8 caractères. Communiquez-le à la personne : elle devra le changer à sa première connexion."
+            help={`Au moins ${mdpMin} caractères. Communiquez-le à la personne : elle devra le changer à sa première connexion.`}
             autoComplete="new-password"
           />
           <div>
-            <Button size="sm" variant="ghost" icon={<KeyRound />} onClick={() => setF({ ...f, password: genererMotDePasse() })}>
+            <Button size="sm" variant="ghost" icon={<KeyRound />} onClick={() => setF({ ...f, password: genererMotDePasse(mdpMin) })}>
               Générer un mot de passe
             </Button>
           </div>

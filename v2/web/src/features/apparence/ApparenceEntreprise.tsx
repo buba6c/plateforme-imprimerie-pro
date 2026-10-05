@@ -33,15 +33,17 @@ function ChampCouleur({ label, value, onChange }: { label: string; value: string
 }
 
 /** Couleurs de l'entreprise : palette proposée à toute l'équipe et couleurs personnalisées (admin). */
-export function ApparenceEntreprise() {
+export function ApparenceEntreprise({ onModifie }: { onModifie?: (modifie: boolean) => void }) {
   const toast = useToast();
-  const [initiale] = useState<Apparence>(getApparence());
+  const [initiale, setInitiale] = useState<Apparence>(getApparence());
   const [palette, setPalette] = useState<Palette>(initiale.palette_defaut);
   const [couleurs, setCouleurs] = useState(initiale.couleurs_perso ?? EVOCOM);
   const [busy, setBusy] = useState(false);
   const [erreur, setErreur] = useState<string | null>(null);
 
   const brouillon: Apparence = { palette_defaut: palette, couleurs_perso: palette === 'perso' || initiale.couleurs_perso ? couleurs : null };
+  const modifie = JSON.stringify(brouillon) !== JSON.stringify(initiale);
+  useEffect(() => onModifie?.(modifie), [modifie, onModifie]);
   const derivee = paletteDerivee(couleurs.debut, couleurs.fin, 'light');
   const ajuste = derivee['--accent'] !== couleurs.debut;
   const texteDegrade = Math.min(contraste(derivee['--on-brand']!, derivee['--brand-start']!), contraste(derivee['--on-brand']!, derivee['--brand-end']!));
@@ -63,6 +65,7 @@ export function ApparenceEntreprise() {
           try {
             const a = await api.put<Apparence>('/apparence', brouillon);
             definirApparence(a);
+            setInitiale(a);
             toast.success('Couleurs enregistrées', "Elles s'appliquent à toute l'équipe, sauf à ceux qui ont choisi leurs propres couleurs.");
           } catch (err) {
             setErreur(messageErreur(err));

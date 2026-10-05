@@ -214,6 +214,15 @@ depuis la bascule n'existe pas dans l'ancienne.
   sudo -u postgres dropdb evocom_essai
   ```
 
+## Réinitialiser la plateforme (rarement)
+
+Paramètres > Zone dangereuse efface tous les dossiers, fichiers, paiements, devis, factures et clients, en gardant les
+comptes, les tarifs et les réglages. Elle est désactivée tant que `ALLOW_SYSTEM_RESET=false` dans `v2/api/.env`.
+Pour l'utiliser : passer la valeur à `true`, `pm2 reload evocom-v2 --update-env`, faire l'opération, puis remettre
+`false` et recharger. Une sauvegarde complète est faite juste avant, dans `STORAGE_DIR/sauvegardes/`
+(`/var/lib/evocom/storage/sauvegardes/` par défaut), et les fichiers effacés sont déplacés, pas supprimés, dans
+`STORAGE_DIR/reinitialisation-<date>/`.
+
 ## 9. Mises à jour suivantes
 
 ```bash

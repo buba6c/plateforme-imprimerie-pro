@@ -1,6 +1,6 @@
 import { useCallback, useMemo, useState, type ComponentType, type ReactNode } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { AlertTriangle, ArrowLeft, Bell, Building2, ChevronRight, FileText, FolderUp, Hash, Percent, ArrowLeftRight, ShieldCheck } from 'lucide-react';
+import { AlertTriangle, ArrowLeft, Bell, Building2, ChevronRight, FileText, FolderUp, Hash, Palette, Percent, ArrowLeftRight, ShieldCheck } from 'lucide-react';
 import { messageErreur } from '../../lib/api';
 import { Alert, Button, LoadingRows, PageHeader } from '../../ui';
 import { useParametresAdmin } from '../../features/parametres/api';
@@ -14,10 +14,11 @@ import { SectionNotifications } from '../../features/parametres/sections/Notific
 import { SectionNumerotation } from '../../features/parametres/sections/Numerotation';
 import { SectionExportImport } from '../../features/parametres/sections/ExportImport';
 import { SectionZoneDangereuse } from '../../features/parametres/sections/ZoneDangereuse';
+import { ApparenceEntreprise } from '../../features/apparence/ApparenceEntreprise';
 import '../../features/admin/admin.css';
 import '../../features/parametres/parametres.css';
 
-type Id = 'entreprise' | 'prix' | 'securite' | 'fichiers' | 'documents' | 'notifications' | 'numerotation' | 'export' | 'danger';
+type Id = 'entreprise' | 'prix' | 'couleurs' | 'securite' | 'fichiers' | 'documents' | 'notifications' | 'numerotation' | 'export' | 'danger';
 
 interface Section {
   id: Id;
@@ -32,6 +33,7 @@ interface Section {
 const SECTIONS: Section[] = [
   { id: 'entreprise', titre: 'Entreprise', description: 'Coordonnées, fuseau horaire, livraison', icone: Building2, rendu: (p) => <SectionEntreprise {...p} /> },
   { id: 'prix', titre: 'Prix et TVA', description: 'Arrondi, TVA, surface minimale', icone: Percent, rendu: (p) => <SectionPrix {...p} /> },
+  { id: 'couleurs', titre: 'Couleurs', description: 'Dégradé Evocom, palette de l’équipe', icone: Palette, rendu: (p) => <ApparenceEntreprise onModifie={p.onModifie} /> },
   { id: 'securite', titre: 'Sécurité', description: 'Sessions, blocage, mots de passe', icone: ShieldCheck, rendu: (p) => <SectionSecurite {...p} /> },
   { id: 'fichiers', titre: 'Fichiers', description: 'Taille maximale, types acceptés', icone: FolderUp, rendu: (p) => <SectionFichiers {...p} /> },
   { id: 'documents', titre: 'Documents', description: 'Validité des devis, mentions, conditions', icone: FileText, rendu: (p) => <SectionDocuments {...p} /> },

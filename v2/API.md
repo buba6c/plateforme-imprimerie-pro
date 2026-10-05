@@ -8,7 +8,7 @@ Montants : entiers en FCFA. Dates : ISO 8601 (`date` = `AAAA-MM-JJ`).
 
 | Méthode | Route | Rôles | Rôle |
 |---|---|---|---|
-| POST | /auth/login `{email,password}` | public | `{user}` + cookie ; 401, 429 (blocage 15 min après 5 échecs) |
+| POST | /auth/login `{email,password}` | public | `{user}` + cookie ; 401, 429 (blocage selon Paramètres > Sécurité : par défaut 15 min après 5 échecs) |
 | POST | /auth/logout | tous | |
 | GET | /auth/me | tous | `{user:{id,nom,email,role,telephone,doit_changer_mdp}}` |
 | POST | /auth/mot-de-passe `{actuel,nouveau}` | tous | 204 |
@@ -135,6 +135,41 @@ Aperçu et téléchargement : `GET /fichiers/:id/contenu`.
 | GET | /livraisons/historique?page&taille&du&au&q&mode_paiement[&livreur_id] | livreur (les siennes, sans limite de durée) ; admin (tout, filtre `livreur_id`) | `{items:[{id, numero, client_nom, adresse_livraison, livre_at, livreur_id, livreur_nom, fiche_accessible, encaissements:[{id, montant, mode, statut, encaisse_at, motif_refus}], encaisse}], total, page, taille, du, au, totaux:{nb_livraisons, encaisse, valide, en_attente_validation, refuse, par_mode:[{mode, libelle, nb, montant, valide, en_attente_validation}]}}` ; ni téléphone, ni prix, ni fichiers ; `taille` 25 (100 max) ; 400 si mode inconnu ou `du` > `au` |
 
 Préparateur et imprimeurs : 403. Droits appliqués dans le SQL (règle de visibilité commune).
+
+## Paramètres étendus, numérotation, configuration, réinitialisation
+
+Chaque réglage agit réellement ; les valeurs par défaut reprennent le comportement d'origine. Le cache des paramètres
+(10 s par processus) est vidé à chaque enregistrement et à chaque import.
+
+| Section | Réglage (défaut) | Effet |
+|---|---|---|
+| `securite` | `session_heures` (1..720, défaut `SESSION_HOURS`) | durée du jeton et du cookie à la connexion et au changement de mot de passe |
+| `securite` | `echecs_avant_blocage` (3..20, 5), `blocage_minutes` (1..1440, 15) | blocage à la connexion ; le 429 de `/auth/login` indique les minutes restantes |
+| `securite` | `mdp_longueur_min` (8..64, 8) | création d'utilisateur, changement de mot de passe, mot de passe provisoire |
+| `fichiers` | `taille_max_mo` (≤ `MAX_UPLOAD_MB`), `extensions` (vide = toutes) | envoi tus : 413 et 415 avec un message en français |
+| `documents` | `devis_validite_jours` (15), `mentions_devis`, `conditions_paiement` (≤ 1000) | devis créés sans validité ; textes imprimés sur les PDF de devis et de facture |
+| `notifications` | un interrupteur par type émis | `notifier()` |
+
+| Méthode | Route | Rôles | Réponse |
+|---|---|---|---|
+| GET | /parametres | tous | admin : toutes les sections (+ `securite`, `fichiers`, `documents`, `notifications`) ; autres rôles : `entreprise`, `prix`, `livreur_jours_historique`, `fuseau` |
+| GET | /parametres/regles | tous | `{fichiers:{taille_max_mo,extensions,plafond_serveur_mo}, securite:{mdp_longueur_min}, documents:{devis_validite_jours}}` |
+| PUT | /parametres | admin | fusion partielle, nouvelles sections comprises ; bornes validées ; journalisé |
+| GET | /systeme/numerotation | admin | `{annee, series:[{serie,libelle,dernier,dernier_numero,prochain,prochain_numero}]}` |
+| PUT | /systeme/numerotation `{CMD?,DEV?,FAC?}` | admin | état ; 400 si le prochain numéro n'est pas au-dessus du dernier attribué ; `numerotation_modifiee` |
+| GET | /systeme/configuration | admin | fichier JSON `{format,version,exporte_le,exporte_par,parametres,apparence,tarifs}`, sans `ia_config` ni aucun secret ; `configuration_exportee` |
+| POST | /systeme/configuration/apercu | admin | fichier exporté → `{parametres:[…], tarifs:{ajoutes,modifies,inchanges,absents_conserves}, nb_changements}` ; 400 avec `champs` |
+| POST | /systeme/configuration/importer | admin | même corps ; appliqué en une transaction (tarifs absents conservés) ; `configuration_importee` |
+| GET | /systeme/reinitialisation | admin | `{autorisee, variable, phrase_attendue, ce_qui_est_efface, ce_qui_est_conserve, tentatives_restantes}` |
+| POST | /systeme/reinitialiser `{mot_de_passe, phrase}` | admin | `{sauvegarde, efface, fichiers:{deplaces,absents,dossier}, sessions_fermees}` |
+
+Réinitialisation : 403 si `ALLOW_SYSTEM_RESET` n'est pas `true` ou si l'appelant n'est pas admin ; 400 mot de passe ou
+phrase (`REINITIALISER EVOCOM`) incorrects ; 429 après 3 tentatives dans l'heure ; 500 `sauvegarde_echouee` (rien
+n'est effacé). Déroulé : `pg_dump` complet vers `STORAGE_DIR/sauvegardes/avant-reinitialisation-<date>.sql.gz`, puis
+une transaction efface dossiers, fichiers, paiements, devis, factures, notifications, historique, clients, `ia_usage` ;
+compteurs remis à zéro ; autres sessions fermées ; fichiers physiques déplacés dans `STORAGE_DIR/reinitialisation-<date>/`
+(remis en place si la transaction échoue). Conservés : utilisateurs, préférences, tarifs, paramètres (dont l'apparence),
+configuration de l'assistant IA, journal, sauvegardes.
 
 ## Écarts
 

@@ -5,6 +5,7 @@ import { useCallback, useEffect, useRef, useState, type DragEvent } from 'react'
 import { useQueryClient } from '@tanstack/react-query';
 import { Upload as UploadIcon, Pause, Play, X, CheckCircle2, AlertTriangle, RotateCw } from 'lucide-react';
 import { Upload, DetailedError } from 'tus-js-client';
+import { useRegles } from '../parametres/api';
 import { formatTaille } from '@evocom/shared';
 import { Button, IconButton, useToast } from '../../ui';
 import { extension } from './ListeFichiers';
@@ -34,11 +35,14 @@ export function messageEnvoi(err: Error | DetailedError): string {
   }
   const status = res.getStatus();
   const corps = (res.getBody() ?? '').trim();
+  const lisible = corps && corps.length < 300 && !/^[{<]/.test(corps) && /[a-zà-ÿ]/i.test(corps);
+  // Taille ou type refusés : le serveur précise la règle en vigueur (Paramètres > Fichiers).
+  if ((status === 413 || status === 415) && lisible) return corps;
   if (status === 413) return 'Fichier trop volumineux : il dépasse la taille maximale acceptée par le serveur.';
   if (status === 401) return 'Votre session a expiré. Reconnectez-vous, puis relancez l’envoi.';
   if (status >= 500) return 'Le serveur a rencontré une erreur pendant l’envoi. Réessayez ; si cela persiste, prévenez l’administrateur.';
   // Les refus métier (dossier validé, droits…) sont rédigés en français par le serveur.
-  if (corps && corps.length < 300 && !/^[{<]/.test(corps) && /[a-zà-ÿ]/i.test(corps)) return corps;
+  if (lisible) return corps;
   if (status === 403) return 'Vous ne pouvez pas ajouter de fichier à ce dossier.';
   if (status === 404) return 'L’envoi n’existe plus sur le serveur. Ajoutez à nouveau le fichier.';
   return `L’envoi a échoué (erreur ${status}). Réessayez.`;
@@ -77,10 +81,23 @@ export function Televersement({ dossierId }: { dossierId: number }) {
     };
   }, []);
 
+  const regles = useRegles().data?.fichiers;
+  const extensions = regles?.extensions ?? [];
+
   const ajouter = (fichiers: FileList | File[]) => {
     for (const file of Array.from(fichiers)) {
       if (file.size === 0) {
         toast.error('Fichier vide', `${file.name} ne contient aucune donnée.`);
+        continue;
+      }
+      // Contrôles faits aussi par le serveur ; ici, ils évitent d'envoyer des gigaoctets pour rien.
+      if (regles && file.size > regles.taille_max_mo * 1024 * 1024) {
+        toast.error('Fichier trop volumineux', `${file.name} dépasse ${regles.taille_max_mo} Mo, la taille maximale fixée par l’administrateur.`);
+        continue;
+      }
+      const ext = file.name.includes('.') ? file.name.split('.').pop()!.toLowerCase() : '';
+      if (extensions.length && !extensions.includes(ext)) {
+        toast.error('Type de fichier refusé', `${file.name} : extensions acceptées ${extensions.map((e) => `.${e}`).join(', ')}.`);
         continue;
       }
       const id = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
@@ -156,11 +173,16 @@ export function Televersement({ dossierId }: { dossierId: number }) {
             choisissez-les sur l’ordinateur
           </button>
         </div>
-        <span className="fi-dropzone__aide">PDF, images, fichiers de mise en page. Plusieurs fichiers à la fois ; un envoi coupé reprend où il s’est arrêté.</span>
+        <span className="fi-dropzone__aide">
+          {extensions.length ? `Extensions acceptées : ${extensions.map((e) => `.${e}`).join(', ')}.` : 'PDF, images, fichiers de mise en page.'}
+          {regles ? ` ${regles.taille_max_mo >= 1024 ? `${String(Math.round((regles.taille_max_mo / 1024) * 10) / 10).replace('.', ',')} Go` : `${regles.taille_max_mo} Mo`} au plus par fichier.` : ''}
+          {' '}Plusieurs fichiers à la fois ; un envoi coupé reprend où il s’est arrêté.
+        </span>
         <input
           ref={input}
           type="file"
           multiple
+          accept={extensions.length ? extensions.map((e) => `.${e}`).join(',') : undefined}
           hidden
           onChange={(e) => {
             if (e.target.files?.length) ajouter(e.target.files);
