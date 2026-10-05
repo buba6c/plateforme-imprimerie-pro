@@ -29,6 +29,11 @@ const Journal = lazy(() => import('./pages/admin/Journal'));
 const Corbeille = lazy(() => import('./pages/admin/Corbeille'));
 const Sante = lazy(() => import('./pages/admin/Sante'));
 const Profil = lazy(() => import('./pages/compte/Profil'));
+const Fichiers = lazy(() => import('./pages/admin/Fichiers'));
+const Permissions = lazy(() => import('./pages/admin/Permissions'));
+const AssistantIA = lazy(() => import('./pages/admin/AssistantIA'));
+const Planning = lazy(() => import('./pages/livraisons/Planning'));
+const HistoriqueLivraisons = lazy(() => import('./pages/livraisons/Historique'));
 const NotFound = lazy(() => import('./pages/NotFound'));
 
 const ADMIN: Role[] = ['admin'];
@@ -81,6 +86,11 @@ export default function App() {
         <Route path="admin/journal" element={<Lazy><R roles={ADMIN}><Journal /></R></Lazy>} />
         <Route path="admin/corbeille" element={<Lazy><R roles={ADMIN}><Corbeille /></R></Lazy>} />
         <Route path="admin/sante" element={<Lazy><R roles={ADMIN}><Sante /></R></Lazy>} />
+        <Route path="fichiers" element={<Lazy><R roles={BUREAU}><Fichiers /></R></Lazy>} />
+        <Route path="admin/permissions" element={<Lazy><R roles={ADMIN}><Permissions /></R></Lazy>} />
+        <Route path="admin/assistant-ia" element={<Lazy><R roles={ADMIN}><AssistantIA /></R></Lazy>} />
+        <Route path="livraisons/planning" element={<Lazy><R roles={['livreur', 'admin']}><Planning /></R></Lazy>} />
+        <Route path="livraisons/historique" element={<Lazy><R roles={['livreur', 'admin']}><HistoriqueLivraisons /></R></Lazy>} />
         <Route path="profil" element={<Lazy><Profil /></Lazy>} />
         <Route path="*" element={<Lazy><NotFound /></Lazy>} />
       </Route>

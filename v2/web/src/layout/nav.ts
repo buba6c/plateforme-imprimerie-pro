@@ -18,6 +18,10 @@ import {
   Users,
   HardDrive,
   PackageCheck,
+  Files,
+  ShieldCheck,
+  Sparkles,
+  CalendarDays,
 } from 'lucide-react';
 import type { Role } from '@evocom/shared';
 
@@ -42,6 +46,7 @@ export function navigationPour(role: Role): NavSection[] {
         { items: [
           { to: '/tableau-de-bord', label: "Vue d'ensemble", icon: LayoutDashboard, mobile: true },
           { to: '/dossiers', label: 'Dossiers', icon: FolderOpen, mobile: true },
+          { to: '/fichiers', label: 'Fichiers', icon: Files },
           { to: '/paiements', label: 'Paiements', icon: Banknote, mobile: true, countKey: 'paiements_a_valider' },
         ] },
         { title: 'Commercial', items: [
@@ -52,8 +57,10 @@ export function navigationPour(role: Role): NavSection[] {
         { title: 'Pilotage', items: [{ to: '/statistiques', label: 'Statistiques', icon: BarChart3 }] },
         { title: 'Administration', items: [
           { to: '/admin/utilisateurs', label: 'Utilisateurs', icon: Users },
+          { to: '/admin/permissions', label: 'Rôles et droits', icon: ShieldCheck },
           { to: '/admin/tarifs', label: 'Tarifs', icon: Tags },
           { to: '/admin/parametres', label: 'Paramètres', icon: Settings2 },
+          { to: '/admin/assistant-ia', label: 'Assistant IA', icon: Sparkles },
           { to: '/admin/journal', label: 'Journal', icon: ScrollText },
           { to: '/admin/corbeille', label: 'Corbeille', icon: Trash2 },
           { to: '/admin/sante', label: 'Sauvegardes et état', icon: HardDrive },
@@ -63,6 +70,7 @@ export function navigationPour(role: Role): NavSection[] {
       return [
         { items: [
           { to: '/dossiers', label: 'Dossiers', icon: FolderOpen, mobile: true },
+          { to: '/fichiers', label: 'Fichiers', icon: Files },
           { to: '/devis', label: 'Devis', icon: FileText, mobile: true },
           { to: '/factures', label: 'Factures', icon: ReceiptText },
           { to: '/clients', label: 'Clients', icon: UserRound, mobile: true },
@@ -81,7 +89,9 @@ export function navigationPour(role: Role): NavSection[] {
       return [
         { items: [
           { to: '/livraisons', label: 'À livrer', icon: Truck, mobile: true },
+          { to: '/livraisons/planning', label: 'Planning', icon: CalendarDays, mobile: true },
           { to: '/livraisons/livrees', label: 'Livrées', icon: PackageCheck, mobile: true },
+          { to: '/livraisons/historique', label: 'Historique', icon: History },
           { to: '/encaissements', label: 'Encaissements', icon: Banknote, mobile: true },
         ] },
       ];
