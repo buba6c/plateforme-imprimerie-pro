@@ -93,15 +93,15 @@ describe('moteur de prix Xerox', () => {
     expect(r.ok && r.total_ttc).toBe(10500);
   });
 
-  it('ajoute le supplément recto-verso par face', () => {
+  it('ajoute le supplément recto-verso par feuille, comme l\'ancienne plateforme', () => {
     const r = calculerPrix(
       'xerox',
       { lignes: [{ support: 'papier_a4_couleur', pages: 4, recto_verso: true, quantite: 10, finitions: [], options: [] }], forfaits: [] },
       TARIFS_DEFAUT,
       sansArrondi,
     );
-    // 40 faces × 100 + 40 × 20
-    expect(r.ok && r.total_ttc).toBe(4800);
+    // 40 faces × 100 + 20 feuilles (4 pages recto-verso = 2 feuilles, × 10) × 20
+    expect(r.ok && r.total_ttc).toBe(4400);
   });
 
   it('additionne plusieurs sections et les forfaits du dossier', () => {

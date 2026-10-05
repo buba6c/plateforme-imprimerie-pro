@@ -314,7 +314,7 @@ describe('assistant IA : propositions', () => {
     expect(x.body.machine).toBe('xerox');
     expect(x.body.specs.lignes[0]).toMatchObject({ support: 'papier_a4_couleur', pages: 2, recto_verso: true, quantite: 500 });
     // 1 000 faces × 100 + recto-verso 1 000 × 20
-    expect(x.body.prix.total).toBe(120_000);
+    expect(x.body.prix.total).toBe(110_000);
     expect(x.body.remarques).toBeUndefined();
     const corps = JSON.parse(String(espion.mock.calls[0]![1]!.body));
     expect(corps.response_format.json_schema.schema.properties.machine.enum).toEqual(['xerox']);

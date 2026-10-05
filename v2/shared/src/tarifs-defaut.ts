@@ -38,7 +38,7 @@ export const TARIFS_DEFAUT: Tarif[] = [
   { machine: 'xerox', categorie: 'finition', code: 'perforation', libelle: 'Perforation', unite: 'page', prix: 50, actif: true },
   { machine: 'xerox', categorie: 'finition', code: 'agrafage', libelle: 'Agrafage', unite: 'exemplaire', prix: null, actif: true },
   { machine: 'xerox', categorie: 'option', code: 'papier_premium', libelle: 'Papier premium', unite: 'page', prix: 50, actif: true },
-  { machine: 'xerox', categorie: 'option', code: 'impression_recto_verso', libelle: 'Recto-verso', unite: 'page', prix: 20, actif: true },
+  { machine: 'xerox', categorie: 'option', code: 'impression_recto_verso', libelle: 'Recto-verso', unite: 'feuille', prix: 20, actif: true },
   // Global
   { machine: 'global', categorie: 'divers', code: 'conception_graphique', libelle: 'Conception graphique', unite: 'forfait', prix: 15000, actif: true },
   { machine: 'global', categorie: 'divers', code: 'epreuve_numerique', libelle: 'Épreuve numérique (BAT)', unite: 'forfait', prix: 2000, actif: true },

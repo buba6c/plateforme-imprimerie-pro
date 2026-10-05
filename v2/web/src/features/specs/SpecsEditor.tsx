@@ -59,7 +59,7 @@ interface Modele {
 const MODELES: Modele[] = [
   { id: 'bache', machine: 'roland', label: 'Bâche 300 × 100 cm', roland: { support: 'bache_m2', largeur: '300', hauteur: '100', unite: 'cm', quantite: '1', description: 'Découpé, tous les côtés' } },
   { id: 'vitrine', machine: 'roland', label: 'Vinyle vitrine 200 × 80 cm', roland: { support: 'vinyle_m2', largeur: '200', hauteur: '80', unite: 'cm', quantite: '1', description: 'Collage' } },
-  { id: 'cdv', machine: 'xerox', label: 'Cartes de visite', xerox: { support: 'carte_visite', pages: '1', recto_verso: true, quantite: '100', description: '350 g, pelliculage mat recto-verso' } },
+  { id: 'cdv', machine: 'xerox', label: 'Cartes de visite', xerox: { support: 'carte_visite', pages: '2', recto_verso: true, quantite: '100', description: '350 g, pelliculage mat recto-verso' } },
   { id: 'flyer', machine: 'xerox', label: 'Flyers A5', xerox: { support: 'papier_a5_couleur', pages: '1', recto_verso: false, quantite: '1000', description: '170 g' } },
   { id: 'brochure', machine: 'xerox', label: 'Brochure A4 piquée', xerox: { support: 'papier_a4_couleur', pages: '', recto_verso: true, quantite: '200', description: '170 g, piquée' } },
 ];

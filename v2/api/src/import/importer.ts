@@ -1898,6 +1898,11 @@ async function importerTarifs(ctx: Ctx) {
     }
     const prix = prixBrut === null ? null : arrondirFcfa(prixBrut);
     if (prixBrut !== null && prix !== prixBrut) anomalie('montant_arrondi', 'info', `${code} : prix ${prixBrut} arrondi à ${prix} FCFA.`);
+    if (code === 'impression_recto_verso' && unite === 'page') {
+      // L'ancienne plateforme facturait ce supplément par feuille (pages × exemplaires ÷ 2), quelle que soit l'unité affichée.
+      unite = 'feuille';
+      anomalie('tarif_unite_corrigee', 'info', "impression_recto_verso : l'ancienne plateforme le facturait par feuille (pages × exemplaires ÷ 2) ; unité « feuille » retenue pour garder les mêmes prix.");
+    }
     if (code.startsWith('reliure') && unite === 'forfait') {
       anomalie('tarif_a_verifier', 'attention', `${code} est au forfait : probablement par exemplaire, à vérifier dans Tarifs.`);
     }
