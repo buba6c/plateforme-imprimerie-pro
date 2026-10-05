@@ -7,3 +7,4 @@ dist/
 storage/
 coverage/
 import-report*.json
+dist-demo/

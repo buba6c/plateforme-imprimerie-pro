@@ -1,5 +1,5 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, type ReactNode } from 'react';
-import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query';
 import { Navigate, useLocation } from 'react-router-dom';
 import type { Role } from '@evocom/shared';
 import { api, setUnauthorizedHandler } from '../lib/api';
@@ -16,6 +16,10 @@ interface AuthCtx {
 }
 
 const Ctx = createContext<AuthCtx | null>(null);
+
+function viderSaufMoi(qc: QueryClient) {
+  qc.removeQueries({ predicate: (q) => q.queryKey[0] !== 'me' });
+}
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const qc = useQueryClient();
@@ -51,7 +55,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const login = useCallback(
     async (email: string, password: string) => {
       const r = await api.post<{ user: User }>('/auth/login', { email, password });
-      qc.clear();
+      // Vider les données de la session précédente, sauf la requête « me » : AuthProvider l'observe, et la supprimer
+      // détacherait son observateur (l'utilisateur connecté resterait invisible et l'écran reviendrait à la connexion).
+      viderSaufMoi(qc);
       qc.setQueryData(['me'], r.user);
       return r.user;
     },
@@ -61,7 +67,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const logout = useCallback(async () => {
     await api.post('/auth/logout').catch(() => {});
     disconnectRealtime();
-    qc.clear();
+    viderSaufMoi(qc);
     qc.setQueryData(['me'], null);
   }, [qc]);
 
