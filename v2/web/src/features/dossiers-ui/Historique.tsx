@@ -103,6 +103,8 @@ function decrire(e: Evenement, ctx: { machine: Machine; libelle: (m: Machine, c:
           return { titre: `Fichier marqué à réimprimer ${nom}`, ton: 'warning' };
         case 'reimpression_annulee':
           return { titre: `Réimpression annulée ${nom}` };
+        case 'restauration':
+          return { titre: `Fichier restauré ${nom}` };
         default:
           return { titre: `Fichier ${nom}` };
       }

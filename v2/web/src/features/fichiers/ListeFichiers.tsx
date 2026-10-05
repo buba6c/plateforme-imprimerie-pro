@@ -148,15 +148,23 @@ export function ListeFichiers({ dossierId, fichiers, peutMarquer, peutSupprimer 
  * PDF chargé en mémoire puis affiché depuis une adresse blob: : le visionneur PDF du
  * navigateur refuse de s'ouvrir dans un document servi avec « Content-Security-Policy: sandbox ».
  */
-function usePdfBlob(id: number, actif: boolean) {
-  const [etat, setEtat] = useState<{ url: string | null; erreur: string | null }>({ url: null, erreur: null });
+export function usePdfBlob(id: number, actif: boolean) {
+  const [etat, setEtat] = useState<{
+    url: string | null;
+    erreur: string | null;
+  }>({ url: null, erreur: null });
   useEffect(() => {
+    setEtat({ url: null, erreur: null });
     if (!actif) return;
     let url: string | null = null;
     const ctrl = new AbortController();
     fetch(fichierUrl(id), { credentials: 'same-origin', signal: ctrl.signal })
       .then(async (r) => {
-        if (!r.ok) throw new Error(r.status === 404 ? 'Fichier introuvable sur le serveur.' : `Aperçu impossible (erreur ${r.status}).`);
+        if (!r.ok) {
+          throw new Error(
+            r.status === 404 ? 'Le fichier est introuvable sur le serveur : signalez-le à l’administrateur.' : `Aperçu impossible (erreur ${r.status}).`,
+          );
+        }
         const b = await r.blob();
         url = URL.createObjectURL(new Blob([b], { type: 'application/pdf' }));
         setEtat({ url, erreur: null });

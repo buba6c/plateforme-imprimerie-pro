@@ -8,7 +8,7 @@ import { Download, ExternalLink, FolderOpen, X } from 'lucide-react';
 import { formatDateHeure, formatTaille } from '@evocom/shared';
 import { fichierUrl } from '../../lib/api';
 import { Button, IconButton, MachineChip, StatusBadge } from '../../ui';
-import { extension } from '../fichiers/ListeFichiers';
+import { extension, usePdfBlob } from '../fichiers/ListeFichiers';
 import type { FichierGlobal } from './types';
 
 /** Formats que le navigateur affiche (le serveur les sert « inline »). */
@@ -20,42 +20,6 @@ export function modeApercu(f: Pick<FichierGlobal, 'mime'>): 'pdf' | 'image' | nu
   if (f.mime === 'application/pdf') return 'pdf';
   if (f.mime && IMAGES_AFFICHABLES.includes(f.mime)) return 'image';
   return null;
-}
-
-/**
- * PDF chargé en mémoire puis affiché depuis une adresse blob: : le visionneur PDF du
- * navigateur refuse de s'ouvrir dans un document servi avec « Content-Security-Policy: sandbox ».
- */
-function usePdfBlob(id: number, actif: boolean) {
-  const [etat, setEtat] = useState<{
-    url: string | null;
-    erreur: string | null;
-  }>({ url: null, erreur: null });
-  useEffect(() => {
-    setEtat({ url: null, erreur: null });
-    if (!actif) return;
-    let url: string | null = null;
-    const ctrl = new AbortController();
-    fetch(fichierUrl(id), { credentials: 'same-origin', signal: ctrl.signal })
-      .then(async (r) => {
-        if (!r.ok) {
-          throw new Error(
-            r.status === 404 ? 'Le fichier est introuvable sur le serveur : signalez-le à l’administrateur.' : `Aperçu impossible (erreur ${r.status}).`,
-          );
-        }
-        const b = await r.blob();
-        url = URL.createObjectURL(new Blob([b], { type: 'application/pdf' }));
-        setEtat({ url, erreur: null });
-      })
-      .catch((e: Error) => {
-        if (e.name !== 'AbortError') setEtat({ url: null, erreur: e.message || 'Aperçu impossible.' });
-      });
-    return () => {
-      ctrl.abort();
-      if (url) URL.revokeObjectURL(url);
-    };
-  }, [id, actif]);
-  return etat;
 }
 
 function Zone({ fichier }: { fichier: FichierGlobal }) {

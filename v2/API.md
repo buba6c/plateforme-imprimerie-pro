@@ -113,6 +113,20 @@ Erreurs de `/ia/suggestion` : 409 `ia_inactif`, 409 `ia_cle_illisible` (secret d
 réponse illisible), 503 (crédit ou débit OpenAI épuisé), 504 (pas de réponse en 25 s). Une erreur 401 d'OpenAI n'est
 jamais renvoyée telle quelle (elle déconnecterait l'utilisateur).
 
+## Gestion des fichiers
+
+Préfixe distinct de `/fichiers` pour qu'aucune route ne se marche dessus. Visibilité appliquée dans le SQL (mêmes règles
+que les dossiers) ; les fichiers à la corbeille sont exclus de la liste ; le chemin disque n'est jamais renvoyé.
+Aperçu et téléchargement : `GET /fichiers/:id/contenu`.
+
+| Méthode | Route | Rôles | Réponse |
+|---|---|---|---|
+| GET | /gestion-fichiers?q&type=pdf,image,autre&machine&statut=a,b&uploaded_by&dossier_id&from&to&tri=date\|nom\|taille&ordre=asc\|desc&page&limit | admin, preparateur | `{items:[{id,nom_original,mime,taille,a_reimprimer,created_at,uploaded_by,uploaded_by_nom,categorie,importe,dossier_id,dossier_numero,dossier_statut,machine,client_id,client_nom,urgent}], total, taille_totale, page, limit}` ; valeur de filtre inconnue : 400 avec les valeurs possibles ; période sur la date d'envoi (fuseau des paramètres) |
+| GET | /gestion-fichiers/auteurs | admin, preparateur | `[{id,nom,role,nb}]` |
+| GET | /gestion-fichiers/corbeille?q&page&limit | admin | mêmes champs + `deleted_at, deleted_by, deleted_by_nom, dossier_supprime, dossier_deleted_at, present, peut_restaurer` ; `total, taille_totale` |
+| POST | /gestion-fichiers/:id/restaurer | admin | le fichier ; 404 ; 409 s'il n'est pas à la corbeille ; 409 avec `details.dossier_id` si son dossier est à la corbeille ; journal `fichier_restaure` et historique `fichier/restauration` |
+| GET | /gestion-fichiers/integrite | admin | `{verifie_at, duree_ms, fichiers:{nb,taille}, repartition:{actifs,corbeille,dossiers_corbeille}, presents:{nb,taille}, manquants:{nb,taille_declaree,items}, taille_differente:{nb,items}, orphelins:{nb,taille}, espace:{libre_octets,total_octets}\|null}` (listes limitées à 500 ; relit le stockage à chaque appel) |
+
 ## Écarts
 
 Précisions et ajouts par rapport au tableau ci-dessus (les champs listés dans le contrat sont tous présents ; rien n'a été retiré).
