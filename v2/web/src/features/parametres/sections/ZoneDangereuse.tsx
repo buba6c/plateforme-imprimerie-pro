@@ -8,9 +8,9 @@ import { champsErreur } from '../../admin/hooks';
 import { useEtatReinitialisation } from '../api';
 import type { BilanReinitialisation, LigneVolume } from '../types';
 
-function Volumes({ lignes }: { lignes: LigneVolume[] }) {
+function Volumes({ lignes, compact }: { lignes: LigneVolume[]; compact?: boolean }) {
   return (
-    <ul className="prm-volumes">
+    <ul className={compact ? 'prm-volumes prm-volumes--compact' : 'prm-volumes'}>
       {lignes.map((l) => (
         <li key={l.table}>
           <span>{l.libelle}</span>
@@ -113,7 +113,7 @@ export function SectionZoneDangereuse() {
         onClose={() => !m.isPending && fermer()}
         title="Réinitialiser la plateforme ?"
         description="Les données ci-dessous sont effacées pour tout le monde. Une sauvegarde complète est faite juste avant ; les fichiers sont déplacés, pas supprimés."
-        width={560}
+        width={760}
         footer={
           <>
             <Button onClick={fermer} disabled={m.isPending}>
@@ -127,14 +127,14 @@ export function SectionZoneDangereuse() {
       >
         <form className="stack" onSubmit={(ev) => ev.preventDefault()}>
           {erreur && <Alert tone="error">{erreur}</Alert>}
-          <div className="grid-2">
+          <div className="prm-deux">
             <div className="stack-sm">
               <h3 className="section-title">Effacé</h3>
-              <Volumes lignes={e.ce_qui_est_efface} />
+              <Volumes lignes={e.ce_qui_est_efface} compact />
             </div>
             <div className="stack-sm">
               <h3 className="section-title">Conservé</h3>
-              <Volumes lignes={e.ce_qui_est_conserve} />
+              <Volumes lignes={e.ce_qui_est_conserve} compact />
             </div>
           </div>
           <TextField

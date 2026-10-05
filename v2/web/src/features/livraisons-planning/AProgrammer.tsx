@@ -8,7 +8,12 @@ import { Card, Count, EmptyState, Ref, UrgentTag } from '../../ui';
 import { DossierActions } from '../dossiers/DossierActions';
 import type { LivraisonPlanning } from './types';
 
-export function AProgrammer({ items, montrerLivreur, taille = 'sm' }: { items: LivraisonPlanning[]; montrerLivreur?: boolean; taille?: 'sm' | 'md' }) {
+export function AProgrammer({ items, montrerLivreur, taille = 'sm' }: {
+  items: LivraisonPlanning[];
+  montrerLivreur?: boolean;
+  /** « md » sur téléphone : bouton pleine largeur, plus facile à toucher. */
+  taille?: 'sm' | 'md';
+}) {
   return (
     <section className="stack-sm" aria-labelledby="lp-a-programmer">
       <h2 className="section-title row" id="lp-a-programmer">
@@ -45,7 +50,7 @@ export function AProgrammer({ items, montrerLivreur, taille = 'sm' }: { items: L
                     <span className="ev-num lv-ligne__montant" title="Reste à encaisser">
                       {d.reste_a_encaisser === null ? '—' : formatFCFA(d.reste_a_encaisser)}
                     </span>
-                    <DossierActions dossier={programmer} size={taille} />
+                    <DossierActions dossier={programmer} size={taille} block={taille === 'md'} />
                   </div>
                 </li>
               );

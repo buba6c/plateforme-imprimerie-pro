@@ -170,3 +170,25 @@
 .prm-contenu .ev-form-grid {
   align-items: start;
 }
+
+@media (max-width: 900px) {
+  /* Barre d'enregistrement sur deux lignes au plus : l'état, puis les deux boutons. */
+  .prm-contenu .adm-savebar > span:first-child {
+    flex-basis: 100%;
+    text-align: right;
+  }
+  .prm-cache-mobile {
+    display: none;
+  }
+}
+
+.prm-volumes--compact li {
+  padding: var(--space-1) var(--space-3);
+  font-size: 13px;
+}
+.prm-deux {
+  display: grid;
+  gap: var(--space-4);
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 280px), 1fr));
+  align-items: start;
+}

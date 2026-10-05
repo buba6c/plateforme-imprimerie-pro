@@ -21,10 +21,15 @@ export const VARIABLE = 'ALLOW_SYSTEM_RESET';
 const TENTATIVES_PAR_HEURE = 3;
 export const ACTIONS_TENTATIVE = ['reinitialisation_refusee', 'reinitialisation_echouee', 'plateforme_reinitialisee'];
 
-/** Données métier effacées ; toute table qui en dépend (clé étrangère) est effacée avec elles. */
-const A_EFFACER = ['dossiers', 'fichiers', 'paiements', 'devis', 'factures', 'notifications', 'dossier_events', 'clients'];
+/**
+ * Données métier effacées ; toute table qui en dépend (clé étrangère) est effacée avec elles.
+ * ia_usage : ses extraits de demandes peuvent contenir des données clients.
+ */
+const A_EFFACER = ['dossiers', 'fichiers', 'paiements', 'devis', 'factures', 'notifications', 'dossier_events', 'clients', 'ia_usage'];
+/** Affichées comme conservées (la table parametres garde aussi l'apparence de l'entreprise). */
+const AFFICHEES_CONSERVEES = ['users', 'preferences_utilisateur', 'tarifs', 'parametres', 'ia_config', 'journal', 'sauvegardes'];
 /** Jamais effacées : si l'une dépendait des données effacées, la réinitialisation est refusée. */
-const CONSERVEES = ['users', 'tarifs', 'parametres', 'journal', 'sauvegardes', 'compteurs', 'schema_migrations'];
+const CONSERVEES = [...AFFICHEES_CONSERVEES, 'compteurs', 'schema_migrations'];
 
 const LIBELLES: Record<string, string> = {
   dossiers: 'Dossiers, y compris la corbeille',
@@ -35,18 +40,28 @@ const LIBELLES: Record<string, string> = {
   notifications: 'Notifications',
   dossier_events: 'Historique des dossiers',
   clients: 'Clients',
+  ia_usage: "Journal d'usage de l'assistant IA",
   compteurs: 'Compteurs CMD, DEV et FAC (remis à zéro)',
   users: 'Comptes utilisateurs (les autres sessions sont fermées)',
+  preferences_utilisateur: "Préférences d'affichage de chaque utilisateur",
   tarifs: 'Grille tarifaire',
-  parametres: 'Paramètres',
+  parametres: "Paramètres, y compris l'apparence de l'entreprise",
+  ia_config: "Configuration de l'assistant IA",
   journal: "Journal d'audit",
   sauvegardes: 'Historique des sauvegardes',
 };
 
 const ident = (t: string) => `"${t.replace(/"/g, '""')}"`;
 
+/** Tables présentes dans la base parmi celles demandées (un module peut ne pas être installé). */
+async function existantes(tables: string[], db?: Db): Promise<string[]> {
+  const r = await query<{ t: string }>(`SELECT t FROM unnest($1::text[]) AS t WHERE to_regclass('public.' || quote_ident(t)) IS NOT NULL`, [tables], db);
+  const presentes = new Set(r.map((x) => x.t));
+  return tables.filter((t) => presentes.has(t));
+}
+
 async function tablesAEffacer(db?: Db): Promise<string[]> {
-  const tables = new Set(A_EFFACER);
+  const tables = new Set(await existantes(A_EFFACER, db));
   for (;;) {
     const r = await query<{ t: string }>(
       `SELECT DISTINCT c.conrelid::regclass::text AS t FROM pg_constraint c WHERE c.contype = 'f' AND c.confrelid = ANY($1::regclass[])`,
@@ -91,7 +106,7 @@ export async function etatReinitialisation(config: Config, userId: number) {
     variable: VARIABLE,
     phrase_attendue: PHRASE,
     ce_qui_est_efface: await compter([...efface, 'compteurs']),
-    ce_qui_est_conserve: await compter(['users', 'tarifs', 'parametres', 'journal', 'sauvegardes']),
+    ce_qui_est_conserve: await compter(await existantes(AFFICHEES_CONSERVEES)),
     tentatives_restantes: (await tentatives(userId)).restantes,
   };
 }

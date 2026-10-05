@@ -96,7 +96,7 @@ export function SectionForm({
             setErreur(null);
           }}
         >
-          Annuler les modifications
+          Annuler<span className="prm-cache-mobile"> les modifications</span>
         </Button>
         <Button type="submit" variant="primary" icon={<Save />} busy={m.isPending} disabled={!modifie}>
           {libelleBouton}

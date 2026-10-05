@@ -3,6 +3,7 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { Download, FileUp, Upload } from 'lucide-react';
 import { formatFCFA, MACHINE_LABELS } from '@evocom/shared';
 import { api, ApiError, messageErreur } from '../../../lib/api';
+import { rafraichirApparence } from '../../../lib/theme';
 import { Alert, Button, Card, ConfirmDialog, useToast } from '../../../ui';
 import type { Differences } from '../types';
 
@@ -15,6 +16,32 @@ const SECTIONS: Record<string, string> = {
   fichiers: 'Fichiers',
   documents: 'Documents',
   notifications: 'Notifications',
+  apparence: 'Apparence',
+};
+
+/** Libellés des champs de paramètres affichés dans l'aperçu (clé technique sinon). */
+const CHAMPS: Record<string, string> = {
+  nom: 'nom',
+  adresse: 'adresse',
+  telephone: 'téléphone',
+  email: 'e-mail',
+  pied_facture: 'pied de page',
+  arrondi_pas: 'arrondi (FCFA)',
+  tva_applicable: 'TVA appliquée',
+  tva_taux: 'taux de TVA (%)',
+  prix_saisis_ht: 'prix saisis HT',
+  surface_min_m2: 'surface minimale (m²)',
+  session_heures: 'durée de session (h)',
+  echecs_avant_blocage: 'essais avant blocage',
+  blocage_minutes: 'durée du blocage (min)',
+  mdp_longueur_min: 'longueur minimale du mot de passe',
+  taille_max_mo: 'taille maximale (Mo)',
+  extensions: 'extensions acceptées',
+  devis_validite_jours: 'validité des devis (jours)',
+  mentions_devis: 'mentions des devis',
+  conditions_paiement: 'conditions de paiement',
+  palette_defaut: 'palette par défaut',
+  couleurs_perso: 'couleurs personnalisées',
 };
 
 const CHAMPS_TARIF: Record<string, string> = {
@@ -32,7 +59,7 @@ function valeur(v: unknown, champ?: string): string {
   if (typeof v === 'boolean') return v ? 'oui' : 'non';
   if (typeof v === 'number' && champ === 'prix') return formatFCFA(v);
   if (Array.isArray(v)) return v.length ? v.join(', ') : '—';
-  if (typeof v === 'object') return JSON.stringify(v);
+  if (typeof v === 'object') return Object.values(v as Record<string, unknown>).map((x) => String(x)).join(' → ');
   return String(v);
 }
 
@@ -83,6 +110,7 @@ export function SectionExportImport() {
       qc.invalidateQueries({ queryKey: ['parametres'] });
       qc.invalidateQueries({ queryKey: ['tarifs'] });
       qc.invalidateQueries({ queryKey: ['stats'] });
+      void rafraichirApparence();
       toast.success('Configuration importée', `${d.nb_changements} changement${d.nb_changements > 1 ? 's' : ''} appliqué${d.nb_changements > 1 ? 's' : ''}.`);
     },
     onError: (e) => {
@@ -98,8 +126,8 @@ export function SectionExportImport() {
       <Card title="Exporter">
         <div className="stack">
           <p className="adm-explain">
-            Télécharge un fichier JSON avec tous les paramètres de cette page et la grille tarifaire complète. Il ne contient ni mot de passe, ni clé, ni donnée
-            client : il sert à préparer un autre serveur ou à garder une copie des réglages.
+            Télécharge un fichier JSON avec les paramètres de cette page, l’apparence de l’entreprise et la grille tarifaire complète. Il ne contient ni mot de
+            passe, ni clé (celle de l’assistant IA non plus), ni donnée client : il sert à préparer un autre serveur ou à garder une copie des réglages.
           </p>
           <div>
             <a className="ev-btn" href="/api/systeme/configuration" download>
@@ -175,7 +203,7 @@ export function SectionExportImport() {
                         <tr key={`${x.section}.${x.champ ?? ''}`}>
                           <td>
                             {SECTIONS[x.section] ?? x.section}
-                            {x.champ && <span className="ev-muted"> · {x.champ}</span>}
+                            {x.champ && <span className="ev-muted"> · {CHAMPS[x.champ] ?? x.champ}</span>}
                           </td>
                           <td className="prm-cellule">{valeur(x.avant)}</td>
                           <td className="prm-cellule">{valeur(x.apres)}</td>

@@ -238,7 +238,7 @@ describe('livraisons : planning', () => {
 });
 
 describe('livraisons : historique', () => {
-  const ref: Record<string, { id: number; numero: string; client_nom: string }> = {};
+  const ref = {} as Record<'wave' | 'ancien' | 'sans' | 'autre', { id: number; numero: string; client_nom: string }>;
 
   beforeAll(async () => {
     await viderDonnees();

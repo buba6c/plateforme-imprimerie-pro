@@ -89,7 +89,7 @@ function lignesDonnees(joursLivreur: number | null): { groupe: string; lignes: L
           detail: 'Liste, fiche, historique et commentaires',
           roles: {
             admin: 'Tous, et la corbeille des dossiers',
-            preparateur: 'Tous les dossiers en cours (pas seulement les siens)',
+            preparateur: 'Tous, pas seulement les siens (hors corbeille)',
             imprimeur_roland: imprimeur('Roland'),
             imprimeur_xerox: imprimeur('Xerox'),
             livreur: `Prêts à livrer et en livraison, puis livrés ou terminés pendant ${jours}`,

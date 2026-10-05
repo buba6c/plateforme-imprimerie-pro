@@ -2,7 +2,7 @@
 // avec ce qu'il a encaissé et l'état de validation. Ni téléphone, ni prix, ni fichiers.
 // L'administrateur voit toutes les livraisons et peut n'afficher qu'un livreur.
 
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { History, RotateCw } from 'lucide-react';
 import { formatDateHeure, formatFCFA, MODE_PAIEMENT_LABELS, MODES_PAIEMENT, type ModePaiement } from '@evocom/shared';
@@ -97,15 +97,23 @@ export default function Historique() {
   const page = Math.max(1, Number(params.get('page')) || 1);
   const q = params.get('q') ?? '';
 
-  const modifier = (changements: Record<string, string | null>, garderPage = false) => {
-    const p = new URLSearchParams(params);
-    for (const [k, v] of Object.entries(changements)) {
-      if (v) p.set(k, v);
-      else p.delete(k);
-    }
-    if (!garderPage) p.delete('page');
-    setParams(p, { replace: true });
-  };
+  // Mise à jour à partir de l'adresse courante : deux changements rapprochés ne s'écrasent pas.
+  const modifier = useCallback(
+    (changements: Record<string, string | null>, garderPage = false) =>
+      setParams(
+        (prev) => {
+          const p = new URLSearchParams(prev);
+          for (const [k, v] of Object.entries(changements)) {
+            if (v) p.set(k, v);
+            else p.delete(k);
+          }
+          if (!garderPage) p.delete('page');
+          return p;
+        },
+        { replace: true },
+      ),
+    [setParams],
+  );
 
   // La recherche part après une courte pause de saisie.
   const [saisie, setSaisie] = useState(q);
@@ -115,8 +123,7 @@ export default function Historique() {
       if (saisie.trim() !== q) modifier({ q: saisie.trim() || null });
     }, 350);
     return () => window.clearTimeout(t);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [saisie]);
+  }, [saisie, q, modifier]);
 
   const datesInvalides = periode === 'dates' && estJour(duParam) && estJour(auParam) && duParam > auParam;
   const b = useMemo(

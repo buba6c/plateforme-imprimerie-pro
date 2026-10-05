@@ -112,12 +112,16 @@ export default function Planning() {
   const aujourdhui = data?.aujourdhui ?? aujourdhuiLocal;
   const montrerLivreur = admin && !livreurId;
 
-  const changer = (cle: string, valeur: string | null) => {
-    const p = new URLSearchParams(params);
-    if (valeur) p.set(cle, valeur);
-    else p.delete(cle);
-    setParams(p, { replace: true });
-  };
+  const changer = (cle: string, valeur: string | null) =>
+    setParams(
+      (prev) => {
+        const p = new URLSearchParams(prev);
+        if (valeur) p.set(cle, valeur);
+        else p.delete(cle);
+        return p;
+      },
+      { replace: true },
+    );
   const semaineCourante = lundiDe(aujourdhui) === lundi;
 
   const vue = useMemo(() => {

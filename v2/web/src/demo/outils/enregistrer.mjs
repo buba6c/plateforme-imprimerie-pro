@@ -106,10 +106,10 @@ function servieParLeDomaine(k) {
 
 async function connecter(page, email) {
   await page.goto(`${BASE}/connexion`, { waitUntil: 'networkidle' });
-  await page.fill('input[type=email]', email);
-  await page.fill('input[type=password]', MOT_DE_PASSE);
-  await Promise.all([page.waitForURL((u) => !u.pathname.startsWith('/connexion'), { timeout: 15000 }), page.click('button[type=submit]')]);
-  await page.waitForLoadState('networkidle');
+  const r = await page.request.post(`${BASE}/api/auth/login`, { data: { email, password: MOT_DE_PASSE } });
+  if (!r.ok()) throw new Error(`Connexion impossible pour ${email} : ${r.status()}`);
+  await page.goto(`${BASE}/`, { waitUntil: 'networkidle' });
+  await page.waitForSelector('.ev-sidebar a.ev-nav-item', { state: 'attached', timeout: 15000 });
 }
 
 async function visiter(page, chemin) {

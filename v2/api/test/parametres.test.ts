@@ -76,6 +76,9 @@ beforeAll(async () => {
 });
 
 afterAll(async () => {
+  await getPool().query(`DELETE FROM parametres WHERE cle = 'apparence'`);
+  await getPool().query(`DELETE FROM preferences_utilisateur`);
+  await getPool().query(`UPDATE ia_config SET modele = DEFAULT WHERE id = 1`);
   await remettreParDefaut();
   delete process.env.ALLOW_SYSTEM_RESET;
 });
@@ -311,9 +314,10 @@ describe('export et import de la configuration', () => {
     expect(r.headers['content-disposition']).toContain('attachment');
     expect(r.body.format).toBe('evocom-print-configuration');
     expect(Object.keys(r.body.parametres).sort()).toEqual(Object.keys(PARAMETRES_DEFAUT).sort());
+    expect(r.body.apparence).toEqual({ palette_defaut: 'evocom', couleurs_perso: null });
     expect(r.body.tarifs.length).toBe(await compte('tarifs'));
     expect(Object.keys(r.body.tarifs[0]).sort()).toEqual(['actif', 'categorie', 'code', 'description', 'libelle', 'machine', 'ordre', 'prix', 'unite']);
-    expect(JSON.stringify(r.body)).not.toMatch(/password|hash|secret|jwt|api_key|cle_api/i);
+    expect(JSON.stringify(r.body)).not.toMatch(/password|hash|secret|jwt|api_key|cle_api|cle_chiffree|ia_config|openai/i);
   });
 
   it('refuse un fichier invalide avec des messages précis', async () => {
@@ -325,8 +329,21 @@ describe('export et import de la configuration', () => {
       { ...base, parametres: { ...base.parametres, ia: { cle: 'x' } } },
       { ...base, tarifs: [{ ...base.tarifs[0], prix: -5 }] },
       { ...base, tarifs: [base.tarifs[0], base.tarifs[0]] },
+      { ...base, apparence: { palette_defaut: 'rose', couleurs_perso: null } },
+      { ...base, apparence: { palette_defaut: 'perso', couleurs_perso: null } },
+      { ...base, apparence: { palette_defaut: 'perso', couleurs_perso: { debut: 'rouge', fin: '#00ff00' } } },
     ];
-    const attendus = ['format', '_', 'parametres.securite.mdp_longueur_min', 'parametres', 'tarifs.0.prix', 'tarifs.1.code'];
+    const attendus = [
+      'format',
+      '_',
+      'parametres.securite.mdp_longueur_min',
+      'parametres',
+      'tarifs.0.prix',
+      'tarifs.1.code',
+      'apparence.palette_defaut',
+      'apparence.couleurs_perso',
+      'apparence.couleurs_perso.debut',
+    ];
     for (const [i, c] of cas.entries()) {
       const r = await A.admin.post('/api/systeme/configuration/apercu').send(c);
       expect(r.status, JSON.stringify(r.body)).toBe(400);
@@ -343,6 +360,7 @@ describe('export et import de la configuration', () => {
     fichier.tarifs[0].prix = (fichier.tarifs[0].prix ?? 0) + 500;
     fichier.tarifs.push({ machine: 'xerox', categorie: 'option', code: 'pelliculage_test', libelle: 'Pelliculage test', unite: 'feuille', prix: 150, actif: true, ordre: 99, description: null });
     fichier.tarifs.splice(1, 1); // un tarif absent du fichier est conservé
+    fichier.apparence = { palette_defaut: 'perso', couleurs_perso: { debut: '#0A5C36', fin: '#1fa463' } };
 
     const apercu = await A.admin.post('/api/systeme/configuration/apercu').send(fichier);
     expect(apercu.status).toBe(200);
@@ -350,13 +368,14 @@ describe('export et import de la configuration', () => {
       expect.arrayContaining([
         { section: 'entreprise', champ: 'nom', avant: 'Evocom Print', apres: 'Evocom Print Thiès' },
         { section: 'documents', champ: 'devis_validite_jours', avant: 15, apres: 21 },
+        { section: 'apparence', champ: 'palette_defaut', avant: 'evocom', apres: 'perso' },
       ]),
     );
     expect(apercu.body.tarifs.ajoutes.map((t: any) => t.code)).toEqual(['pelliculage_test']);
     expect(apercu.body.tarifs.modifies).toHaveLength(1);
     expect(apercu.body.tarifs.modifies[0].champs.prix.apres).toBe(fichier.tarifs[0].prix);
     expect(apercu.body.tarifs.absents_conserves).toHaveLength(1);
-    expect(apercu.body.nb_changements).toBe(4);
+    expect(apercu.body.nb_changements).toBe(6);
     expect((await A.admin.get('/api/parametres')).body.entreprise.nom).toBe('Evocom Print');
     expect(await compte('tarifs')).toBe(tarifsAvant);
     expect((await A.prep.post('/api/systeme/configuration/importer').send(fichier)).status).toBe(403);
@@ -365,6 +384,7 @@ describe('export et import de la configuration', () => {
     expect(r.status).toBe(200);
     expect((await A.admin.get('/api/parametres')).body.entreprise.nom).toBe('Evocom Print Thiès');
     expect((await A.prep.get('/api/parametres/regles')).body.documents.devis_validite_jours).toBe(21);
+    expect((await A.livreur.get('/api/apparence')).body).toEqual({ palette_defaut: 'perso', couleurs_perso: { debut: '#0a5c36', fin: '#1fa463' } });
     expect(await compte('tarifs')).toBe(tarifsAvant + 1);
     const t0 = await getPool().query(`SELECT prix FROM tarifs WHERE machine = $1 AND code = $2`, [fichier.tarifs[0].machine, fichier.tarifs[0].code]);
     expect(t0.rows[0].prix).toBe(fichier.tarifs[0].prix);
@@ -374,6 +394,7 @@ describe('export et import de la configuration', () => {
 
     expect((await A.admin.post('/api/systeme/configuration/importer').send(fichier)).body.nb_changements).toBe(0);
     expect((await A.admin.post('/api/systeme/configuration/importer').send(base)).status).toBe(200);
+    expect((await A.livreur.get('/api/apparence')).body.palette_defaut).toBe('evocom');
     await getPool().query(`DELETE FROM tarifs WHERE code = 'pelliculage_test'`);
     await remettreParDefaut();
   });
@@ -394,6 +415,14 @@ describe('réinitialisation de la plateforme', () => {
     expect(fs.existsSync(path.join(STOCKAGE, cheminFichier))).toBe(true);
     await A.admin.post(`/api/dossiers/${dossierId}/paiements`).send({ montant: 5000, mode: 'especes' }).expect(201);
     await A.prep.post(`/api/dossiers/${dossierId}/facture`).expect(201);
+    const pool = getPool();
+    await pool.query(`INSERT INTO ia_usage (type, statut, duree_ms, extrait) VALUES ('suggestion', 'ok', 120, 'Bâche pour Client à effacer')`);
+    await pool.query(`INSERT INTO preferences_utilisateur (user_id, theme) SELECT id, 'dark' FROM users WHERE email = $1 ON CONFLICT (user_id) DO UPDATE SET theme = 'dark'`, [comptes.prep]);
+    await pool.query(`UPDATE ia_config SET modele = 'modele-conserve' WHERE id = 1`);
+    await pool.query(
+      `INSERT INTO parametres (cle, valeur) VALUES ('apparence', $1) ON CONFLICT (cle) DO UPDATE SET valeur = EXCLUDED.valeur`,
+      [JSON.stringify({ palette_defaut: 'sobre', couleurs_perso: null })],
+    );
   });
 
   it('est refusée tant que ALLOW_SYSTEM_RESET n’est pas activée, et réservée à l’administrateur', async () => {
@@ -401,9 +430,11 @@ describe('réinitialisation de la plateforme', () => {
     expect(etat.status).toBe(200);
     expect(etat.body).toMatchObject({ autorisee: false, phrase_attendue: 'REINITIALISER EVOCOM', variable: 'ALLOW_SYSTEM_RESET' });
     expect(etat.body.ce_qui_est_efface.map((x: any) => x.table)).toEqual(
-      expect.arrayContaining(['dossiers', 'fichiers', 'paiements', 'devis', 'factures', 'notifications', 'dossier_events', 'clients', 'compteurs']),
+      expect.arrayContaining(['dossiers', 'fichiers', 'paiements', 'devis', 'factures', 'notifications', 'dossier_events', 'clients', 'compteurs', 'ia_usage']),
     );
-    expect(etat.body.ce_qui_est_conserve.map((x: any) => x.table)).toEqual(expect.arrayContaining(['users', 'tarifs', 'parametres', 'journal']));
+    expect(etat.body.ce_qui_est_conserve.map((x: any) => x.table)).toEqual(
+      expect.arrayContaining(['users', 'preferences_utilisateur', 'tarifs', 'parametres', 'ia_config', 'journal']),
+    );
     const r = await A.admin.post('/api/systeme/reinitialiser').send(corps);
     expect(r.status).toBe(403);
     expect(r.body.error).toContain('ALLOW_SYSTEM_RESET=true');
@@ -466,9 +497,12 @@ describe('réinitialisation de la plateforme', () => {
     expect(r.body.fichiers.deplaces).toBe(avant.fichiers - r.body.fichiers.absents);
     expect(r.body.sessions_fermees).toBe(avant.users - 1);
 
-    for (const t of ['dossiers', 'fichiers', 'paiements', 'devis', 'factures', 'notifications', 'dossier_events', 'clients', 'compteurs']) {
+    for (const t of ['dossiers', 'fichiers', 'paiements', 'devis', 'factures', 'notifications', 'dossier_events', 'clients', 'compteurs', 'ia_usage']) {
       expect(await compte(t), t).toBe(0);
     }
+    expect(await compte('preferences_utilisateur')).toBeGreaterThan(0);
+    expect((await getPool().query(`SELECT modele FROM ia_config WHERE id = 1`)).rows[0].modele).toBe('modele-conserve');
+    expect((await A.admin.get('/api/apparence')).body.palette_defaut).toBe('sobre');
     expect(await compte('users')).toBe(avant.users);
     expect(await compte('tarifs')).toBe(avant.tarifs);
     expect(await compte('journal')).toBeGreaterThan(avant.journal);

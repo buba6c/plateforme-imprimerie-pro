@@ -1,4 +1,5 @@
-// Export et import de la configuration : paramètres (liste blanche, aucun secret) et grille tarifaire.
+// Export et import de la configuration : paramètres (liste blanche, aucun secret), apparence de
+// l'entreprise et grille tarifaire. Jamais la configuration de l'assistant IA (ia_config, clé chiffrée).
 // L'import est validé strictement, comparé à l'existant (aperçu), puis appliqué dans une seule transaction.
 // Un tarif absent du fichier est conservé tel quel : l'import n'efface rien.
 
@@ -11,6 +12,7 @@ import { journal } from '../../lib/audit';
 import { invalidateParametres, type Parametres } from '../../lib/params';
 import { invalidateTarifs } from '../../lib/tarifs';
 import type { AuthUser } from '../../types';
+import { lireApparence, PALETTES, type Apparence } from '../apparence/routes';
 import { parametresSchema } from '../parametres/schemas';
 import { ecrire, fusionner, parametresFrais } from '../parametres/service';
 
@@ -34,9 +36,26 @@ interface TarifConfig {
 
 export async function exporterConfiguration(user: AuthUser) {
   const parametres: Parametres = await parametresFrais();
+  const apparence = await lireApparence();
   const tarifs = await query<TarifConfig>(`SELECT ${COLONNES_TARIF} FROM tarifs ORDER BY machine, categorie, ordre, code`);
-  return { format: FORMAT, version: VERSION, exporte_le: new Date().toISOString(), exporte_par: user.nom, parametres, tarifs };
+  return { format: FORMAT, version: VERSION, exporte_le: new Date().toISOString(), exporte_par: user.nom, parametres, apparence, tarifs };
 }
+
+// Mêmes règles que PUT /apparence (modules/apparence/routes.ts).
+const hex = z
+  .string({ invalid_type_error: 'Couleur attendue au format #RRVVBB' })
+  .regex(/^#[0-9a-fA-F]{6}$/, 'Couleur attendue au format #RRVVBB')
+  .transform((v) => v.toLowerCase());
+const apparenceSchema = z
+  .object({
+    palette_defaut: z.enum(PALETTES, { errorMap: () => ({ message: `Palette inconnue : ${PALETTES.join(', ')}` }) }),
+    couleurs_perso: z.object({ debut: hex, fin: hex }).strict('Couleurs : debut et fin uniquement').nullable(),
+  })
+  .strict("Champ d'apparence inconnu")
+  .refine((a) => a.palette_defaut !== 'perso' || a.couleurs_perso !== null, {
+    message: 'Choisissez les deux couleurs de la palette personnalisée',
+    path: ['couleurs_perso'],
+  });
 
 const tarifSchema = z
   .object({
@@ -59,6 +78,7 @@ export const importSchema = z
     exporte_le: z.string().max(40).optional(),
     exporte_par: z.string().max(200).optional(),
     parametres: parametresSchema(true).optional(),
+    apparence: apparenceSchema.optional(),
     tarifs: z.array(tarifSchema).max(5000, 'Au plus 5 000 tarifs').optional(),
   })
   .strict('Champ inconnu dans le fichier de configuration')
@@ -102,6 +122,18 @@ async function comparer(input: ConfigurationImport, db?: PoolClient) {
     }
   }
 
+  let apparence: { avant: Apparence; apres: Apparence } | null = null;
+  if (input.apparence) {
+    const a = await lireApparence();
+    const b = input.apparence as Apparence;
+    if (JSON.stringify(a) !== JSON.stringify({ palette_defaut: b.palette_defaut, couleurs_perso: b.couleurs_perso })) {
+      apparence = { avant: a, apres: b };
+      for (const champ of ['palette_defaut', 'couleurs_perso'] as const) {
+        if (JSON.stringify(a[champ]) !== JSON.stringify(b[champ])) parametres.push({ section: 'apparence', champ, avant: a[champ], apres: b[champ] });
+      }
+    }
+  }
+
   const existants = await query<TarifConfig>(`SELECT ${COLONNES_TARIF} FROM tarifs ORDER BY machine, categorie, ordre, code`, [], db);
   const parCle = new Map(existants.map((t) => [`${t.machine}:${t.code}`, t]));
   const tarifs: Differences['tarifs'] = { ajoutes: [], modifies: [], inchanges: 0, absents_conserves: [] };
@@ -129,7 +161,7 @@ async function comparer(input: ConfigurationImport, db?: PoolClient) {
     }
   }
   const differences: Differences = { parametres, tarifs, nb_changements: parametres.length + tarifs.ajoutes.length + tarifs.modifies.length };
-  return { differences, apres, changements };
+  return { differences, apres, changements, apparence };
 }
 
 export async function apercuImport(input: ConfigurationImport): Promise<Differences> {
@@ -141,9 +173,16 @@ export async function appliquerImport(req: Request, input: ConfigurationImport):
   const differences = await tx(async (db) => {
     // Aucun import ni modification de tarif ne doit s'intercaler entre la comparaison et l'écriture.
     await db.query('LOCK TABLE parametres, tarifs IN SHARE ROW EXCLUSIVE MODE');
-    const { differences: d, apres, changements } = await comparer(input, db);
+    const { differences: d, apres, changements, apparence } = await comparer(input, db);
     if (d.nb_changements === 0) return d;
     await ecrire(db, req, apres, changements);
+    if (apparence) {
+      await db.query(
+        `INSERT INTO parametres (cle, valeur, updated_by, updated_at) VALUES ('apparence', $1, $2, now())
+         ON CONFLICT (cle) DO UPDATE SET valeur = EXCLUDED.valeur, updated_by = EXCLUDED.updated_by, updated_at = now()`,
+        [JSON.stringify(apparence.apres), userId],
+      );
+    }
     for (const t of d.tarifs.ajoutes) {
       await db.query(
         `INSERT INTO tarifs (machine, categorie, code, libelle, unite, prix, actif, ordre, description, updated_by)
@@ -165,7 +204,7 @@ export async function appliquerImport(req: Request, input: ConfigurationImport):
       null,
       {
         fichier: { exporte_le: input.exporte_le ?? null, exporte_par: input.exporte_par ?? null },
-        parametres: changements,
+        parametres: apparence ? { ...changements, apparence } : changements,
         tarifs: {
           ajoutes: d.tarifs.ajoutes.map((t) => `${t.machine}/${t.code}`),
           modifies: d.tarifs.modifies.map((m) => ({ tarif: `${m.machine}/${m.code}`, champs: m.champs })),

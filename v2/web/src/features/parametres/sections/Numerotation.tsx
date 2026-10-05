@@ -103,7 +103,7 @@ export function SectionNumerotation({ onModifie }: { onModifie: (m: boolean) => 
           {modifie ? 'Modifications non enregistrées' : 'Tout est enregistré'}
         </span>
         <Button icon={<Undo2 />} disabled={!modifie || m.isPending} onClick={() => (setF(initial), setErreurs({}), setErreur(null))}>
-          Annuler les modifications
+          Annuler<span className="prm-cache-mobile"> les modifications</span>
         </Button>
         <Button type="submit" variant="primary" icon={<Save />} busy={m.isPending} disabled={!modifie}>
           Enregistrer
