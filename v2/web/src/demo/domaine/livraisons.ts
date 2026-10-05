@@ -69,7 +69,8 @@ function presenterPlanning(d: DossierDemo, user: UserDemo) {
   };
 }
 
-const parInstant = (a: string | null, b: string | null) => (a ?? '￿').localeCompare(b ?? '￿');
+/** Ordre croissant, valeurs absentes en dernier (NULLS LAST). */
+const parInstant = (a: string | null, b: string | null) => (a === b ? 0 : a === null ? 1 : b === null ? -1 : a < b ? -1 : 1);
 
 export function planning(user: UserDemo, r: Requete) {
   verifierRole(user);

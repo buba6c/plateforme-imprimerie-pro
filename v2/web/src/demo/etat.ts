@@ -224,7 +224,7 @@ export function semer(now: Date = new Date(), decalageImpose?: Decalage): Etat {
     telephone: u.telephone ?? null,
     role: u.role,
     is_active: u.is_active,
-    doit_changer_mdp: false,
+    doit_changer_mdp: !!u.doit_changer_mdp,
     last_login_at: u.last_login_at ?? null,
     created_at: u.created_at,
   }));

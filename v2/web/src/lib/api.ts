@@ -71,5 +71,7 @@ export function messageErreur(e: unknown): string {
 }
 
 export function fichierUrl(id: number, telecharger = false): string {
+  // Démonstration hors ligne : adresse blob: d'un aperçu généré dans la page (src/demo).
+  if (import.meta.env.MODE === 'demo') return (globalThis as unknown as { __evocomDemo: { fichierUrl(id: number): string } }).__evocomDemo.fichierUrl(id);
   return `/api/fichiers/${id}/contenu${telecharger ? '?telecharger=1' : ''}`;
 }

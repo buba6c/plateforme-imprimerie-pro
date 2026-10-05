@@ -37,6 +37,9 @@ const COMPTES = [
   { role: 'livreur', email: 'livreur@evocom.test' },
 ];
 
+/** Fichiers téléchargés par un lien (pas d'appel fetch de l'interface) : enregistrés pour l'administrateur. */
+const TELECHARGEMENTS_ADMIN = ['/systeme/configuration'];
+
 /** Écrans ouverts en plus du menu (s'ils ne sont pas accessibles au rôle, l'application redirige). */
 const ECRANS_EN_PLUS = ['/profil', '/dossiers/nouveau', '/devis/nouveau'];
 
@@ -86,6 +89,8 @@ function nettoyer(v, cle = '') {
     return out;
   }
   if (typeof v === 'string' && VALEURS_INTERDITES.some((r) => r.test(v))) return '[masqué]';
+  // Chemins de la machine d'enregistrement : remplacés par des chemins de serveur plausibles.
+  if (typeof v === 'string' && /^\/tmp\//.test(v)) return `${cle === 'fichier' ? '/var/backups/evocom' : '/srv/evocom'}/${path.basename(v)}`;
   return v;
 }
 
@@ -188,6 +193,12 @@ async function main() {
     details.push(...dossiers.items.slice(0, 2).map((d) => `/dossiers/${d.id}`));
     for (const d of details) await visiter(page, d);
 
+    if (compte.role === 'admin') {
+      for (const t of TELECHARGEMENTS_ADMIN) {
+        const r = await json(page, t).catch(() => null);
+        if (r) pourRole[t] = nettoyer(r);
+      }
+    }
     notifications[compte.email] = nettoyer((await json(page, '/notifications')).items);
     preferences[compte.email] = nettoyer(await json(page, '/preferences'));
 

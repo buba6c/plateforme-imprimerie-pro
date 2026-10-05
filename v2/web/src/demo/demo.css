@@ -1,0 +1,34 @@
+/* Démonstration hors ligne : bandeau, choix du rôle, aperçu des documents.
+   Chargé seulement par la version de démonstration ; uniquement les variables de la charte. */
+
+.demo-bandeau {
+  display: flex; align-items: center; gap: var(--space-2); flex-wrap: wrap;
+  min-height: 40px; padding: 4px var(--space-4);
+  background: var(--info-soft); color: var(--info-ink); border-bottom: 1px solid var(--line);
+  font-size: 13px; line-height: 18px;
+}
+.demo-bandeau__icone { width: 16px; height: 16px; flex: none; }
+.demo-bandeau__texte { margin: 0; flex: 1 1 auto; min-width: 0; }
+.demo-bandeau__actions { display: flex; gap: var(--space-1); flex-wrap: wrap; margin-left: auto; }
+.demo-bandeau__actions .ev-btn { color: var(--info-ink); }
+@media (max-width: 560px) {
+  .demo-bandeau { padding: 4px var(--space-3); }
+  .demo-bandeau__long { display: none; }
+  .demo-bandeau__actions .ev-btn { padding: 0 var(--space-2); }
+}
+
+.demo-accueil {
+  display: grid; gap: var(--space-4); padding: var(--space-5) var(--space-6);
+  background: var(--surface); border-bottom: 1px solid var(--line);
+}
+.demo-accueil__titre { display: flex; align-items: center; gap: var(--space-2); margin: 0; font-size: 18px; line-height: 24px; color: var(--ink); }
+.demo-accueil__titre svg { width: 20px; height: 20px; color: var(--accent-ink); }
+.demo-accueil__texte p { margin: var(--space-1) 0 0; color: var(--text-muted); max-width: 72ch; }
+@media (max-width: 560px) { .demo-accueil { padding: var(--space-4); } }
+
+.demo-roles { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: var(--space-2); }
+.demo-roles .ev-btn { height: auto; min-height: var(--control-lg); padding: var(--space-2) var(--space-3); justify-content: flex-start; text-align: left; white-space: normal; }
+.demo-roles__texte { display: grid; gap: 2px; }
+.demo-roles__texte small { font-size: 12px; font-weight: 400; opacity: .8; }
+
+.demo-document { display: block; width: 100%; height: min(70vh, 900px); border: 1px solid var(--line); border-radius: var(--radius-md); background: var(--surface); }
