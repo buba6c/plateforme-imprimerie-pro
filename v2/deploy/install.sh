@@ -115,7 +115,7 @@ node --env-file=.env dist/migrate.js
 ADMIN_PASSWORD="$(openssl rand -base64 12 | tr -d '/+=' | cut -c1-14)"
 ETAT_ADMIN="$(ADMIN_EMAIL="$ADMIN_EMAIL" ADMIN_PASSWORD="$ADMIN_PASSWORD" ADMIN_NOM="${ADMIN_NOM:-Administrateur}" ADMIN_REINITIALISER=1 node --env-file=.env dist/seed.js | tee /dev/stderr | sed -n 's/^ADMIN://p')"
 case "$ETAT_ADMIN" in
-  cree|reinitialise) LIGNE_MDP="$LIGNE_MDP" ;;
+  cree|reinitialise) LIGNE_MDP="  Mot de passe provisoire : $ADMIN_PASSWORD   (à changer à la première connexion ; il n'est affiché qu'ici)" ;;
   *) LIGNE_MDP="  Un autre administrateur existe déjà : son mot de passe n'a pas été changé." ;;
 esac
 
