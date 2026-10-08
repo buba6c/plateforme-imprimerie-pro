@@ -3,13 +3,14 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
-import { FolderOpen, Plus, Search, X } from 'lucide-react';
+import { FolderOpen, LayoutGrid, Plus, Rows3, Search, X } from 'lucide-react';
 import { formatDate, formatFCFA, MACHINE_LABELS, MACHINES, type Machine, type Role, type Statut } from '@evocom/shared';
 import { useUser } from '../../auth/AuthContext';
 import { messageErreur } from '../../lib/api';
 import type { DossierResume } from '../../lib/types';
 import { useDossiers } from '../../features/dossiers/hooks';
-import { CarteDossier, enRetard, resumeSpecs, useMediaQuery } from '../../features/dossiers-ui/CarteDossier';
+import { enRetard, resumeSpecs, useMediaQuery } from '../../features/dossiers-ui/CarteDossier';
+import { CarteCommande } from '../../features/dossiers-ui/CarteCommande';
 import { useLibelles, useTarifs } from '../../features/specs/useTarifs';
 import { Alert, Button, Card, EmptyState, LoadingRows, MachineChip, PageHeader, Pagination, PaymentBadge, StatusBadge, Tabs, UrgentTag } from '../../ui';
 import '../../features/dossiers-ui/dossiers-ui.css';
@@ -58,7 +59,7 @@ function ongletsPour(role: Role): Onglet[] {
   }
 }
 
-const LIMIT = 25;
+const LIMIT = 24;
 const TRIS = [
   { value: 'priorite', label: 'Urgents et échéances d’abord' },
   { value: 'recent', label: 'Plus récents d’abord' },
@@ -85,6 +86,7 @@ export default function ListeDossiers() {
   const triDefaut: Tri = onglet.statuts && user.role !== 'livreur' && !imprimeur ? 'priorite' : 'recent';
   const tri = (TRIS.some((t) => t.value === sp.get('tri')) ? sp.get('tri') : triDefaut) as Tri;
   const page = Math.max(1, Number(sp.get('page')) || 1);
+  const vueTableau = sp.get('vue') === 'tableau' && !mobile;
 
   const maj = (patch: Record<string, string | null>, garderPage = false) => {
     // Base = adresse courante : deux changements rapprochés ne s'écrasent pas.
@@ -191,6 +193,18 @@ export default function ListeDossiers() {
               </option>
             ))}
           </select>
+          {!mobile && (
+            <div className="ev-btn-group dl-vue" role="group" aria-label="Affichage">
+              <button type="button" className="ev-btn ev-btn--sm dl-toggle" aria-pressed={!vueTableau} onClick={() => maj({ vue: null }, true)}>
+                <LayoutGrid aria-hidden="true" />
+                Cartes
+              </button>
+              <button type="button" className="ev-btn ev-btn--sm dl-toggle" aria-pressed={vueTableau} onClick={() => maj({ vue: 'tableau' }, true)}>
+                <Rows3 aria-hidden="true" />
+                Tableau
+              </button>
+            </div>
+          )}
           {filtresActifs && (
             <Button size="sm" variant="ghost" icon={<X />} onClick={() => maj({ q: null, machine: null, urgent: null, mine: null })}>
               Effacer les filtres
@@ -240,11 +254,13 @@ export default function ListeDossiers() {
             </EmptyState>
           )}
         </Card>
-      ) : mobile ? (
-        <div className="dl-cartes" aria-busy={liste.isFetching || undefined}>
-          {items.map((d) => (
-            <CarteDossier key={d.id} d={d} libelle={libelle} montrerMontant={montrerMontant} />
-          ))}
+      ) : !vueTableau ? (
+        <div className="stack" aria-busy={liste.isFetching || undefined}>
+          <div className="cc-grille">
+            {items.map((d, i) => (
+              <CarteCommande key={d.id} index={i} d={d} libelle={libelle} montrerMontant={montrerMontant} montrerPrep={user.role !== 'livreur'} />
+            ))}
+          </div>
           <Pagination page={page} total={total} limit={LIMIT} onPage={(p) => maj({ page: String(p) }, true)} />
         </div>
       ) : (

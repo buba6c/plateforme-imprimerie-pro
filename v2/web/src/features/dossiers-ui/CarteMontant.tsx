@@ -4,7 +4,7 @@
 import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
-import { Banknote, ChevronRight, FileText, ReceiptText } from 'lucide-react';
+import { Banknote, ChevronRight, FileText, ReceiptText, Wallet } from 'lucide-react';
 import {
   formatDateHeure,
   formatFCFA,
@@ -59,9 +59,14 @@ export function CarteMontant({ d, peutEncaisser, peutFacturer, params, libelleGr
   };
 
   return (
-    <section className="ev-card">
+    <section className="ev-card fd-o-montant">
       <header className="ev-card__head">
-        <h2 className="ev-card__title">Montant et paiements</h2>
+        <h2 className="ev-card__title">
+          <span className="fd-titre">
+            <span className="fd-titre__icone"><Wallet aria-hidden="true" /></span>
+            Montant et paiements
+          </span>
+        </h2>
         {d.situation_paiement && <PaymentBadge situation={d.situation_paiement} enAttente={attente} />}
       </header>
       <div className="ev-card__body stack">
@@ -145,7 +150,7 @@ export function CarteMontant({ d, peutEncaisser, peutFacturer, params, libelleGr
               Facture <span className="ev-ref">{d.facture.numero}</span>
             </Link>
           )}
-          {peutFacturer && !d.facture && montant !== null && (
+          {peutFacturer && !d.facture && montant !== null && montant > 0 && (
             <Button size="sm" block icon={<FileText />} busy={facturation} onClick={() => void creerFacture()}>
               Créer la facture
             </Button>

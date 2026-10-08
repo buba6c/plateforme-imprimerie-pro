@@ -14,6 +14,7 @@ import {
   type Machine,
   type Statut,
   type Tarif,
+  detailsLigne,
 } from '@evocom/shared';
 import type { Parametres } from '../../lib/params';
 import { dateHeureFr, jourFr } from '../commun/dates';
@@ -380,7 +381,7 @@ export async function pdfBonDeTravail(d: BonDeTravailPdf, params: Parametres, ta
         `${formatDecimal(((l.largeur * l.hauteur) / diviseur[l.unite]) * l.quantite, 2)} m²`,
         choixTexte(tarifs, 'roland', l.finitions, l.options),
       ],
-      detail: l.description ?? null,
+      detail: [...detailsLigne('roland', l), l.description].filter(Boolean).join(' · ') || null,
     }));
     y = tableau(doc, y, [
       { titre: 'N°', largeur: 24 },
@@ -400,7 +401,7 @@ export async function pdfBonDeTravail(d: BonDeTravailPdf, params: Parametres, ta
         `${formatEntier(Math.ceil(l.pages / (l.recto_verso ? 2 : 1)) * l.quantite)}`,
         choixTexte(tarifs, 'xerox', l.finitions, l.options),
       ],
-      detail: l.description ?? null,
+      detail: [...detailsLigne('xerox', l), l.description].filter(Boolean).join(' · ') || null,
     }));
     y = tableau(doc, y, [
       { titre: 'N°', largeur: 24 },

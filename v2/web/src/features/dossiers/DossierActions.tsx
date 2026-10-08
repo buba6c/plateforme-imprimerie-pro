@@ -28,6 +28,7 @@ const ICONS: Partial<Record<ActionId, React.ReactNode>> = {
   renvoyer_preparation: <Undo2 />,
   programmer_livraison: <CalendarClock />,
   confirmer_livraison: <PackageCheck />,
+  remettre_client: <PackageCheck />,
   retirer_tournee: <Undo2 />,
   cloturer: <Lock />,
   reimprimer: <Printer />,
@@ -117,7 +118,7 @@ export function DossierActions({ dossier, size = 'md', principaleSeulement, bloc
           modePrevu={dossier.mode_paiement_prevu ?? null}
           busy={mutation.isPending}
           onClose={() => setOuverte(null)}
-          onValider={(encaissement) => executer('confirmer_livraison', { encaissement })}
+          onValider={(encaissement) => executer(courante.id, { encaissement })}
         />
       )}
       {courante?.requiresComment && (

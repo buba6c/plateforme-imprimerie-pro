@@ -28,7 +28,8 @@ export function visibilite(user: AuthUser, offset = 0, joursLivreur = 7): Clause
       };
     case 'livreur':
       return {
-        sql: `d.deleted_at IS NULL AND (d.statut IN ('pret_livraison','en_livraison')
+        // Les dossiers que le client vient chercher sur place ne passent pas par le livreur.
+        sql: `d.deleted_at IS NULL AND (d.statut IN ('pret_livraison','en_livraison') AND d.mode_remise = 'livraison'
               OR (d.statut IN ('livre','termine') AND d.livre_at > now() - make_interval(days => ${p(1)}::int)))`,
         params: [joursLivreur],
       };

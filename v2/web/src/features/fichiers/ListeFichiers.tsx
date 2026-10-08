@@ -1,6 +1,8 @@
 // Liste des fichiers d'impression d'un dossier : aperçu, téléchargement, marquage
 // « à réimprimer », suppression tant que le dossier est modifiable.
 
+import { ApercuPdf } from './ApercuPdf';
+import { VignettePdf } from '../fichiers-admin/VignettePdf';
 import { useEffect, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { Download, Eye, ExternalLink, RotateCcw, Trash2 } from 'lucide-react';
@@ -71,37 +73,40 @@ export function ListeFichiers({ dossierId, fichiers, peutMarquer, peutSupprimer 
 
   return (
     <>
-      <ul className="ev-files fi-liste">
-        {fichiers.map((f) => {
+      <ul className="fi-grille">
+        {fichiers.map((f, i) => {
           const type = typeApercu(f);
+          const ext = extension(f.nom_original);
+          const tuile = <span className="fi-carte__tuile">{ext}</span>;
           return (
-            <li key={f.id} className="ev-file" data-reimprimer={f.a_reimprimer}>
-              <span className="ev-file__type" aria-hidden="true">
-                {extension(f.nom_original)}
-              </span>
-              <div className="fi-file__main">
-                {type ? (
-                  <button type="button" className="ev-file__name fi-file__nom" onClick={() => setApercu(f)} title={f.nom_original}>
-                    {f.nom_original}
-                  </button>
+            <li key={f.id} className="fi-carte" data-reimprimer={f.a_reimprimer || undefined} style={{ '--i': i } as React.CSSProperties}>
+              <button type="button" className="fi-carte__vignette" onClick={() => (type ? setApercu(f) : window.open(fichierUrl(f.id, true)))} aria-label={type ? `Voir ${f.nom_original}` : `Télécharger ${f.nom_original}`}>
+                {type === 'image' ? (
+                  <img src={fichierUrl(f.id)} alt="" loading="lazy" />
+                ) : type === 'pdf' ? (
+                  <VignettePdf id={f.id} taille={f.taille} nom={f.nom_original} repli={tuile} />
                 ) : (
-                  <a className="ev-file__name fi-file__nom" href={fichierUrl(f.id, true)} download title={f.nom_original}>
-                    {f.nom_original}
-                  </a>
+                  tuile
                 )}
-                <div className="ev-file__meta">
-                  <span className="ev-mono">{formatTaille(f.taille)}</span>
-                  {f.uploaded_by_nom && <span> · {f.uploaded_by_nom}</span>}
-                  <span className="ev-mono"> · {formatDateHeure(f.created_at)}</span>
-                </div>
+                <span className="fi-carte__type">{ext}</span>
+                {type && (
+                  <span className="fi-carte__voile" aria-hidden="true">
+                    <Eye />
+                    Voir
+                  </span>
+                )}
+              </button>
+              <div className="fi-carte__infos">
+                <span className="fi-carte__nom" title={f.nom_original}>
+                  {f.nom_original}
+                </span>
+                <span className="fi-carte__meta">
+                  {formatTaille(f.taille)}
+                  {f.uploaded_by_nom ? ` · ${f.uploaded_by_nom}` : ''} · {formatDateHeure(f.created_at)}
+                </span>
                 {f.a_reimprimer && <span className="fi-tag-reimp">À réimprimer</span>}
               </div>
-              <div className="ev-file__actions">
-                {type && (
-                  <IconButton label={`Aperçu de ${f.nom_original}`} size="sm" onClick={() => setApercu(f)}>
-                    <Eye />
-                  </IconButton>
-                )}
+              <div className="fi-carte__actions">
                 <a className="ev-icon-btn ev-icon-btn--sm" href={fichierUrl(f.id, true)} download aria-label={`Télécharger ${f.nom_original}`} title="Télécharger">
                   <Download />
                 </a>
@@ -183,7 +188,6 @@ export function usePdfBlob(id: number, actif: boolean) {
 export function ApercuFichier({ fichier, onClose }: { fichier: Fichier; onClose: () => void }) {
   const type = typeApercu(fichier);
   const url = fichierUrl(fichier.id);
-  const pdf = usePdfBlob(fichier.id, type === 'pdf');
   return (
     <Dialog
       open
@@ -208,11 +212,7 @@ export function ApercuFichier({ fichier, onClose }: { fichier: Fichier; onClose:
         {type === 'image' ? (
           <img src={url} alt={`Aperçu de ${fichier.nom_original}`} />
         ) : type === 'pdf' ? (
-          pdf.url ? (
-            <iframe src={pdf.url} title={`Aperçu de ${fichier.nom_original}`} />
-          ) : (
-            <p className={pdf.erreur ? 'ev-error' : 'ev-muted'}>{pdf.erreur ?? 'Chargement de l’aperçu…'}</p>
-          )
+          <ApercuPdf id={fichier.id} nom={fichier.nom_original} />
         ) : (
           <p className="ev-muted">Aperçu indisponible pour ce type de fichier : téléchargez-le pour l'ouvrir.</p>
         )}

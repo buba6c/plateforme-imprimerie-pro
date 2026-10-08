@@ -1,18 +1,23 @@
 // Outils système de l'administrateur : numérotation, export / import de la configuration,
-// réinitialisation encadrée de la plateforme. Toutes les routes sont réservées à l'administrateur.
+// réinitialisation encadrée de la plateforme, sauvegardes et espace disque.
+// Toutes les routes sont réservées à l'administrateur.
 
 import { Router } from 'express';
 import bcrypt from 'bcryptjs';
 import { z, ZodError } from 'zod';
 import { loadConfig } from '../../config';
+import path from 'node:path';
 import { one } from '../../db/pool';
 import { me, requireAuth, requireRole } from '../../lib/auth';
 import { journal } from '../../lib/audit';
 import { badRequest, conflict, forbidden, HttpError, zodDetails } from '../../lib/errors';
+import { intParam, qBool } from '../../lib/http';
 import { contentDisposition } from '../fichiers/routes';
 import { apercuImport, appliquerImport, exporterConfiguration, importSchema } from './configuration';
 import { avancerNumerotation, etatNumerotation, numerotationSchema } from './numerotation';
 import { etatReinitialisation, PHRASE, reinitialiser, VARIABLE, verifierTentatives } from './reinitialisation';
+import { fichierSauvegarde, lancerSauvegarde, listeSauvegardes } from './sauvegardes';
+import { etatStockage } from './stockage';
 
 export const systemeRouter = Router();
 systemeRouter.use(requireAuth, requireRole('admin'));
@@ -110,4 +115,35 @@ systemeRouter.post('/reinitialiser', async (req, res) => {
   } finally {
     enCours = false;
   }
+});
+
+// ---------------------------------------------------------------------------
+// Sauvegardes
+
+systemeRouter.get('/sauvegardes', async (_req, res) => {
+  res.json(await listeSauvegardes());
+});
+
+/** Lance deploy/backup.sh et attend sa fin (30 minutes au plus). 409 si une sauvegarde tourne déjà. */
+systemeRouter.post('/sauvegardes', async (req, res) => {
+  const r = await lancerSauvegarde(req, config(), me(req).id);
+  if (r.ok) res.json(r);
+  else res.status(500).json({ ...r, error: r.message, code: 'sauvegarde_echouee' });
+});
+
+systemeRouter.get('/sauvegardes/:id/telecharger', async (req, res) => {
+  const id = intParam(req);
+  const f = await fichierSauvegarde(id);
+  await journal(req, 'sauvegarde_telechargee', 'sauvegarde', id, { fichier: path.basename(f.abs), taille: f.taille });
+  res.setHeader('Content-Disposition', contentDisposition('attachment', f.nom));
+  res.setHeader('Cache-Control', 'private, no-store');
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.sendFile(f.abs, { headers: { 'Content-Type': 'application/octet-stream' }, dotfiles: 'allow' });
+});
+
+// ---------------------------------------------------------------------------
+// Espace disque et répartition des fichiers
+
+systemeRouter.get('/stockage', async (req, res) => {
+  res.json(await etatStockage(config().storageDir, qBool(req, 'rafraichir') === true));
 });

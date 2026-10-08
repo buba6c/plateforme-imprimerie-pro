@@ -16,7 +16,22 @@ import { Alert, Button, Card, Checkbox, ConfirmDialog, EmptyState, MachineChip, 
 import { BlocDocument, DevisStatutBadge, LignesDocument, Totaux, type LigneTotal } from '../../features/commercial/Document';
 import { aujourdhui, formatJour, lignesDevis } from '../../features/commercial/format';
 import { useConvertirDevis, useDevis, useDevisStatut, useSupprimerDevis } from '../../features/commercial/hooks';
-import type { DevisDetail } from '../../features/commercial/types';
+import type { DevisDetail as DevisDetailBase } from '../../features/commercial/types';
+
+/** Champs ajoutés au devis (migration 008) : remise au client, délai, acompte, conditions. */
+type DevisDetail = DevisDetailBase & {
+  mode_remise?: 'livraison' | 'retrait' | null;
+  adresse_livraison?: string | null;
+  delai_jours?: number | null;
+  acompte_pourcent?: number | null;
+  conditions_paiement?: string | null;
+};
+
+/** Le devis prévoit une urgence payante : le dossier sera marqué urgent. */
+function urgenceDuDevis(d: DevisDetail): '24h' | '48h' | null {
+  const forfaits = ((d.specs as { forfaits?: { code: string }[] } | null)?.forfaits ?? []).map((f) => f.code);
+  return forfaits.includes('urgence_24h') ? '24h' : forfaits.includes('urgence_48h') ? '48h' : null;
+}
 import '../../features/commercial/commercial.css';
 
 const PROCHAINE_ETAPE: Record<StatutDevis, string> = {
@@ -253,6 +268,35 @@ function Fiche({ d }: { d: DevisDetail }) {
               <Totaux lignes={totaux} label="Totaux du devis" />
             </div>
 
+            <BlocDocument titre="Remise et conditions">
+              <dl className="cm-kv">
+                <dt>Remise au client</dt>
+                <dd>
+                  {d.mode_remise === 'retrait'
+                    ? 'À venir chercher sur place'
+                    : `À livrer${d.adresse_livraison ? ` : ${d.adresse_livraison}` : ' (adresse à préciser)'}`}
+                </dd>
+                {d.mode_remise !== 'retrait' && (d.specs as { livraison_contact?: string | null } | null)?.livraison_contact && (
+                  <>
+                    <dt>Contact sur place</dt>
+                    <dd>{(d.specs as { livraison_contact?: string | null }).livraison_contact}</dd>
+                  </>
+                )}
+                <dt>Délai de fabrication</dt>
+                <dd>{d.delai_jours === null || d.delai_jours === undefined ? '—' : `${d.delai_jours} jour${d.delai_jours > 1 ? 's' : ''} après validation du BAT`}</dd>
+                {urgenceDuDevis(d) && (
+                  <>
+                    <dt>Urgence</dt>
+                    <dd>Urgent {urgenceDuDevis(d) === '24h' ? '24 h' : '48 h'}</dd>
+                  </>
+                )}
+                <dt>Acompte</dt>
+                <dd>{d.acompte_pourcent ? `${d.acompte_pourcent} %, soit ${formatFCFA(Math.round((d.total_ttc * d.acompte_pourcent) / 100))}` : '—'}</dd>
+                <dt>Paiement</dt>
+                <dd>{d.conditions_paiement ?? '—'}</dd>
+              </dl>
+            </BlocDocument>
+
             {d.notes && (
               <BlocDocument titre="Remarques">
                 <p className="cm-texte">{d.notes}</p>
@@ -361,7 +405,8 @@ function ConversionDialog({
   onConfirm: (input: { urgent: boolean; date_promise: string | null; consignes: string | null }) => void;
 }) {
   const [datePromise, setDatePromise] = useState('');
-  const [urgent, setUrgent] = useState(false);
+  // Une urgence payante prévue au devis rend le dossier urgent d'office (modifiable ici).
+  const [urgent, setUrgent] = useState(urgenceDuDevis(d) !== null);
   const [consignes, setConsignes] = useState('');
   const datePassee = !!datePromise && datePromise < aujourdhui();
   return (
@@ -379,6 +424,10 @@ function ConversionDialog({
       {d.expire && <Alert tone="warning">La validité du devis est dépassée : le dossier reprend tout de même les prix du devis.</Alert>}
       <p className="ev-help" style={{ margin: 0 }}>
         Les spécifications et le détail des prix sont repris tels quels. Les fichiers du client s’ajoutent ensuite dans le dossier.
+      </p>
+      <p className="ev-help" style={{ margin: 0 }}>
+        Remise au client reprise du devis :{' '}
+        {d.mode_remise === 'retrait' ? 'à venir chercher sur place.' : `à livrer${d.adresse_livraison ? `, ${d.adresse_livraison}` : ''}.`}
       </p>
       <div className="ev-form-grid">
         <TextField

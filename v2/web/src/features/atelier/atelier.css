@@ -23,23 +23,45 @@
 .atelier-vide .ev-empty { padding: var(--space-8) var(--space-5); }
 .atelier-vide .ev-empty strong { font-size: 15px; }
 
-/* Dossier arrivé pendant que la page est ouverte. */
-.atelier-item { position: relative; border-radius: var(--radius-lg); }
+/* Nouveau dossier pas encore ouvert par l'imprimeur : halo doux aux couleurs de la machine,
+   jusqu'à ouverture ou « Vu ». Halo fixe si la personne a demandé moins d'animations. */
+.atelier-item { position: relative; border-radius: var(--radius-lg); --machine: var(--accent); --machine-on: var(--on-accent); --machine-ink: var(--accent-ink); }
+.atelier-item[data-machine="roland"] { --machine: var(--roland); --machine-on: var(--on-roland); --machine-ink: var(--roland-ink); }
+.atelier-item[data-machine="xerox"] { --machine: var(--xerox); --machine-on: var(--on-xerox); --machine-ink: var(--xerox-ink); }
 .atelier-item[data-nouveau="true"] > .ev-job {
-  border-color: var(--accent);
-  box-shadow: 0 0 0 1px var(--accent), var(--shadow-card);
-  animation: atelier-arrivee 1.4s ease-out 2;
+  border-color: var(--machine);
+  box-shadow: 0 0 0 1px var(--machine), var(--shadow-card);
+  animation: atelier-halo 2.4s ease-in-out infinite;
 }
-.atelier-nouveau {
-  position: absolute; top: -10px; right: var(--space-4); z-index: 1;
-  background: var(--accent); color: var(--on-accent); box-shadow: var(--shadow-card);
-}
-@keyframes atelier-arrivee {
-  0% { box-shadow: 0 0 0 1px var(--accent), 0 0 0 8px var(--accent-soft); }
-  100% { box-shadow: 0 0 0 1px var(--accent), 0 0 0 0 var(--accent-soft); }
+@keyframes atelier-halo {
+  0%, 100% { box-shadow: 0 0 0 1px var(--machine), 0 0 0 0 color-mix(in srgb, var(--machine) 0%, transparent), var(--shadow-card); }
+  50% { box-shadow: 0 0 0 1px var(--machine), 0 0 0 7px color-mix(in srgb, var(--machine) 26%, transparent), var(--shadow-card); }
 }
 @media (prefers-reduced-motion: reduce) {
-  .atelier-item[data-nouveau="true"] > .ev-job { animation: none; }
+  .atelier-item[data-nouveau="true"] > .ev-job {
+    animation: none;
+    box-shadow: 0 0 0 2px var(--machine), 0 0 0 6px color-mix(in srgb, var(--machine) 20%, transparent), var(--shadow-card);
+  }
+}
+
+/* Étiquettes posées sur le bord haut de la carte : RÉIMPRESSION, NOUVEAU, bouton « Vu ». */
+.atelier-etiquettes {
+  position: absolute; top: -12px; right: var(--space-4); z-index: 1;
+  display: flex; align-items: center; gap: var(--space-1);
+}
+.atelier-nouveau { background: var(--machine); color: var(--machine-on); box-shadow: var(--shadow-card); }
+.atelier-reimpression { background: var(--surface); color: var(--machine-ink); box-shadow: inset 0 0 0 1.5px var(--machine), var(--shadow-card); }
+.atelier-vu {
+  height: 24px; padding: 0 12px; border-radius: var(--radius-full);
+  border: 1px solid var(--line-strong); background: var(--surface); color: var(--text);
+  font: inherit; font-size: 12px; font-weight: 600; cursor: pointer; box-shadow: var(--shadow-card);
+}
+.atelier-vu:hover { background: var(--surface-sunken); }
+.atelier-vu:focus-visible { outline: 2px solid transparent; box-shadow: var(--focus-ring); }
+.atelier-compteurs .atelier-compteurs__nouveaux { color: var(--text); font-weight: 500; }
+@media (max-width: 760px) {
+  .atelier-etiquettes { top: -15px; }
+  .atelier-vu { height: 30px; padding: 0 14px; font-size: 13px; }
 }
 
 /* Actions secondaires (révision, remise en attente) en pied de carte. */
@@ -53,7 +75,7 @@
 .atelier-item__plus .ev-btn { background: transparent; border-color: transparent; color: var(--accent-ink); padding: 0 var(--space-2); }
 .atelier-item__plus .ev-btn:hover { background: var(--accent-soft); }
 .atelier-item__plus .ev-btn svg { display: none; }
-.atelier-item[data-nouveau="true"] > .atelier-item__plus { border-color: var(--accent); }
+.atelier-item[data-nouveau="true"] > .atelier-item__plus { border-color: var(--machine); }
 
 /* Onglets à la place des colonnes sur téléphone. */
 .atelier-onglets { display: none; }

@@ -1,10 +1,10 @@
 import { Router } from 'express';
 import { z } from 'zod';
-import { calculerPrix, CATEGORIES_TARIF, MACHINES, specsSchemaFor, UNITES_TARIF, type Specs } from '@evocom/shared';
+import { calculerPrix, CATEGORIES_TARIF, MACHINES, specsSchemaFor, UNITES_TARIF, verifierCombinaisonTarif, type Specs, type Tarif } from '@evocom/shared';
 import { one, query } from '../../db/pool';
 import { me, requireAuth, requireRole } from '../../lib/auth';
 import { journal } from '../../lib/audit';
-import { conflict, notFound } from '../../lib/errors';
+import { badRequest, conflict, notFound } from '../../lib/errors';
 import { intParam } from '../../lib/http';
 import { getParametres } from '../../lib/params';
 import { getTarifs, invalidateTarifs } from '../../lib/tarifs';
@@ -33,8 +33,18 @@ const tarifSchema = z.object({
   description: z.string().max(500).nullable().optional(),
 });
 
+/**
+ * A4 : une unité qui ne convient pas à la machine ou à la catégorie (m² sur Xerox, pourcentage sur une
+ * finition, support commun aux deux machines…) est refusée ici ; le moteur de prix la refuse aussi.
+ */
+function verifierCombinaison(t: Pick<Tarif, 'machine' | 'categorie' | 'unite'>) {
+  const message = verifierCombinaisonTarif(t);
+  if (message) throw badRequest(message, { champs: { unite: message } });
+}
+
 tarifsRouter.post('/', requireRole('admin'), async (req, res) => {
   const t = tarifSchema.parse(req.body);
+  verifierCombinaison(t);
   const r = await one(
     `INSERT INTO tarifs (machine, categorie, code, libelle, unite, prix, actif, ordre, description, updated_by)
      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING *`,
@@ -53,6 +63,9 @@ tarifsRouter.patch('/:id', requireRole('admin'), async (req, res) => {
   const t = tarifSchema.partial().omit({ code: true, machine: true }).parse(req.body);
   const avant = await one(`SELECT * FROM tarifs WHERE id = $1`, [id]);
   if (!avant) throw notFound('Tarif introuvable.');
+  if (t.categorie !== undefined || t.unite !== undefined) {
+    verifierCombinaison({ machine: avant.machine, categorie: t.categorie ?? avant.categorie, unite: t.unite ?? avant.unite });
+  }
   const sets: string[] = [];
   const args: unknown[] = [];
   for (const [k, v] of Object.entries(t)) {

@@ -1,8 +1,9 @@
+import { useNouveauxTravaux } from '../features/atelier/vus';
 import { useEffect, useMemo, useState } from 'react';
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
-import { useQuery } from '@tanstack/react-query';
+import { useIsFetching, useIsMutating, useQuery } from '@tanstack/react-query';
 import { KeyRound, LogOut, Menu, Moon, Search, Sun, SunMoon, Wifi, WifiOff } from 'lucide-react';
-import { ROLE_LABELS } from '@evocom/shared';
+import { machineOfRole, ROLE_LABELS } from '@evocom/shared';
 import { useAuth, useUser } from '../auth/AuthContext';
 import { api } from '../lib/api';
 import { onConnexion } from '../lib/realtime';
@@ -27,6 +28,11 @@ export function AppShell() {
   const { logout } = useAuth();
   const navigate = useNavigate();
   const loc = useLocation();
+  const chargement = useIsFetching() + useIsMutating();
+  // Imprimeurs : le menu « File d'impression » clignote tant qu'un nouveau dossier n'a pas été ouvert.
+  const nouveaux = useNouveauxTravaux();
+  const machineImprimeur = machineOfRole(user.role);
+  const signal = (to: string) => (to === '/atelier' && nouveaux > 0 ? `nav-clignote${machineImprimeur ? ` nav-clignote--${machineImprimeur}` : ''}` : '');
   const [open, setOpen] = useState(false);
   const [theme, setTheme] = useState<Theme>(getPreferences().theme);
   const [online, setOnline] = useState(true);
@@ -62,7 +68,7 @@ export function AppShell() {
             <div key={i} className="ev-nav" style={{ gap: 2 }}>
               {s.title && <div className="ev-nav-section">{s.title}</div>}
               {s.items.map((item) => (
-                <NavLink key={item.to} to={item.to} end={item.to === '/livraisons'} className="ev-nav-item"
+                <NavLink key={item.to} to={item.to} end={item.to === '/livraisons'} className={`ev-nav-item ${signal(item.to)}`}
                   aria-current={undefined}
                   style={undefined}
                   // NavLink pose aria-current="page" sur l'élément actif
@@ -70,6 +76,7 @@ export function AppShell() {
                   <item.icon aria-hidden="true" />
                   {item.label}
                   {item.countKey && counts[item.countKey] ? <span className="ev-count">{counts[item.countKey]}</span> : null}
+                  {item.to === '/atelier' && nouveaux > 0 && <span className="sr-only">, {nouveaux} nouveau{nouveaux > 1 ? 'x' : ''}</span>}
                 </NavLink>
               ))}
             </div>
@@ -125,14 +132,17 @@ export function AppShell() {
           </button>
           <NotificationBell />
         </header>
+        <div className="ev-chargement" data-actif={chargement > 0} aria-hidden="true" />
         <main className="ev-page" id="contenu">
-          <Outlet />
+          <div key={loc.pathname} className="ev-page-entree">
+            <Outlet />
+          </div>
         </main>
       </div>
       {mobileItems.length > 1 && (
         <nav className="ev-tabbar" aria-label="Navigation rapide">
           {mobileItems.map((i) => (
-            <NavLink key={i.to} to={i.to} end={i.to === '/livraisons'}>
+            <NavLink key={i.to} to={i.to} end={i.to === '/livraisons'} className={signal(i.to) || undefined}>
               <i.icon aria-hidden="true" />
               {i.label}
             </NavLink>

@@ -1,10 +1,11 @@
 import type { ReactNode } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { RefreshCw } from 'lucide-react';
 import { formatDateHeure, formatRelatif, formatTaille } from '@evocom/shared';
 import { api, messageErreur } from '../../lib/api';
 import { Alert, Button, Card, LoadingRows, PageHeader } from '../../ui';
 import type { Sante as S } from '../../features/admin/types';
+import { CarteEspaceDisque, CarteHistorique, CarteSauvegarderMaintenant } from '../../features/admin/SanteSauvegardes';
 import '../../features/admin/admin.css';
 
 const MAX_AGE_H = 26;
@@ -21,7 +22,13 @@ function Etat({ tone, children }: { tone: 'ok' | 'ko' | 'warn'; children: ReactN
 }
 
 export default function Sante() {
+  const qc = useQueryClient();
   const q = useQuery({ queryKey: ['sante'], queryFn: () => api.get<S>('/sante'), refetchInterval: 60_000 });
+  const actualiser = () => {
+    void q.refetch();
+    void qc.invalidateQueries({ queryKey: ['sauvegardes'] });
+    void qc.invalidateQueries({ queryKey: ['stockage'] });
+  };
   const s = q.data;
 
   const sauvegarde = s?.derniere_sauvegarde ?? null;
@@ -48,9 +55,9 @@ export default function Sante() {
     <>
       <PageHeader
         title="Sauvegardes et état"
-        subtitle="État du serveur et de la dernière sauvegarde automatique (chaque nuit)."
+        subtitle="Sauvegardes (automatique chaque nuit, ou à la demande), place sur le disque et état du serveur."
         actions={
-          <Button icon={<RefreshCw />} onClick={() => void q.refetch()} busy={q.isFetching}>
+          <Button icon={<RefreshCw />} onClick={actualiser} busy={q.isFetching}>
             Actualiser
           </Button>
         }
@@ -81,6 +88,14 @@ export default function Sante() {
               déploiement (v2/deploy/deploy.sh) pour les appliquer.
             </Alert>
           )}
+
+          <div className="sante-grille">
+            <div className="sante-sections">
+              <CarteSauvegarderMaintenant />
+              <CarteHistorique />
+            </div>
+            <CarteEspaceDisque />
+          </div>
 
           <div className="adm-health">
             <Card title="Dernière sauvegarde">

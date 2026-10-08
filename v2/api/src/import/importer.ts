@@ -22,6 +22,8 @@ import {
   type Statut,
   type StatutDevis,
   type UniteTarif,
+  corrigerTarifImporte,
+  type Tarif,
 } from '@evocom/shared';
 import { migrate } from '../db/migrate';
 import { seedBase } from '../db/seed';
@@ -1915,9 +1917,28 @@ async function importerTarifs(ctx: Ctx) {
     if (code.startsWith('reliure') && unite === 'forfait') {
       anomalie('tarif_a_verifier', 'attention', `${code} est au forfait : probablement par exemplaire, à vérifier dans Tarifs.`);
     }
+    // A3 : catégories et unités de l'ancienne grille rendues utilisables par le moteur (carte de visite, « papier »…).
+    let machineFinale = machine as Tarif['machine'];
+    const correction = corrigerTarifImporte({ machine: machineFinale, categorie: texte(r.categorie) ?? '', code, unite });
+    if (correction && correction.machine !== machineFinale) {
+      // La machine change (ex. livraison commune) : éviter un doublon avec un code déjà importé pour cette machine.
+      const cleCorrigee = `${correction.machine}:${code}`;
+      if (vus.has(cleCorrigee)) {
+        t.ignores++;
+        anomalie('tarif_doublon', 'attention', `Code ${code} déjà présent pour ${correction.machine} : la version ${machine} n'est pas reprise.`);
+        continue;
+      }
+      vus.add(cleCorrigee);
+    }
+    if (correction) {
+      machineFinale = correction.machine;
+      categorie = correction.categorie;
+      unite = correction.unite;
+      anomalie('tarif_corrige', 'info', `${code} : ${correction.note}.`);
+    }
     const created = horodatage(r.created_at) ?? ctx.maintenant;
     lignes.push({
-      machine,
+      machine: machineFinale,
       categorie,
       code,
       libelle: texte(r.label) ?? texte(r.libelle) ?? code,

@@ -1,4 +1,4 @@
-import { keepPreviousData, useQuery } from '@tanstack/react-query';
+import { keepPreviousData, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api } from '../../lib/api';
 import type { Auteur, CorbeilleFichiers, Integrite, ListeFichiersGlobale } from './types';
 
@@ -50,4 +50,15 @@ export function useIntegrite(enabled = true) {
     staleTime: Infinity,
     refetchOnWindowFocus: false,
   });
+}
+
+/** Après une action sur des fichiers : listes, fiches de dossier, contrôle et espace disque à relire. */
+export function useRafraichirFichiers() {
+  const qc = useQueryClient();
+  return () => {
+    void qc.invalidateQueries({ queryKey: ['dossiers'] });
+    void qc.invalidateQueries({ queryKey: ['dossier'] });
+    void qc.invalidateQueries({ queryKey: ['fichiers-integrite'] });
+    void qc.invalidateQueries({ queryKey: ['stockage'] });
+  };
 }

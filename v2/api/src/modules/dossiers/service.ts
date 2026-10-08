@@ -1,6 +1,8 @@
 import type pg from 'pg';
+import { z } from 'zod';
 import {
   ACTIONS_BY_ID,
+  actionParId,
   actionsDisponibles,
   calculerPrix,
   formatFCFA,
@@ -29,6 +31,7 @@ import { prochainNumero } from '../../lib/numbering';
 import { getParametres } from '../../lib/params';
 import { getTarifs } from '../../lib/tarifs';
 import { notifier, signalDossier, signalPaiement } from '../../realtime';
+import { notifierAffectation, notifierReport, notifierStatutForce, notifierTransitionDossier, notifierUrgence } from '../notifications/regles';
 import type { AuthUser } from '../../types';
 import { peutVoirContactClient, peutVoirFichiers, peutVoirMontants, visibilite } from './access';
 
@@ -96,6 +99,9 @@ export function presenter(row: DossierRow, user: AuthUser, libelles: Libelles = 
     specs: row.specs,
     resume_specs: resumeSpecs(row.machine, row.specs, row.description, libelles),
     urgent: row.urgent,
+    origine_id: (row as DossierRow & { origine_id?: number | null }).origine_id ?? null,
+    origine_type: (row as DossierRow & { origine_type?: string | null }).origine_type ?? null,
+    mode_remise: (row as DossierRow & { mode_remise?: string }).mode_remise ?? 'livraison',
     date_promise: row.date_promise,
     preparateur_id: row.preparateur_id,
     preparateur_nom: row.preparateur_nom,
@@ -203,13 +209,18 @@ export async function listerDossiers(user: AuthUser, f: ListeFiltres) {
 export async function chargerDossier(user: AuthUser, id: number, db: Db = getPool(), forUpdate = false): Promise<DossierRow> {
   const params = await getParametres(db);
   const vis = visibilite(user, 1, params.livreur_jours_historique);
+  if (forUpdate) {
+    // Verrouiller d'abord, lire ensuite : les sommes payées sont relues après l'attente du verrou.
+    const verrou = await one(`SELECT d.id FROM dossiers d WHERE d.id = $1 AND ${vis.sql} FOR UPDATE OF d`, [id, ...vis.params], db);
+    if (!verrou) throw notFound("Ce dossier n'existe pas ou ne vous est pas accessible.");
+  }
   const row = await one<DossierRow>(
     forUpdate
       ? `SELECT d.*,
            (SELECT count(*)::int FROM fichiers f WHERE f.dossier_id = d.id AND f.deleted_at IS NULL) AS nb_fichiers,
            (SELECT coalesce(sum(p.montant),0)::int FROM paiements p WHERE p.dossier_id = d.id AND p.statut = 'valide') AS deja_paye,
            (SELECT coalesce(sum(p.montant),0)::int FROM paiements p WHERE p.dossier_id = d.id AND p.statut = 'a_valider') AS en_attente_validation
-         FROM dossiers d WHERE d.id = $1 AND ${vis.sql} FOR UPDATE OF d`
+         FROM dossiers d WHERE d.id = $1 AND ${vis.sql}`
       : `${SELECT_DOSSIER} WHERE d.id = $1 AND ${vis.sql}`,
     [id, ...vis.params],
     db,
@@ -259,6 +270,7 @@ export async function detailDossier(user: AuthUser, id: number) {
     historique: events,
     paiements,
     facture,
+    liens: await liensDossier(user, row),
   };
 }
 
@@ -277,7 +289,7 @@ export function peutDeposer(user: AuthUser, d: Pick<DossierRow, 'statut' | 'prep
 
 export function peutSupprimer(user: AuthUser, d: Pick<DossierRow, 'statut' | 'preparateur_id' | 'deleted_at' | 'deja_paye' | 'en_attente_validation'>): boolean {
   if (d.deleted_at) return false;
-  if (user.role === 'admin') return true;
+  if (user.role === 'admin') return d.deja_paye === 0;
   return (
     user.role === 'preparateur' &&
     d.preparateur_id === user.id &&
@@ -362,8 +374,8 @@ export async function creerDossier(user: AuthUser, body: unknown, opts: { devis_
     const numero = await prochainNumero(db, 'CMD');
     const d = await one<DossierRow>(
       `INSERT INTO dossiers (numero, machine, client_id, client_nom, client_telephone, client_email, description, consignes, specs,
-         montant, montant_source, detail_prix, mode_paiement_prevu, urgent, date_promise, adresse_livraison, preparateur_id, devis_id)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18) RETURNING *`,
+         montant, montant_source, detail_prix, mode_paiement_prevu, urgent, date_promise, adresse_livraison, preparateur_id, devis_id, mode_remise)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19) RETURNING *`,
       [
         numero,
         input.machine,
@@ -383,6 +395,7 @@ export async function creerDossier(user: AuthUser, body: unknown, opts: { devis_
         input.adresse_livraison ?? null,
         user.id,
         opts.devis_id ?? null,
+        input.mode_remise,
       ],
       db,
     );
@@ -405,6 +418,7 @@ const CHAMPS_SUIVIS = [
   'date_promise',
   'adresse_livraison',
   'machine',
+  'mode_remise',
 ] as const;
 
 export async function modifierDossier(user: AuthUser, id: number, body: unknown) {
@@ -431,7 +445,9 @@ export async function modifierDossier(user: AuthUser, id: number, body: unknown)
     };
     const montantSaisi = input.montant !== undefined && input.montant !== null;
     // montant: null envoyé explicitement = revenir au prix calculé à partir des spécifications.
-    const revenirAuCalcul = input.montant === null && d.montant_source === 'saisi';
+    const revenirAuCalcul = input.montant === null && (d.montant_source ?? 'calcul') !== 'calcul';
+    // Seul un montant issu du calcul suit la grille du jour ; un montant de devis, saisi, repris ou offert ne bouge pas tout seul.
+    const suitLaGrille = (d.montant_source ?? 'calcul') === 'calcul';
     for (const k of CHAMPS_SUIVIS) {
       if (input[k] === undefined) continue;
       if (k === 'montant' && revenirAuCalcul) continue;
@@ -457,13 +473,13 @@ export async function modifierDossier(user: AuthUser, id: number, body: unknown)
       set('specs', JSON.stringify(specs));
       const prix = await prixPour(machine, specs, db);
       if (prix?.ok) {
-        set('detail_prix', JSON.stringify(prix));
-        if (!montantSaisi && !revenirAuCalcul && d.montant_source !== 'saisi') {
+        if (!revenirAuCalcul && suitLaGrille) set('detail_prix', JSON.stringify(prix));
+        if (!montantSaisi && !revenirAuCalcul && suitLaGrille) {
           if (prix.total_ttc !== d.montant) changes.montant = { avant: d.montant, apres: prix.total_ttc };
           set('montant', prix.total_ttc);
           set('montant_source', 'calcul');
         }
-      } else if (prix && !prix.ok && !montantSaisi && !revenirAuCalcul && d.montant_source !== 'saisi') {
+      } else if (prix && !prix.ok && !montantSaisi && !revenirAuCalcul && suitLaGrille) {
         throw unprocessable('Le prix ne peut pas être calculé. Corrigez les lignes ou saisissez le montant à la main.', { erreurs: prix.erreurs });
       }
     }
@@ -477,6 +493,15 @@ export async function modifierDossier(user: AuthUser, id: number, body: unknown)
       if (clientId !== d.client_id) set('client_id', clientId);
     }
     if (!sets.length) return d;
+    if (changes.montant) {
+      const facture = await one<{ numero: string }>(`SELECT numero FROM factures WHERE dossier_id = $1 AND statut = 'emise'`, [id], db);
+      if (facture) throw conflict(`La facture ${facture.numero} est émise pour ce montant : annulez-la d’abord pour changer le prix.`);
+      const nouveau = changes.montant.apres as number | null;
+      const engage = d.deja_paye ?? 0;
+      if (nouveau !== null && nouveau < engage) {
+        throw conflict(`Le client a déjà réglé ${engage.toLocaleString('fr-FR')} FCFA (paiements validés) : le montant ne peut pas descendre en dessous.`);
+      }
+    }
     args.push(id);
     const row = await one<DossierRow>(`UPDATE dossiers SET ${sets.join(', ')} WHERE id = $${args.length} RETURNING *`, args, db);
     if (Object.keys(changes).length) await evenement(db, id, user.id, { type: 'modification', data: changes });
@@ -490,7 +515,7 @@ export async function modifierDossier(user: AuthUser, id: number, body: unknown)
 // Circuit
 
 export async function executerAction(user: AuthUser, id: number, actionId: string, input: ActionInput) {
-  const action = ACTIONS_BY_ID[actionId as ActionId];
+  const action = actionParId(actionId);
   if (!action) throw notFound('Action inconnue.');
   const result = await tx(async (db) => {
     const d = await chargerDossier(user, id, db, true);
@@ -530,6 +555,10 @@ export async function executerAction(user: AuthUser, id: number, actionId: strin
         if (user.role === 'livreur') set('livreur_id = ?', user.id);
         break;
       }
+      case 'remettre_client':
+        set('livre_at = now()');
+        set('urgent = false');
+        break;
       case 'confirmer_livraison':
         set('livre_at = now()');
         set('urgent = false');
@@ -560,12 +589,12 @@ export async function executerAction(user: AuthUser, id: number, actionId: strin
     });
 
     let paiementId: number | null = null;
-    if (action.id === 'confirmer_livraison' && input.encaissement) {
+    if ((action.id === 'confirmer_livraison' || action.id === 'remettre_client') && input.encaissement) {
       paiementId = await enregistrerPaiement(db, user, { ...d, deja_paye: d.deja_paye, en_attente_validation: d.en_attente_validation }, {
         montant: input.encaissement.montant,
         mode: input.encaissement.mode,
         reference: input.encaissement.reference ?? null,
-        notes: 'Encaissé à la livraison',
+        notes: action.id === 'remettre_client' ? 'Encaissé au retrait sur place' : 'Encaissé à la livraison',
       });
     }
     return { avant: d, apres: row!, paiementId };
@@ -574,31 +603,10 @@ export async function executerAction(user: AuthUser, id: number, actionId: strin
   const { avant, apres } = result;
   signalDossier({ ...apres, ancien_statut: avant.statut });
   if (result.paiementId) signalPaiement(apres.id);
-  await notifierTransition(user, action.id, apres, input.commentaire ?? null).catch(() => {});
+  await notifierTransitionDossier(user, action.id, avant, apres, input.commentaire ?? null).catch(() => {});
   return apres;
 }
 
-async function notifierTransition(user: AuthUser, action: ActionId, d: DossierRow, commentaire: string | null) {
-  const db = getPool();
-  const ref = `${d.numero} · ${d.client_nom}`;
-  switch (action) {
-    case 'valider':
-      await notifier(db, { machine: d.machine }, { type: 'nouveau_travail', titre: `Nouveau dossier à imprimer`, message: ref, dossier_id: d.id });
-      break;
-    case 'demander_revision':
-      if (d.preparateur_id)
-        await notifier(db, { userIds: [d.preparateur_id], roles: ['admin'], exclure: user.id }, { type: 'revision', titre: `Révision demandée : ${d.numero}`, message: commentaire, dossier_id: d.id });
-      break;
-    case 'marquer_imprime':
-      await notifier(db, { roles: ['livreur'], userIds: d.preparateur_id ? [d.preparateur_id] : [] }, { type: 'pret_livraison', titre: 'Dossier prêt à livrer', message: ref, dossier_id: d.id });
-      break;
-    case 'confirmer_livraison':
-      await notifier(db, { roles: ['admin'], userIds: d.preparateur_id ? [d.preparateur_id] : [], exclure: user.id }, { type: 'livre', titre: `Dossier livré : ${d.numero}`, message: d.client_nom, dossier_id: d.id });
-      break;
-    default:
-      break;
-  }
-}
 
 export async function forcerStatut(user: AuthUser, id: number, statut: string, commentaire: string | null) {
   if (user.role !== 'admin') throw forbidden();
@@ -607,12 +615,23 @@ export async function forcerStatut(user: AuthUser, id: number, statut: string, c
   const r = await tx(async (db) => {
     const d = await chargerDossier(user, id, db, true);
     if (d.statut === statut) throw conflict('Le dossier a déjà ce statut.');
-    const row = await one<DossierRow>(`UPDATE dossiers SET statut = $1 WHERE id = $2 RETURNING *`, [statut, id], db);
+    // Mêmes effets de dates que la transition normale : un dossier forcé « livré » reste visible et compté.
+    const row = await one<DossierRow>(
+      `UPDATE dossiers SET statut = $1,
+         date_validation = CASE WHEN $1 IN ('pret_impression','en_impression','pret_livraison','en_livraison','livre','termine') THEN coalesce(date_validation, now()) ELSE date_validation END,
+         date_fin_impression = CASE WHEN $1 IN ('pret_livraison','en_livraison','livre','termine') THEN coalesce(date_fin_impression, now()) WHEN $1 IN ('en_cours','a_revoir','pret_impression','en_impression') THEN NULL ELSE date_fin_impression END,
+         livre_at = CASE WHEN $1 IN ('livre','termine') THEN coalesce(livre_at, now()) ELSE NULL END,
+         termine_at = CASE WHEN $1 = 'termine' THEN coalesce(termine_at, now()) ELSE NULL END
+       WHERE id = $2 RETURNING *`,
+      [statut, id],
+      db,
+    );
     await evenement(db, id, user.id, { type: 'statut', action: 'forcer', de: d.statut, vers: statut, commentaire });
     await journal(null, 'dossier_statut_force', 'dossier', id, { numero: d.numero, de: d.statut, vers: statut, commentaire, user_id: user.id }, db);
     return { avant: d, apres: row! };
   });
   signalDossier({ ...r.apres, ancien_statut: r.avant.statut });
+  await notifierStatutForce(user, r.avant, r.apres, commentaire).catch(() => {});
   return r.apres;
 }
 
@@ -623,10 +642,11 @@ export async function reporterLivraison(user: AuthUser, id: number, date: string
     if (d.statut !== 'en_livraison' && d.statut !== 'pret_livraison') throw conflict("Ce dossier n'est pas en cours de livraison.");
     const r = await one<DossierRow>(`UPDATE dossiers SET livraison_prevue_at = $1 WHERE id = $2 RETURNING *`, [date, id], db);
     await evenement(db, id, user.id, { type: 'livraison', action: 'reporter', commentaire: motif, data: { avant: d.livraison_prevue_at, apres: date } });
-    return r!;
+    return { avant: d, apres: r! };
   });
-  signalDossier({ ...row, ancien_statut: row.statut });
-  return row;
+  signalDossier({ ...row.apres, ancien_statut: row.apres.statut });
+  await notifierReport(user, row.apres, row.avant.livraison_prevue_at, date, motif).catch(() => {});
+  return row.apres;
 }
 
 export async function definirUrgence(user: AuthUser, id: number, urgent: boolean) {
@@ -640,9 +660,7 @@ export async function definirUrgence(user: AuthUser, id: number, urgent: boolean
     return r!;
   });
   signalDossier({ ...row, ancien_statut: row.statut });
-  if (urgent && ['pret_impression', 'en_impression'].includes(row.statut)) {
-    await notifier(getPool(), { machine: row.machine }, { type: 'urgent', titre: `Dossier passé en urgent`, message: `${row.numero} · ${row.client_nom}`, dossier_id: row.id }).catch(() => {});
-  }
+  await notifierUrgence(user, row, urgent).catch(() => {});
   return row;
 }
 
@@ -662,17 +680,15 @@ export async function affecter(user: AuthUser, id: number, body: { imprimeur_id?
       args.push(body[k]);
       sets.push(`${k} = $${args.length}`);
     }
-    if (!sets.length) return d;
+    if (!sets.length) return { avant: d, apres: d };
     args.push(id);
     const r = await one<DossierRow>(`UPDATE dossiers SET ${sets.join(', ')} WHERE id = $${args.length} RETURNING *`, args, db);
     await evenement(db, id, user.id, { type: 'affectation', data: body });
-    return r!;
+    return { avant: d, apres: r! };
   });
-  signalDossier({ ...row, ancien_statut: row.statut });
-  for (const uid of [body.imprimeur_id, body.livreur_id]) {
-    if (uid) await notifier(getPool(), { userIds: [uid] }, { type: 'affectation', titre: 'Dossier qui vous est confié', message: `${row.numero} · ${row.client_nom}`, dossier_id: row.id }).catch(() => {});
-  }
-  return row;
+  signalDossier({ ...row.apres, ancien_statut: row.apres.statut });
+  await notifierAffectation(user, row.avant, row.apres).catch(() => {});
+  return row.apres;
 }
 
 export async function commenter(user: AuthUser, id: number, texte: string) {
@@ -685,6 +701,9 @@ export async function commenter(user: AuthUser, id: number, texte: string) {
 export async function supprimerDossier(user: AuthUser, id: number, motif: string | null) {
   const row = await tx(async (db) => {
     const d = await chargerDossier(user, id, db, true);
+    const facture = await one<{ numero: string }>(`SELECT numero FROM factures WHERE dossier_id = $1 AND statut = 'emise'`, [id], db);
+    if (facture) throw conflict(`La facture ${facture.numero} est émise pour ce dossier : annulez-la avant de le supprimer.`);
+    if (d.deja_paye > 0) throw conflict('Ce dossier a des paiements validés : il ne peut pas être supprimé.');
     if (!peutSupprimer(user, d)) {
       throw forbidden(
         user.role === 'preparateur'
@@ -753,4 +772,137 @@ export async function enregistrerPaiement(
     await notifier(db, { roles: ['admin'], exclure: user.id }, { type: 'paiement_a_valider', titre: 'Paiement à valider', message: formatFCFA(p.montant), dossier_id: d.id });
   }
   return r!.id;
+}
+
+// ---------------------------------------------------------------------------
+// Réimpression et duplication
+
+export const dupliquerSchema = z
+  .object({
+    /** reimpression : refaire le même travail (défaut, quantité manquante) ; nouvelle_commande : le client recommande. */
+    type: z.enum(['reimpression', 'nouvelle_commande']),
+    /** meme : montant de l'original ; grille : recalculé avec les tarifs du jour ; gratuit : 0 FCFA (à nos frais) ; manuel : montant saisi. */
+    prix: z.enum(['meme', 'grille', 'gratuit', 'manuel']),
+    montant: z.number().int().nonnegative().max(1_000_000_000).nullable().optional(),
+    /** Faut-il modifier le travail avant l'impression ? Oui : le dossier repart en préparation. */
+    modifications: z.boolean(),
+    /** Reprendre les fichiers de l'original (sinon le préparateur en dépose de nouveaux). */
+    reprendre_fichiers: z.boolean(),
+    motif: z.string().trim().max(2000).nullable().optional(),
+    urgent: z.boolean().optional(),
+  })
+  .superRefine((v, ctx) => {
+    if (v.prix === 'manuel' && (v.montant === null || v.montant === undefined)) ctx.addIssue({ code: 'custom', path: ['montant'], message: 'Indiquez le montant.' });
+    if (v.type === 'reimpression' && (v.motif ?? '').length < 3) ctx.addIssue({ code: 'custom', path: ['motif'], message: 'Expliquez pourquoi il faut réimprimer.' });
+  });
+
+export async function dupliquerDossier(user: AuthUser, id: number, body: unknown): Promise<{ id: number; numero: string; statut: Statut }> {
+  const input = dupliquerSchema.parse(body);
+  if (user.role !== 'admin' && !(user.role === 'preparateur' && input.type === 'nouvelle_commande')) {
+    throw forbidden('Seul un administrateur peut lancer une réimpression ; le préparateur peut créer une nouvelle commande à partir d’un dossier.');
+  }
+  const cree = await tx(async (db) => {
+    const o = await chargerDossier(user, id, db, true);
+    const specs = o.specs as Specs;
+    let montant: number | null = null;
+    let source: string | null = null;
+    let detail: string | null = null;
+    if (input.prix === 'meme') {
+      montant = o.montant;
+      source = 'reprise';
+      detail = o.detail_prix ? JSON.stringify(o.detail_prix) : null;
+    } else if (input.prix === 'gratuit') {
+      montant = 0;
+      source = 'gratuit';
+    } else if (input.prix === 'manuel') {
+      montant = input.montant!;
+      source = 'saisi';
+    } else {
+      const prix = await prixPour(o.machine, specs, db);
+      if (!prix?.ok) throw unprocessable('Le prix ne peut pas être recalculé avec les tarifs du jour : choisissez « même prix » ou saisissez le montant.', { erreurs: prix?.erreurs });
+      montant = prix.total_ttc;
+      source = 'calcul';
+      detail = JSON.stringify(prix);
+    }
+    const fichiers = input.reprendre_fichiers
+      ? await query<{ nom_original: string; chemin: string; mime: string | null; taille: number; sha256: string | null; uploaded_by: number | null }>(
+          `SELECT nom_original, chemin, mime, taille, sha256, uploaded_by FROM fichiers WHERE dossier_id = $1 AND deleted_at IS NULL ORDER BY created_at`,
+          [id],
+          db,
+        )
+      : [];
+    const directImpression = !input.modifications && fichiers.length > 0;
+    const statut: Statut = directImpression ? 'pret_impression' : 'en_cours';
+    const libelleType = input.type === 'reimpression' ? 'Réimpression' : 'Nouvelle commande';
+    const consignes = [input.type === 'reimpression' ? `${libelleType} de ${o.numero} : ${input.motif}` : null, o.consignes].filter(Boolean).join('\n\n') || null;
+    const numero = await prochainNumero(db, 'CMD');
+    const d = await one<DossierRow>(
+      `INSERT INTO dossiers (numero, machine, client_id, client_nom, client_telephone, client_email, description, consignes, specs,
+         montant, montant_source, detail_prix, mode_paiement_prevu, urgent, adresse_livraison, preparateur_id, statut, date_validation,
+         origine_id, origine_type, mode_remise)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21) RETURNING *`,
+      [
+        numero,
+        o.machine,
+        o.client_id,
+        o.client_nom,
+        o.client_telephone,
+        o.client_email,
+        o.description,
+        consignes,
+        JSON.stringify(specs),
+        montant,
+        source,
+        detail,
+        o.mode_paiement_prevu,
+        input.urgent ?? o.urgent,
+        o.adresse_livraison,
+        o.preparateur_id ?? user.id,
+        statut,
+        directImpression ? new Date() : null,
+        o.id,
+        input.type,
+        (o as DossierRow & { mode_remise?: string }).mode_remise ?? 'livraison',
+      ],
+      db,
+    );
+    for (const f of fichiers) {
+      await query(
+        `INSERT INTO fichiers (dossier_id, nom_original, chemin, mime, taille, sha256, uploaded_by) VALUES ($1,$2,$3,$4,$5,$6,$7)`,
+        [d!.id, f.nom_original, f.chemin, f.mime, f.taille, f.sha256, f.uploaded_by],
+        db,
+      );
+    }
+    const data = { origine_id: o.id, origine_numero: o.numero, type: input.type, prix: input.prix, montant, fichiers_repris: fichiers.length };
+    await evenement(db, d!.id, user.id, { type: 'creation', vers: 'en_cours', commentaire: input.motif ?? null, data });
+    if (directImpression) {
+      await evenement(db, d!.id, user.id, { type: 'statut', action: 'valider', de: 'en_cours', vers: 'pret_impression', commentaire: `${libelleType} envoyée directement à l’impression` });
+    }
+    await evenement(db, o.id, user.id, { type: 'reimpression', action: input.type, commentaire: input.motif ?? null, data: { nouveau_id: d!.id, nouveau_numero: numero } });
+    await journal(null, input.type === 'reimpression' ? 'dossier_reimprime' : 'dossier_duplique', 'dossier', d!.id, { ...data, numero, user_id: user.id }, db);
+    return d!;
+  });
+  signalDossier({ ...cree, ancien_statut: null }, 'created');
+  if (cree.statut === 'pret_impression') {
+    await notifier(
+      getPool(),
+      { machine: cree.machine },
+      { type: 'nouveau_travail', titre: input.type === 'reimpression' ? 'Réimpression à faire' : 'Nouveau dossier à imprimer', message: `${cree.numero} · ${cree.client_nom}`, dossier_id: cree.id },
+    ).catch(() => {});
+  }
+  return { id: cree.id, numero: cree.numero, statut: cree.statut };
+}
+
+/** Dossier d'origine et copies (réimpressions, nouvelles commandes) visibles par l'utilisateur. */
+export async function liensDossier(user: AuthUser, row: DossierRow & { origine_id?: number | null }) {
+  const params = await getParametres();
+  const vis = visibilite(user, 1, params.livreur_jours_historique);
+  const origine = row.origine_id
+    ? await one<{ id: number; numero: string; statut: Statut }>(`SELECT d.id, d.numero, d.statut FROM dossiers d WHERE d.id = $1 AND ${vis.sql}`, [row.origine_id, ...vis.params])
+    : null;
+  const copies = await query<{ id: number; numero: string; statut: Statut; origine_type: string; created_at: string }>(
+    `SELECT d.id, d.numero, d.statut, d.origine_type, d.created_at FROM dossiers d WHERE d.origine_id = $1 AND ${vis.sql} ORDER BY d.created_at`,
+    [row.id, ...vis.params],
+  );
+  return { origine, copies };
 }

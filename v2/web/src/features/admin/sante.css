@@ -1,0 +1,82 @@
+/* Écran « Sauvegardes et état » : cartes Sauvegarder maintenant, Sauvegardes enregistrées, Espace disque. */
+
+.sante-grille { display: grid; gap: var(--space-5); grid-template-columns: repeat(auto-fit, minmax(min(100%, 380px), 1fr)); align-items: start; }
+.sante-sections { display: grid; gap: var(--space-5); }
+
+.sante-carte {
+  border-radius: 14px; box-shadow: 0 1px 2px color-mix(in srgb, var(--nav-start) 6%, transparent), 0 6px 16px -8px color-mix(in srgb, var(--nav-start) 22%, transparent);
+  min-width: 0;
+}
+.sante-carte__tete { display: flex; align-items: flex-start; gap: var(--space-3); padding: var(--space-5) var(--space-5) 0; }
+.sante-carte__tete--ligne { justify-content: space-between; flex-wrap: wrap; }
+.sante-carte__titre-icone { display: flex; align-items: flex-start; gap: var(--space-3); min-width: 0; }
+.sante-carte__tete .ev-card__title { margin: 0; }
+.sante-carte__corps { display: grid; gap: var(--space-4); padding: var(--space-4) var(--space-5) var(--space-5); justify-items: stretch; }
+.sante-carte__corps > .ev-btn { justify-self: start; }
+.sante-icone {
+  flex: none; display: grid; place-items: center; width: 40px; height: 40px; border-radius: 12px;
+  background: var(--accent-soft); color: var(--accent-ink);
+}
+.sante-icone svg { width: 20px; height: 20px; }
+.sante-texte { margin: 4px 0 0; font-size: 13px; line-height: 19px; color: var(--text-muted); max-width: 60ch; }
+.sante-discret { font-size: 13px; color: var(--text-muted); }
+
+/* Historique */
+.sante-sauvegardes { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+.sante-sauvegarde {
+  display: grid; grid-template-columns: 76px minmax(0, 1fr) auto auto; align-items: center; gap: var(--space-3);
+  padding: 10px 12px; border: 1px solid var(--line); border-radius: 12px; background: var(--surface);
+}
+.sante-sauvegarde[data-ok="false"] { background: color-mix(in srgb, var(--danger-soft) 45%, var(--surface)); }
+.sante-etat {
+  justify-self: start; display: inline-flex; align-items: center; height: 22px; padding: 0 8px; border-radius: var(--radius-full);
+  font-size: 12px; font-weight: 600; background: var(--success-soft); color: var(--success-ink);
+}
+.sante-etat[data-ok="false"] { background: var(--danger-soft); color: var(--danger-ink); }
+.sante-sauvegarde__texte { display: grid; gap: 2px; min-width: 0; }
+.sante-sauvegarde__date { font-size: 14px; }
+.sante-sauvegarde__message { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sante-sauvegarde__taille { font-size: 13px; font-weight: 600; text-align: right; }
+.sante-sauvegarde__absent { font-size: 12px; text-align: right; }
+
+/* Espace disque */
+.sante-disque { display: grid; gap: var(--space-3); }
+.sante-disque__chiffres { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 4px var(--space-4); }
+.sante-disque__grand { font-size: 28px; line-height: 32px; font-weight: 700; color: var(--text); }
+.sante-libre { color: var(--success-ink); }
+.sante-jauge { height: 14px; border-radius: var(--radius-full); background: var(--surface-sunken); border: 1px solid var(--line); overflow: hidden; }
+.sante-jauge > span { display: block; height: 100%; border-radius: inherit; background: var(--accent); transition: width .4s ease; }
+.sante-jauge[data-ton="warn"] > span { background: var(--warning-ink); }
+.sante-jauge[data-ton="ko"] > span { background: var(--danger); }
+
+.sante-repartition { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; border-top: 1px solid var(--line); }
+.sante-repartition__ligne {
+  display: grid; grid-template-columns: 12px minmax(0, 1fr) auto; gap: var(--space-3); align-items: start;
+  padding: var(--space-3) 0; border-bottom: 1px solid var(--line);
+}
+.sante-repartition__texte { display: grid; gap: 4px; min-width: 0; }
+.sante-repartition__titre { font-weight: 600; font-size: 14px; color: var(--text); }
+.sante-repartition__valeur { display: grid; justify-items: end; gap: 2px; white-space: nowrap; }
+.sante-repartition__valeur strong { font-size: 15px; }
+.sante-pastille { width: 12px; height: 12px; margin-top: 4px; border-radius: 4px; }
+.sante-mini { display: block; height: 6px; border-radius: var(--radius-full); background: var(--surface-sunken); overflow: hidden; max-width: 320px; }
+.sante-mini > span { display: block; height: 100%; border-radius: inherit; }
+.sante-repartition [data-couleur="actifs"] { background: var(--st-ship-solid); }
+.sante-repartition [data-couleur="partages"] { background: var(--brand-start); }
+.sante-repartition [data-couleur="liberable"] { background: var(--brand-end); }
+.sante-repartition [data-couleur="corbeille"] { background: var(--warning-ink); }
+.sante-pied { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-3); }
+.sante-pied .sante-discret { flex: 1 1 260px; font-size: 12px; }
+
+@media (max-width: 720px) {
+  .sante-carte__tete { padding: var(--space-4) var(--space-4) 0; }
+  .sante-carte__corps { padding: var(--space-3) var(--space-4) var(--space-4); }
+  .sante-sauvegarde { grid-template-columns: auto minmax(0, 1fr) auto; }
+  .sante-sauvegarde__texte { grid-column: 1 / -1; grid-row: 2; }
+  .sante-sauvegarde > :last-child { grid-column: 3; grid-row: 1; justify-self: end; }
+  .sante-sauvegarde__taille { grid-column: 2; grid-row: 1; justify-self: end; }
+  .sante-disque__grand { font-size: 24px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .sante-jauge > span { transition: none; }
+}

@@ -12,6 +12,9 @@ export interface User {
 
 export interface DossierResume {
   id: number;
+  origine_id?: number | null;
+  origine_type?: 'reimpression' | 'nouvelle_commande' | null;
+  mode_remise?: 'livraison' | 'retrait';
   numero: string;
   machine: Machine;
   statut: Statut;
@@ -102,6 +105,7 @@ export interface DossierDetail extends DossierResume {
   historique: Evenement[];
   paiements: PaiementDossier[];
   facture: { id: number; numero: string; total_ttc: number; date_emission: string } | null;
+  liens?: { origine: { id: number; numero: string; statut: Statut } | null; copies: { id: number; numero: string; statut: Statut; origine_type: string; created_at: string }[] };
 }
 
 export interface Liste<T> {

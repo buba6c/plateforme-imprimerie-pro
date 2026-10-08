@@ -1,9 +1,10 @@
 // Fiche dossier, commune à tous les rôles (l'API ne renvoie que ce que le rôle peut voir).
 
+import { ReimpressionDialog } from '../../features/dossiers-ui/ReimpressionDialog';
 import { lazy, Suspense, useMemo, useState } from 'react';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
-import { CalendarClock, FileDown, Pencil, ShieldAlert, Trash2, UserCog, Zap, ZapOff } from 'lucide-react';
+import { ArrowLeft, CalendarClock, Copy, FileDown, Files, History, ListChecks, Pencil, Route, ShieldAlert, Trash2, UserCog, UserRound, Zap, ZapOff } from 'lucide-react';
 import {
   formatDate,
   formatDateHeure,
@@ -29,7 +30,7 @@ import '../../features/dossiers-ui/dossiers-ui.css';
 const Televersement = lazy(() => import('../../features/fichiers/Televersement').then((m) => ({ default: m.Televersement })));
 
 type Dossier = DossierDetail & { client_email?: string | null; devis_id?: number | null };
-type Dialogue = 'forcer' | 'affecter' | 'reporter' | 'supprimer' | null;
+type Dialogue = 'forcer' | 'affecter' | 'reporter' | 'supprimer' | 'reimprimer' | null;
 
 export default function FicheDossier() {
   const { id: idParam } = useParams();
@@ -123,6 +124,7 @@ export default function FicheDossier() {
     menu.push({ id: 'affecter', label: 'Affecter…', icon: <UserCog />, onSelect: () => setDialogue('affecter') });
     menu.push({ id: 'forcer', label: 'Forcer le statut…', icon: <ShieldAlert />, onSelect: () => setDialogue('forcer') });
   }
+  if (bureau) menu.push({ id: 'reimprimer', label: user.role === 'admin' ? 'Réimprimer ou dupliquer…' : 'Nouvelle commande identique…', icon: <Copy />, onSelect: () => setDialogue('reimprimer') });
   if (peutReporter) menu.push({ id: 'reporter', label: 'Reporter la livraison…', icon: <CalendarClock />, onSelect: () => setDialogue('reporter') });
   if (bon.data) menu.push({ id: 'bon', label: 'Bon de travail (PDF)', icon: <FileDown />, onSelect: () => {}, href: `/api/dossiers/${d.id}/bon-de-travail.pdf` });
   if (d.peut_supprimer) menu.push({ id: 'supprimer', label: 'Supprimer le dossier…', icon: <Trash2 />, onSelect: () => setDialogue('supprimer'), tone: 'danger', separe: menu.length > 0 });
@@ -141,7 +143,10 @@ export default function FicheDossier() {
 
   return (
     <>
-      <header className="fd-head">
+      <header className="fd-head" data-machine={d.machine}>
+        <Button className="fd-retour" icon={<ArrowLeft />} onClick={() => (window.history.length > 1 ? navigate(-1) : navigate(retour.to))}>
+          Retour
+        </Button>
         <nav className="ev-crumbs" aria-label="Fil d'Ariane">
           <Link to={retour.to}>{retour.label}</Link>
           <span aria-hidden="true">/</span>
@@ -151,11 +156,22 @@ export default function FicheDossier() {
           <div className="fd-head__titre">
             <h1 className="ev-h-display">{d.client_nom}</h1>
             <div className="fd-head__badges">
-              <span className="ev-ref">{d.numero}</span>
+              <span className="fd-head__numero">{d.numero}</span>
               <StatusBadge statut={d.statut} />
               <MachineChip machine={d.machine} />
               {d.urgent && <UrgentTag />}
               {d.importe && <span className="ev-badge">Repris de l’ancienne plateforme</span>}
+              {d.mode_remise === 'retrait' && <span className="ev-badge fd-retrait">Le client vient le chercher</span>}
+              {d.liens?.origine && (
+                <Link className="ev-badge fd-lien" to={`/dossiers/${d.liens.origine.id}`}>
+                  {d.origine_type === 'reimpression' ? 'Réimpression de' : 'Copie de'} {d.liens.origine.numero}
+                </Link>
+              )}
+              {d.liens?.copies.map((c) => (
+                <Link key={c.id} className="ev-badge fd-lien" to={`/dossiers/${c.id}`}>
+                  {c.origine_type === 'reimpression' ? 'Réimprimé dans' : 'Recommandé dans'} {c.numero}
+                </Link>
+              ))}
             </div>
           </div>
           <div className="fd-head__actions fd-head__actions--principal">
@@ -196,7 +212,8 @@ export default function FicheDossier() {
             <Card
               className="fd-o-fichiers"
               title={
-                <span className="row">
+                <span className="fd-titre">
+                  <span className="fd-titre__icone"><Files aria-hidden="true" /></span>
                   Fichiers d’impression <Count n={d.fichiers.length} />
                 </span>
               }
@@ -225,7 +242,7 @@ export default function FicheDossier() {
             </Card>
           )}
 
-          <Card className="fd-o-specs" title="Spécifications" actions={<MachineChip machine={d.machine} />}>
+          <Card className="fd-o-specs" title={<span className="fd-titre"><span className="fd-titre__icone"><ListChecks aria-hidden="true" /></span>Spécifications</span>} actions={<MachineChip machine={d.machine} />}>
             <div className="stack">
               {d.description && <p style={{ margin: 0, fontWeight: 500 }}>{d.description}</p>}
               <SpecsLecture machine={d.machine} specs={d.specs} libelle={libelle} voirRemise={voirMontants} importe={d.importe} />
@@ -238,7 +255,7 @@ export default function FicheDossier() {
             </div>
           </Card>
 
-          <Card className="fd-o-histo" title="Historique">
+          <Card className="fd-o-histo" title={<span className="fd-titre"><span className="fd-titre__icone"><History aria-hidden="true" /></span>Historique</span>}>
             <Historique dossier={d} libelle={libelle} nomUtilisateur={nomUtilisateur} />
           </Card>
         </div>
@@ -246,7 +263,7 @@ export default function FicheDossier() {
         <div className="fd-col">
           <Card
             className="fd-o-client"
-            title="Client"
+            title={<span className="fd-titre"><span className="fd-titre__icone"><UserRound aria-hidden="true" /></span>Client</span>}
             actions={bureau && d.client_id ? <Link className="ev-link" style={{ fontSize: 13 }} to={`/clients/${d.client_id}`}>Voir la fiche client</Link> : undefined}
           >
             <dl className="fd-kv">
@@ -285,7 +302,7 @@ export default function FicheDossier() {
             </div>
           )}
 
-          <Card className="fd-o-suivi" title="Suivi">
+          <Card className="fd-o-suivi" title={<span className="fd-titre"><span className="fd-titre__icone"><Route aria-hidden="true" /></span>Suivi</span>}>
             <dl className="fd-kv">
               <dt>Préparateur</dt>
               <dd>{d.preparateur_nom ?? '—'}</dd>
@@ -336,6 +353,7 @@ export default function FicheDossier() {
         </div>
       )}
 
+      {dialogue === 'reimprimer' && <ReimpressionDialog d={d} admin={user.role === 'admin'} onClose={() => setDialogue(null)} />}
       {dialogue === 'forcer' && <ForcerStatutDialog d={d} onClose={() => setDialogue(null)} />}
       {dialogue === 'affecter' && <AffecterDialog d={d} annuaire={annuaire.data ?? []} onClose={() => setDialogue(null)} />}
       {dialogue === 'reporter' && <ReporterDialog d={d} onClose={() => setDialogue(null)} />}

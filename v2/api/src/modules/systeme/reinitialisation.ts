@@ -183,7 +183,7 @@ export async function reinitialiser(req: Request, config: Config) {
     return await tx(async (db: PoolClient) => {
       const tables = await tablesAEffacer(db);
       const efface = Object.fromEntries((await compter([...tables, 'compteurs'], db)).map((c) => [c.table, c.nombre]));
-      const fichiers = await query<{ chemin: string }>(`SELECT chemin FROM fichiers`, [], db);
+      const fichiers = await query<{ chemin: string }>(`SELECT chemin FROM fichiers WHERE purge_at IS NULL`, [], db);
       await db.query(`TRUNCATE ${tables.map(ident).join(', ')} RESTART IDENTITY`);
       await db.query(`DELETE FROM compteurs`);
       const sessions = await db.query(`UPDATE users SET token_version = token_version + 1 WHERE id <> $1`, [userId]);

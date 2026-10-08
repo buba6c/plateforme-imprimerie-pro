@@ -12,6 +12,10 @@ const TYPES: { type: string; titre: string; qui: string }[] = [
   { type: 'paiement_a_valider', titre: 'Paiement à valider', qui: 'Administrateurs, quand un livreur ou un préparateur encaisse.' },
   { type: 'paiement_valide', titre: 'Paiement validé', qui: 'Personne qui a encaissé.' },
   { type: 'paiement_refuse', titre: 'Paiement refusé', qui: 'Personne qui a encaissé, avec le motif du refus.' },
+  { type: 'statut_force', titre: 'Statut changé par l’administrateur', qui: 'Personnes concernées par la nouvelle étape du dossier.' },
+  { type: 'report_livraison', titre: 'Livraison reportée', qui: 'Livreur désigné, quand la date de livraison change.' },
+  { type: 'livraison_programmee', titre: 'Livraison programmée', qui: 'Livreur désigné, quand l’administrateur programme la livraison.' },
+  { type: 'livraison_annulee', titre: 'Livraison retirée de la tournée', qui: 'Livreur qui avait la livraison dans sa tournée.' },
 ];
 
 export function SectionNotifications({ p, onModifie }: SectionProps) {

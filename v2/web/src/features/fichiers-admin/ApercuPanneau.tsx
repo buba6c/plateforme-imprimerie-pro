@@ -8,7 +8,8 @@ import { Download, ExternalLink, FolderOpen, X } from 'lucide-react';
 import { formatDateHeure, formatTaille } from '@evocom/shared';
 import { fichierUrl } from '../../lib/api';
 import { Button, IconButton, MachineChip, StatusBadge } from '../../ui';
-import { extension, usePdfBlob } from '../fichiers/ListeFichiers';
+import { extension } from '../fichiers/ListeFichiers';
+import { ApercuPdf } from '../fichiers/ApercuPdf';
 import type { FichierGlobal } from './types';
 
 /** Formats que le navigateur affiche (le serveur les sert « inline »). */
@@ -31,7 +32,6 @@ function Zone({ fichier }: { fichier: FichierGlobal }) {
     setImageKo(false);
   }, [fichier.id]);
   const auto = fichier.taille <= PDF_AUTO_MAX;
-  const pdf = usePdfBlob(fichier.id, mode === 'pdf' && (auto || demande));
 
   if (mode === 'image' && !imageKo) {
     return (
@@ -56,13 +56,7 @@ function Zone({ fichier }: { fichier: FichierGlobal }) {
     }
     return (
       <div className="fa-apercu__zone fa-apercu__zone--pdf">
-        {pdf.url ? (
-          <iframe src={pdf.url} title={`Aperçu de ${fichier.nom_original}`} />
-        ) : (
-          <p className={pdf.erreur ? 'ev-error' : 'ev-muted'} role={pdf.erreur ? 'alert' : undefined}>
-            {pdf.erreur ?? 'Chargement de l’aperçu…'}
-          </p>
-        )}
+        <ApercuPdf id={fichier.id} nom={fichier.nom_original} hauteur="60vh" />
       </div>
     );
   }
@@ -184,12 +178,12 @@ export function ApercuPanneau({ fichier, onClose }: { fichier: FichierGlobal; on
           )}
           <Link className="ev-btn ev-btn--sm ev-btn--ghost" to={`/dossiers/${fichier.dossier_id}`}>
             <FolderOpen aria-hidden="true" />
-            Ouvrir le dossier
+            Voir la commande
           </Link>
         </div>
 
         <dl className="kv fa-apercu__kv">
-          <dt>Dossier</dt>
+          <dt>Commande</dt>
           <dd>
             <span className="row" style={{ gap: 6 }}>
               <Link className="ev-link ev-ref" to={`/dossiers/${fichier.dossier_id}`}>

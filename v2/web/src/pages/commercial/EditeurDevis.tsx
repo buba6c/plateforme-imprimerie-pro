@@ -1,5 +1,7 @@
-// Création et modification d'un devis : même éditeur de spécifications et même calcul
-// de prix que le dossier. Le serveur recalcule et refuse (422) un devis incalculable.
+// Création et modification d'un devis : même éditeur de spécifications, même en-tête (remise au
+// client, délai, fichiers, BAT) et même calcul de prix que le dossier. En plus : délai de
+// fabrication, acompte et conditions de paiement, imprimés sur le devis. Le serveur recalcule et
+// refuse (422) un devis incalculable ; mode de remise et adresse sont repris à la conversion.
 
 import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
@@ -22,6 +24,7 @@ import { ClientAutocomplete } from '../../features/dossiers-ui/ClientAutocomplet
 import { convertirSpecs, ligneRolandVide, ligneXeroxVide, lignesDe, specsDraftVide, specsVersDraft, type SpecsDraft } from '../../features/specs/draft';
 import { PrixPanel, usePrix } from '../../features/specs/PrixPanel';
 import { SpecsEditor } from '../../features/specs/SpecsEditor';
+import { FichiersEtBat, RemiseClient, UrgenceChoix, type ModeRemise } from '../../features/specs/Commande';
 import { SuggestionIA } from '../../features/ia/SuggestionIA';
 import { useLibelles, useParamsPrix, useTarifs } from '../../features/specs/useTarifs';
 import { useRegles } from '../../features/parametres/api';
@@ -43,6 +46,11 @@ interface Devis {
   specs: Specs;
   total_ttc: number;
   peut_modifier?: boolean;
+  mode_remise?: ModeRemise | null;
+  adresse_livraison?: string | null;
+  delai_jours?: number | null;
+  acompte_pourcent?: number | null;
+  conditions_paiement?: string | null;
 }
 
 interface Formulaire {
@@ -55,12 +63,33 @@ interface Formulaire {
   notes: string;
   validite: string;
   specs: SpecsDraft;
+  /** '' : pas encore choisi. */
+  mode_remise: '' | ModeRemise;
+  adresse_livraison: string;
+  delai: string;
+  acompte: string;
+  conditions_paiement: string;
 }
 
 const VALIDITE_DEFAUT = '15';
 
 function vide(): Formulaire {
-  return { machine: 'xerox', client_id: null, client_nom: '', client_telephone: '', client_email: '', description: '', notes: '', validite: VALIDITE_DEFAUT, specs: specsDraftVide('xerox') };
+  return {
+    machine: 'xerox',
+    client_id: null,
+    client_nom: '',
+    client_telephone: '',
+    client_email: '',
+    description: '',
+    notes: '',
+    validite: VALIDITE_DEFAUT,
+    specs: specsDraftVide('xerox'),
+    mode_remise: '',
+    adresse_livraison: '',
+    delai: '',
+    acompte: '',
+    conditions_paiement: '',
+  };
 }
 
 function depuisDevis(d: Devis): Formulaire {
@@ -79,8 +108,15 @@ function depuisDevis(d: Devis): Formulaire {
     notes: d.notes ?? '',
     validite: String(d.validite_jours ?? VALIDITE_DEFAUT),
     specs,
+    mode_remise: d.mode_remise ?? 'livraison',
+    adresse_livraison: d.adresse_livraison ?? '',
+    delai: d.delai_jours === null || d.delai_jours === undefined ? '' : String(d.delai_jours),
+    acompte: d.acompte_pourcent === null || d.acompte_pourcent === undefined ? '' : String(d.acompte_pourcent),
+    conditions_paiement: d.conditions_paiement ?? '',
   };
 }
+
+const entierOuNull = (s: string) => (s.trim() === '' ? null : Number(s.trim()));
 
 const t = (s: string) => (s.trim() === '' ? null : s.trim());
 
@@ -95,6 +131,11 @@ function construire(f: Formulaire, specs: unknown) {
     notes: t(f.notes),
     validite_jours: Number(f.validite),
     specs,
+    mode_remise: f.mode_remise || undefined,
+    adresse_livraison: f.mode_remise === 'retrait' ? null : t(f.adresse_livraison),
+    delai_jours: entierOuNull(f.delai),
+    acompte_pourcent: entierOuNull(f.acompte),
+    conditions_paiement: t(f.conditions_paiement),
   };
 }
 
@@ -106,6 +147,9 @@ function valider(f: Formulaire): Record<string, string> {
   if (f.client_email.trim() && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(f.client_email.trim())) e.client_email = 'Adresse e-mail invalide';
   const v = Number(f.validite);
   if (!/^\d+$/.test(f.validite.trim()) || v < 1 || v > 365) e.validite_jours = 'Entre 1 et 365 jours';
+  if (!f.mode_remise) e.mode_remise = 'Choisissez : à venir chercher sur place, ou à livrer.';
+  if (f.delai.trim() && (!/^\d+$/.test(f.delai.trim()) || Number(f.delai) > 365)) e.delai_jours = 'Nombre de jours entre 0 et 365';
+  if (f.acompte.trim() && (!/^\d+$/.test(f.acompte.trim()) || Number(f.acompte) > 100)) e.acompte_pourcent = 'Pourcentage entier entre 0 et 100';
   return e;
 }
 
@@ -250,6 +294,7 @@ export default function EditeurDevis() {
   };
 
   const total = resultat?.ok ? resultat.total_ttc : null;
+  const acompteMontant = total !== null && /^\d+$/.test(f.acompte.trim()) && Number(f.acompte) <= 100 ? Math.round((total * Number(f.acompte)) / 100) : null;
   const titre = edition ? `Modifier ${d?.numero ?? 'le devis'}` : 'Nouveau devis';
 
   return (
@@ -285,7 +330,7 @@ export default function EditeurDevis() {
         </Alert>
       )}
 
-      <form id="form-devis" className="nd-layout" onSubmit={soumettre} noValidate>
+      <form id="form-devis" className="nd-layout" data-machine={f.machine} onSubmit={soumettre} noValidate>
         <fieldset disabled={!modifiable} className="nd-main" style={{ border: 0, padding: 0, margin: 0, minWidth: 0 }}>
           {modifiable && <SuggestionIA brouillon={f.specs} onAppliquer={(machine, specs) => setF((x) => ({ ...x, machine, specs }))} />}
           <Card title={<><span className="nd-section__num">1</span>Client</>} className="nd-section">
@@ -341,16 +386,58 @@ export default function EditeurDevis() {
             )}
           </Card>
 
-          <Card title={<><span className="nd-section__num">4</span>Conditions</>} className="nd-section">
-            <div className="nd-grid nd-grid--conditions">
-              <TextField label="Validité" required mono addon="jours" inputMode="numeric" value={f.validite} onChange={(e) => { validiteTouchee.current = true; maj('validite', e.target.value); }} error={erreursForm.validite_jours} />
+          <Card title={<><span className="nd-section__num">4</span>Remise au client et délai</>} className="nd-section">
+            <div className="stack">
+              <RemiseClient
+                machine={f.machine}
+                tarifs={tarifs.data}
+                draft={f.specs}
+                onDraft={(specs) => maj('specs', specs)}
+                mode={f.mode_remise}
+                onMode={(m) => maj('mode_remise', m)}
+                adresse={f.adresse_livraison}
+                onAdresse={(v) => maj('adresse_livraison', v)}
+                erreurs={{ ...erreursForm, ...(erreursSpecs.livraison_contact ? { livraison_contact: erreursSpecs.livraison_contact } : {}) }}
+              />
+              <UrgenceChoix machine={f.machine} tarifs={tarifs.data} draft={f.specs} onDraft={(specs) => maj('specs', specs)} />
+            </div>
+          </Card>
+
+          <Card title={<><span className="nd-section__num">5</span>Fichiers et BAT</>} className="nd-section">
+            <FichiersEtBat machine={f.machine} tarifs={tarifs.data} draft={f.specs} onDraft={(specs) => maj('specs', specs)} />
+          </Card>
+
+          <Card title={<><span className="nd-section__num">6</span>Conditions du devis</>} className="nd-section">
+            <div className="stack">
+              <div className="nd-grid">
+                <TextField label="Validité" required mono addon="jours" inputMode="numeric" value={f.validite} onChange={(e) => { validiteTouchee.current = true; maj('validite', e.target.value); }} error={erreursForm.validite_jours} help="Durée pendant laquelle les prix sont garantis." />
+                <TextField label="Délai de fabrication" mono addon="jours" inputMode="numeric" value={f.delai} onChange={(e) => maj('delai', e.target.value)} error={erreursForm.delai_jours} help="Après validation du BAT. Facultatif." />
+                <TextField
+                  label="Acompte demandé"
+                  mono
+                  addon="%"
+                  inputMode="numeric"
+                  value={f.acompte}
+                  onChange={(e) => maj('acompte', e.target.value)}
+                  error={erreursForm.acompte_pourcent}
+                  help={acompteMontant !== null ? `Soit ${formatFCFA(acompteMontant)} à la commande.` : 'À payer à la commande. Facultatif.'}
+                />
+              </div>
+              <TextField
+                label="Conditions de paiement"
+                value={f.conditions_paiement}
+                onChange={(e) => maj('conditions_paiement', e.target.value)}
+                placeholder="Ex. Solde à la livraison, par Wave ou en espèces"
+                error={erreursForm.conditions_paiement}
+                maxLength={1000}
+              />
               <TextareaField
                 label="Remarques"
                 rows={3}
                 value={f.notes}
                 onChange={(e) => maj('notes', e.target.value)}
-                placeholder="Délai de fabrication, conditions de paiement, BAT à valider…"
-                help="Imprimées sur le devis remis au client."
+                placeholder="Précisions pour le client"
+                help="Imprimées sur le devis avec le délai, l’acompte et les conditions."
                 error={erreursForm.notes}
                 maxLength={2000}
               />

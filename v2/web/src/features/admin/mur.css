@@ -1,0 +1,200 @@
+/* Vue d'ensemble du gérant : le mur de production de l'atelier.
+   Bande « À faire maintenant » (aimants), puis trois couloirs de fiches et le couloir de l'argent.
+   Le rose Evocom (accent-end) est réservé à ce qui demande l'attention du gérant. */
+
+.mur { display: grid; gap: var(--space-8); }
+
+.mur__entete { display: flex; align-items: flex-end; justify-content: space-between; gap: var(--space-6); flex-wrap: wrap; }
+.mur__titre {
+  margin: 0; font-family: var(--font-display); font-size: clamp(26px, 2.4vw, 34px); line-height: 1.15;
+  font-weight: 700; letter-spacing: -0.02em; color: var(--ink); text-wrap: balance;
+}
+.mur__resume { margin: 6px 0 0; font-size: 16px; line-height: 24px; color: var(--text-muted); max-width: 62ch; }
+
+.mur__bande-titre, .mur__section-titre {
+  margin: 0 0 var(--space-3); font-family: var(--font-display); font-size: 18px; line-height: 24px; font-weight: 700;
+  letter-spacing: -0.01em; color: var(--ink);
+}
+
+/* Aimants */
+.mur__aimants-liste { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: var(--space-4); align-items: stretch; }
+.aimant {
+  --aimant-fond: color-mix(in srgb, var(--brand-end) 7%, var(--surface));
+  --aimant-trait: color-mix(in srgb, var(--brand-end) 30%, var(--line));
+  --aimant-fort: var(--accent-end);
+  position: relative; display: grid; grid-template-columns: auto 1fr; grid-template-areas: "pastille n" "phrase phrase" "detail detail" "action action";
+  align-items: center; column-gap: var(--space-3); row-gap: 6px; padding: 18px 20px 16px; border-radius: 16px;
+  background: var(--aimant-fond); border: 1px solid var(--aimant-trait); color: var(--text); text-decoration: none;
+  box-shadow: 0 1px 2px #0f16290d, 0 10px 24px -18px color-mix(in srgb, var(--brand-end) 60%, transparent);
+  transition: transform 220ms cubic-bezier(0.16, 1, 0.3, 1), box-shadow 220ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+.aimant[data-ton="retard"] { --aimant-fond: var(--warning-soft); --aimant-trait: color-mix(in srgb, var(--warning-ink) 30%, var(--line)); --aimant-fort: var(--warning-ink); }
+.aimant__pastille {
+  grid-area: pastille; width: 44px; height: 44px; border-radius: 50%; display: grid; place-items: center;
+  background: var(--aimant-fort); color: var(--surface);
+  box-shadow: 0 2px 4px #0f162933, inset 0 -3px 0 #0000001f;
+  transition: transform 220ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+.aimant__pastille svg { width: 22px; height: 22px; }
+.aimant__n {
+  grid-area: n; justify-self: end; font-family: var(--font-display); font-size: 46px; line-height: 1; font-weight: 700;
+  letter-spacing: -0.03em; color: var(--aimant-fort); font-variant-numeric: tabular-nums;
+}
+.aimant__phrase { grid-area: phrase; font-size: 15px; line-height: 21px; font-weight: 500; margin-top: 6px; text-wrap: pretty; }
+.aimant__detail { grid-area: detail; font-size: 13px; color: var(--text-muted); }
+.aimant__action {
+  grid-area: action; display: inline-flex; align-items: center; gap: 6px; margin-top: 8px; font-size: 14px; font-weight: 600;
+  color: var(--aimant-fort);
+}
+.aimant__action svg { width: 16px; height: 16px; transition: transform 220ms cubic-bezier(0.16, 1, 0.3, 1); }
+a.aimant:hover { transform: translateY(-3px); box-shadow: 0 2px 4px #0f162914, 0 18px 32px -18px color-mix(in srgb, var(--aimant-fort) 70%, transparent); }
+a.aimant:hover .aimant__pastille { transform: rotate(-10deg) scale(1.06); }
+a.aimant:hover .aimant__action svg { transform: translateX(3px); }
+a.aimant:focus-visible { outline: none; box-shadow: var(--focus-ring); }
+.aimant--calme {
+  display: flex; align-items: center; gap: var(--space-3); padding: 16px 18px; border-radius: 16px;
+  background: var(--surface); border: 1px dashed var(--line-strong); color: var(--text-muted); font-size: 14px; line-height: 20px;
+}
+.aimant--calme svg { width: 22px; height: 22px; flex: none; color: var(--success-ink); }
+
+/* Le tableau : trois couloirs de fiches et le couloir de l'argent */
+.mur__tableau {
+  display: grid; grid-template-columns: repeat(3, minmax(250px, 1fr)) minmax(270px, 0.95fr); gap: var(--space-6); align-items: start;
+}
+.couloir {
+  --couloir-fond: var(--st-prep-bg); --couloir-encre: var(--st-prep-ink);
+  display: grid; gap: var(--space-3); padding: 12px; border-radius: 20px;
+  background: color-mix(in srgb, var(--couloir-fond) 45%, var(--surface-sunken));
+  border: 1px solid var(--line); border-top: 4px solid var(--couloir-encre);
+}
+.couloir[data-couloir="impression"] { --couloir-fond: var(--info-soft); --couloir-encre: var(--info-ink); }
+.couloir[data-couloir="livraison"] { --couloir-fond: var(--st-ship-bg); --couloir-encre: var(--st-ship-ink); }
+.couloir[data-couloir="argent"] { --couloir-fond: var(--success-soft); --couloir-encre: var(--success-ink); }
+.couloir__tete {
+  display: flex; align-items: center; gap: var(--space-3); padding: 8px 8px 6px; border-radius: 14px; color: inherit; text-decoration: none;
+}
+a.couloir__tete:hover .couloir__titre { color: var(--accent-ink); }
+a.couloir__tete:focus-visible { outline: none; box-shadow: var(--focus-ring); }
+.couloir__icone {
+  width: 42px; height: 42px; flex: none; border-radius: 13px; display: grid; place-items: center;
+  background: var(--couloir-fond); color: var(--couloir-encre); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--couloir-encre) 18%, transparent);
+}
+.couloir__icone svg { width: 22px; height: 22px; }
+.couloir__noms { display: grid; min-width: 0; }
+.couloir__titre { font-family: var(--font-display); font-size: 18px; line-height: 22px; font-weight: 700; color: var(--ink); transition: color 160ms; }
+.couloir__aide { font-size: 12.5px; line-height: 17px; color: var(--text-muted); }
+.couloir__total {
+  margin-left: auto; font-family: var(--font-display); font-size: 36px; line-height: 1; font-weight: 700; letter-spacing: -0.03em;
+  color: var(--ink); font-variant-numeric: tabular-nums;
+}
+.couloir__corps { display: grid; gap: 14px; }
+
+/* Fiche : toujours la même plaque (étiquette, numéro, client, travail, prochaine étape, machine, échéance) */
+.fiche {
+  position: relative; overflow: hidden;
+  display: grid; gap: 6px; padding: 16px 14px 12px; border-radius: 14px; background: var(--surface); border: 1px solid var(--line);
+  color: var(--text); text-decoration: none;
+  box-shadow: 0 1px 3px #0f16291f, 0 12px 24px -16px #0f162980;
+  transition: transform 200ms cubic-bezier(0.16, 1, 0.3, 1), box-shadow 200ms cubic-bezier(0.16, 1, 0.3, 1), border-color 200ms;
+}
+.fiche[data-statut="en_cours"] { --fiche-fond: var(--s-en-cours-bg); --fiche-encre: var(--s-en-cours-ink); --fiche-bande: var(--s-en-cours); }
+.fiche[data-statut="a_revoir"] { --fiche-fond: var(--s-a-revoir-bg); --fiche-encre: var(--s-a-revoir-ink); --fiche-bande: var(--s-a-revoir); }
+.fiche[data-statut="pret_impression"] { --fiche-fond: var(--s-pret-impression-bg); --fiche-encre: var(--s-pret-impression-ink); --fiche-bande: var(--s-pret-impression); }
+.fiche[data-statut="en_impression"] { --fiche-fond: var(--s-en-impression-bg); --fiche-encre: var(--s-en-impression-ink); --fiche-bande: var(--s-en-impression); }
+.fiche[data-statut="pret_livraison"] { --fiche-fond: var(--s-pret-livraison-bg); --fiche-encre: var(--s-pret-livraison-ink); --fiche-bande: var(--s-pret-livraison); }
+.fiche[data-statut="en_livraison"] { --fiche-fond: var(--s-en-livraison-bg); --fiche-encre: var(--s-en-livraison-ink); --fiche-bande: var(--s-en-livraison); }
+.fiche[data-statut="livre"] { --fiche-fond: var(--s-livre-bg); --fiche-encre: var(--s-livre-ink); --fiche-bande: var(--s-livre); }
+.fiche[data-statut="termine"] { --fiche-fond: var(--s-termine-bg); --fiche-encre: var(--s-termine-ink); --fiche-bande: var(--s-termine); }
+.fiche[data-statut="a_revoir"] { border-color: color-mix(in srgb, var(--s-a-revoir) 40%, var(--line)); }
+.fiche::before { content: ""; position: absolute; inset: 0 0 auto; height: 5px; background: var(--fiche-bande, var(--line-strong)); }
+.fiche:hover { transform: translateY(-2px); border-color: color-mix(in srgb, var(--accent) 45%, var(--line)); box-shadow: 0 2px 4px #0f162914, 0 16px 28px -18px #0f162980; }
+.fiche:focus-visible { outline: none; box-shadow: var(--focus-ring); }
+.fiche__haut { display: flex; align-items: center; gap: 6px; min-width: 0; flex-wrap: wrap; }
+.fiche__etiquette {
+  padding: 2px 9px; border-radius: 999px; background: var(--fiche-fond); color: var(--fiche-encre); font-size: 12px; line-height: 18px; font-weight: 600;
+  white-space: nowrap;
+}
+.fiche__urgent {
+  padding: 2px 8px; border-radius: 999px; background: var(--coral); color: var(--on-coral); font-size: 11px; line-height: 18px; font-weight: 700;
+  letter-spacing: 0.04em; text-transform: uppercase;
+}
+.fiche__numero { margin-left: auto; font-family: var(--font-display); font-size: 13.5px; font-weight: 700; color: var(--ink); white-space: nowrap; }
+.fiche__client { font-size: 15.5px; line-height: 21px; font-weight: 600; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.fiche__travail {
+  font-size: 13.5px; line-height: 19px; color: var(--text-muted);
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+}
+.fiche__suite { font-size: 13.5px; line-height: 19px; font-weight: 500; color: var(--accent-ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.fiche[data-statut="a_revoir"] .fiche__suite { color: var(--s-a-revoir-ink); }
+.fiche__bas { display: flex; align-items: center; justify-content: space-between; gap: var(--space-2); margin-top: 3px; padding-top: 8px; border-top: 1px dashed var(--line); }
+.fiche__machine {
+  font-size: 11.5px; line-height: 18px; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase; padding: 1px 8px; border-radius: 6px;
+  background: var(--xerox); color: var(--on-xerox);
+}
+.fiche__machine[data-machine="roland"] { background: var(--roland); color: var(--on-roland); }
+.fiche__echeance { font-size: 12.5px; color: var(--text-muted); }
+.fiche__echeance[data-retard] { color: var(--warning-ink); font-weight: 600; }
+
+.mur__plus {
+  display: flex; align-items: center; justify-content: center; gap: 6px; padding: 10px; border-radius: 12px; font-size: 14px; font-weight: 600;
+  color: var(--accent-ink); text-decoration: none;
+}
+.mur__plus svg { width: 16px; height: 16px; }
+.mur__plus:hover { background: color-mix(in srgb, var(--accent) 10%, transparent); }
+.mur__vide { display: flex; align-items: center; gap: var(--space-2); margin: 0; padding: 18px 12px; font-size: 14px; color: var(--text-muted); }
+.mur__vide svg { width: 20px; height: 20px; color: var(--success-ink); flex: none; }
+
+/* Couloir de l'argent */
+.mur__periode .ev-segmented { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); width: 100%; }
+.mur__periode .ev-segmented label { min-width: 0; }
+.mur__periode .ev-segmented span { padding-inline: 4px; align-items: center; font-size: 13px; }
+.somme {
+  display: grid; gap: 2px; padding: 12px 14px; border-radius: 13px; background: var(--surface); border: 1px solid var(--line); color: var(--text);
+  text-decoration: none;
+}
+.somme__titre { font-size: 13px; line-height: 18px; color: var(--text-muted); }
+.somme__valeur {
+  font-family: var(--font-display); font-size: 26px; line-height: 32px; font-weight: 700; letter-spacing: -0.02em; color: var(--ink);
+  font-variant-numeric: tabular-nums;
+}
+.somme__valeur small { font-family: var(--font-sans); font-size: 13px; font-weight: 600; letter-spacing: 0; color: var(--text-muted); }
+.somme__detail { font-size: 12.5px; color: var(--text-muted); }
+.somme[data-attention] {
+  background: color-mix(in srgb, var(--brand-end) 7%, var(--surface)); border-color: color-mix(in srgb, var(--brand-end) 30%, var(--line));
+}
+.somme[data-attention] .somme__valeur { color: var(--accent-end); }
+a.somme { transition: transform 200ms cubic-bezier(0.16, 1, 0.3, 1); }
+a.somme:hover { transform: translateY(-2px); }
+a.somme:focus-visible { outline: none; box-shadow: var(--focus-ring); }
+
+/* Courbe */
+.mur__courbe { padding: var(--space-5) var(--space-6); border-radius: 20px; background: var(--surface); border: 1px solid var(--line); }
+.mur__courbe-tete { display: flex; align-items: center; justify-content: space-between; gap: var(--space-4); flex-wrap: wrap; margin-bottom: var(--space-3); }
+.mur__courbe-tete .mur__section-titre { margin: 0; }
+
+@media (max-width: 1320px) {
+  .mur__tableau { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (max-width: 760px) {
+  .mur { gap: var(--space-6); }
+  .mur__entete .ev-btn { width: 100%; justify-content: center; }
+  /* Sur téléphone, le mur défile de couloir en couloir, comme on longe le tableau de l'atelier. */
+  .mur__tableau {
+    grid-template-columns: none; grid-auto-flow: column; grid-auto-columns: 86%; overflow-x: auto; scroll-snap-type: x mandatory;
+    margin-inline: calc(var(--space-4) * -1); padding: 0 var(--space-4) var(--space-2); scroll-padding-inline: var(--space-4);
+  }
+  .couloir { scroll-snap-align: start; }
+  /* Les aimants passent en grille de deux, sans la ligne d'action : le chiffre et la phrase suffisent. */
+  .mur__aimants-liste { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-3); }
+  .aimant { grid-template-columns: 1fr; grid-template-areas: "n" "phrase"; padding: 14px; row-gap: 4px; }
+  .aimant__pastille, .aimant__detail, .aimant__action { display: none; }
+  .aimant__n { justify-self: start; font-size: 38px; }
+  .aimant__phrase { font-size: 14px; line-height: 19px; margin-top: 0; }
+  .aimant--calme { padding: 12px; font-size: 13px; }
+  .mur__courbe { padding: var(--space-4); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .aimant, .aimant__pastille, .aimant__action svg, .fiche, a.somme { transition: none; }
+  a.aimant:hover, .fiche:hover, a.somme:hover { transform: none; }
+  a.aimant:hover .aimant__pastille { transform: none; }
+}

@@ -118,17 +118,19 @@ export const STATUT_PAIEMENT_LABELS: Record<StatutPaiement, string> = {
 };
 
 /** Situation de paiement d'un dossier, dérivée de son montant et des paiements validés. */
-export type SituationPaiement = 'sans_montant' | 'non_paye' | 'partiel' | 'paye';
+export type SituationPaiement = 'sans_montant' | 'offert' | 'non_paye' | 'partiel' | 'paye';
 
 export const SITUATION_PAIEMENT_LABELS: Record<SituationPaiement, string> = {
   sans_montant: 'Montant à définir',
+  offert: 'Offert',
   non_paye: 'Non payé',
   partiel: 'Acompte',
   paye: 'Payé',
 };
 
 export function situationPaiement(montant: number | null, dejaPaye: number): SituationPaiement {
-  if (montant === null || montant <= 0) return dejaPaye > 0 ? 'paye' : 'sans_montant';
+  if (montant === 0) return 'offert';
+  if (montant === null || montant < 0) return dejaPaye > 0 ? 'paye' : 'sans_montant';
   if (dejaPaye <= 0) return 'non_paye';
   if (dejaPaye < montant) return 'partiel';
   return 'paye';

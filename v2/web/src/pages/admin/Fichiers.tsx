@@ -26,8 +26,8 @@ export default function Fichiers() {
         title="Fichiers"
         subtitle={
           admin
-            ? 'Tous les fichiers d’impression des dossiers, la corbeille des fichiers et le contrôle du stockage.'
-            : 'Tous les fichiers d’impression des dossiers que vous pouvez consulter.'
+            ? 'Tous les fichiers d’impression des commandes. Triez par poids pour trouver ce qui prend de la place, mettez à la corbeille, puis supprimez définitivement.'
+            : 'Tous les fichiers d’impression des commandes que vous pouvez consulter.'
         }
       />
       {admin && (

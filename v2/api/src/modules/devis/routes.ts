@@ -11,6 +11,7 @@ import { Router } from 'express';
 import { z } from 'zod';
 import {
   calculerPrix,
+  formatFCFA,
   MACHINES,
   MODES_PAIEMENT,
   specsSchemaFor,
@@ -57,6 +58,8 @@ const texteOpt = (max: number, libelle: string) =>
     .nullable()
     .optional();
 
+const MODES_REMISE = ['livraison', 'retrait'] as const;
+
 const devisSchema = z.object({
   machine: z.enum(MACHINES, { errorMap: () => ({ message: 'Choisissez la machine : roland ou xerox' }) }),
   client_id: z.number({ invalid_type_error: 'Client invalide' }).int().positive().nullable().optional(),
@@ -83,7 +86,47 @@ const devisSchema = z.object({
     .min(1, 'Durée de validité : 1 jour au minimum')
     .max(365, 'Durée de validité : 365 jours au maximum')
     .optional(),
+  /** livraison : apporté par le livreur ; retrait : le client vient le chercher sur place. Repris à la conversion. */
+  mode_remise: z.enum(MODES_REMISE, { errorMap: () => ({ message: 'Mode de remise : « livraison » ou « retrait »' }) }).optional(),
+  adresse_livraison: texteOpt(500, 'Adresse de livraison'),
+  /** Délai de fabrication annoncé au client, en jours. */
+  delai_jours: z
+    .number({ invalid_type_error: 'Délai de fabrication : nombre de jours attendu' })
+    .int('Délai de fabrication : nombre entier de jours')
+    .min(0, 'Délai de fabrication : 0 jour au minimum')
+    .max(365, 'Délai de fabrication : 365 jours au maximum')
+    .nullable()
+    .optional(),
+  /** Acompte demandé à la commande, en % du total. */
+  acompte_pourcent: z
+    .number({ invalid_type_error: 'Acompte : pourcentage attendu' })
+    .int('Acompte : pourcentage entier')
+    .min(0, 'Acompte : 0 % au minimum')
+    .max(100, 'Acompte : 100 % au maximum')
+    .nullable()
+    .optional(),
+  conditions_paiement: texteOpt(1000, 'Conditions de paiement'),
 });
+
+const CHAMPS_TEXTE = ['client_nom', 'client_telephone', 'client_email', 'description', 'notes', 'validite_jours', 'mode_remise', 'adresse_livraison', 'delai_jours', 'acompte_pourcent', 'conditions_paiement'] as const;
+
+/** Délai, acompte, conditions et mode de remise du devis, en phrases pour le PDF (avec les remarques). */
+function conditionsDevis(d: DevisRow): string | null {
+  const lignes: string[] = [];
+  if (d.mode_remise === 'retrait') lignes.push('Remise : à venir chercher sur place.');
+  else if (d.mode_remise === 'livraison') lignes.push(`Remise : livraison${d.adresse_livraison ? ` à ${d.adresse_livraison}` : ''}.`);
+  const contact = (d.specs as { livraison_contact?: string | null } | null)?.livraison_contact;
+  if (d.mode_remise === 'livraison' && contact) lignes.push(`Contact sur place : ${contact}.`);
+  if (d.delai_jours !== null && d.delai_jours !== undefined) {
+    lignes.push(d.delai_jours === 0 ? 'Délai de fabrication : le jour même après validation du BAT.' : `Délai de fabrication : ${d.delai_jours} jour${d.delai_jours > 1 ? 's' : ''} après validation du BAT.`);
+  }
+  if (d.acompte_pourcent) {
+    const acompte = Math.round((d.total_ttc * d.acompte_pourcent) / 100);
+    lignes.push(`Acompte demandé à la commande : ${d.acompte_pourcent} %, soit ${formatFCFA(acompte)}.`);
+  }
+  if (d.conditions_paiement) lignes.push(`Conditions de paiement : ${d.conditions_paiement}`);
+  return lignes.length ? lignes.join('\n') : null;
+}
 
 const SELECT_DEVIS = `
   SELECT dv.*, u.nom AS created_by_nom, dos.numero AS dossier_numero,
@@ -209,8 +252,8 @@ devisRouter.post('/', async (req, res) => {
     const numero = await prochainNumero(db, 'DEV');
     const r = await one<{ id: number }>(
       `INSERT INTO devis (numero, machine, client_id, client_nom, client_telephone, client_email, description, specs, detail_prix,
-         total_ht, tva, total_ttc, validite_jours, notes, created_by)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15) RETURNING id`,
+         total_ht, tva, total_ttc, validite_jours, notes, created_by, mode_remise, adresse_livraison, delai_jours, acompte_pourcent, conditions_paiement)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20) RETURNING id`,
       [
         numero,
         input.machine,
@@ -227,6 +270,11 @@ devisRouter.post('/', async (req, res) => {
         validite,
         input.notes ?? null,
         user.id,
+        input.mode_remise ?? 'livraison',
+        input.mode_remise === 'retrait' ? null : input.adresse_livraison ?? null,
+        input.delai_jours ?? null,
+        input.acompte_pourcent ?? null,
+        input.conditions_paiement ?? null,
       ],
       db,
     );
@@ -255,9 +303,14 @@ devisRouter.patch('/:id', async (req, res) => {
       args.push(v);
       sets.push(`${col} = $${args.length}`);
     };
-    for (const k of ['client_nom', 'client_telephone', 'client_email', 'description', 'notes', 'validite_jours'] as const) {
-      if (input[k] !== undefined) set(k, input[k] ?? (k === 'validite_jours' ? (await getParametres(db)).documents.devis_validite_jours : null));
+    for (const k of CHAMPS_TEXTE) {
+      if (input[k] === undefined) continue;
+      if (k === 'validite_jours') set(k, input[k] ?? (await getParametres(db)).documents.devis_validite_jours);
+      else if (k === 'mode_remise') set(k, input[k] ?? 'livraison');
+      else set(k, input[k] ?? null);
     }
+    // Retrait sur place : l'adresse de livraison n'a plus de sens.
+    if (input.mode_remise === 'retrait' && input.adresse_livraison === undefined) set('adresse_livraison', null);
     if (input.client_id !== undefined) set('client_id', await clientExistant(db, input.client_id));
     if (input.machine !== undefined || input.specs !== undefined) {
       const machine = input.machine ?? d.machine;
@@ -306,7 +359,14 @@ const conversionSchema = z.object({
   consignes: texteOpt(2000, 'Consignes'),
   adresse_livraison: texteOpt(500, 'Adresse de livraison'),
   mode_paiement_prevu: z.enum(MODES_PAIEMENT).nullable().optional(),
+  mode_remise: z.enum(MODES_REMISE).optional(),
 });
+
+/** Le devis prévoit une urgence (forfait urgence 24 h ou 48 h) : le dossier est marqué urgent. */
+function urgenceDuDevis(specs: unknown): boolean {
+  const forfaits = (specs as { forfaits?: { code?: string }[] } | null)?.forfaits ?? [];
+  return forfaits.some((f) => f.code === 'urgence_24h' || f.code === 'urgence_48h');
+}
 
 devisRouter.post('/:id/convertir', async (req, res) => {
   const user = me(req);
@@ -339,10 +399,12 @@ devisRouter.post('/:id/convertir', async (req, res) => {
           description: d.description,
           specs: d.specs,
           montant: d.total_ttc,
-          urgent: extras.urgent ?? false,
+          urgent: extras.urgent ?? urgenceDuDevis(d.specs),
           date_promise: extras.date_promise ?? null,
           consignes: extras.consignes ?? null,
-          adresse_livraison: extras.adresse_livraison ?? null,
+          // Mode de remise et adresse du devis, sauf précision au moment de la conversion.
+          mode_remise: extras.mode_remise ?? d.mode_remise ?? 'livraison',
+          adresse_livraison: (extras.mode_remise ?? d.mode_remise) === 'retrait' ? null : extras.adresse_livraison ?? d.adresse_livraison ?? null,
           mode_paiement_prevu: extras.mode_paiement_prevu ?? null,
         },
         { devis_id: d.id, montant_source: 'devis' },
@@ -378,7 +440,8 @@ devisRouter.get('/:id/pdf', async (req, res) => {
       client_telephone: d.client_telephone,
       client_email: d.client_email,
       description: d.description,
-      notes: d.notes,
+      // Délai, acompte, conditions et mode de remise sont imprimés avec les remarques.
+      notes: [d.notes, conditionsDevis(d)].filter(Boolean).join('\n\n') || null,
       validite_jours: d.validite_jours,
       created_at: d.created_at,
       total_ht: d.total_ht,

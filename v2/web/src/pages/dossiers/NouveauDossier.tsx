@@ -1,4 +1,6 @@
 // Création et modification d'un dossier : un seul formulaire, pleine page.
+// Sections : machine, client, travail, spécifications (lignes), remise au client et délai, fichiers et BAT.
+// Le prix est calculé en direct par le moteur partagé ; le serveur le recalcule et fait foi.
 
 import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
@@ -25,6 +27,7 @@ import { ClientAutocomplete } from '../../features/dossiers-ui/ClientAutocomplet
 import { convertirSpecs, lignesDe, specsDraftVide, specsVersDraft, ligneRolandVide, ligneXeroxVide, type SpecsDraft } from '../../features/specs/draft';
 import { PrixPanel, usePrix } from '../../features/specs/PrixPanel';
 import { SpecsEditor } from '../../features/specs/SpecsEditor';
+import { FichiersEtBat, RemiseClient, UrgenceChoix, type ModeRemise } from '../../features/specs/Commande';
 import { SuggestionIA } from '../../features/ia/SuggestionIA';
 import { useLibelles, useParamsPrix, useTarifs } from '../../features/specs/useTarifs';
 import { Alert, Button, Card, Checkbox, EmptyState, LoadingRows, MachineChip, PageHeader, Segmented, SelectField, TextareaField, TextField, useToast } from '../../ui';
@@ -45,9 +48,16 @@ interface Formulaire {
   date_promise: string;
   adresse_livraison: string;
   mode_paiement_prevu: '' | ModePaiement;
+  /** '' : pas encore choisi (nouveau dossier). */
+  mode_remise: '' | ModeRemise;
+  /** Dossier au prix convenu (devis, reprise…) : garder ce prix quand les spécifications changent. */
+  garderPrixConvenu: boolean;
 }
 
-type DossierAvecContact = DossierDetail & { client_email?: string | null };
+type DossierAvecContact = DossierDetail & { client_email?: string | null; mode_remise?: ModeRemise | null };
+
+/** Sources de montant qui viennent d'un accord avec le client, pas de la grille du jour. */
+const SOURCES_CONVENUES = ['devis', 'reprise', 'gratuit', 'import'];
 
 function formulaireVide(): Formulaire {
   return {
@@ -65,6 +75,8 @@ function formulaireVide(): Formulaire {
     date_promise: '',
     adresse_livraison: '',
     mode_paiement_prevu: '',
+    mode_remise: '',
+    garderPrixConvenu: false,
   };
 }
 
@@ -89,6 +101,8 @@ function depuisDossier(d: DossierAvecContact): Formulaire {
     date_promise: d.date_promise ? d.date_promise.slice(0, 10) : '',
     adresse_livraison: d.adresse_livraison ?? '',
     mode_paiement_prevu: d.mode_paiement_prevu ?? '',
+    mode_remise: d.mode_remise ?? 'livraison',
+    garderPrixConvenu: SOURCES_CONVENUES.includes(d.montant_source ?? '') && d.montant !== null && d.montant !== undefined,
   };
 }
 
@@ -151,7 +165,11 @@ export default function NouveauDossier() {
 
   const { conversion, resultat } = usePrix(f.machine, f.specs, tarifs.data, params);
   const montantSaisi = f.montantManuel ? parseMontant(f.montant) : null;
-  const totalAffiche = f.montantManuel ? montantSaisi : resultat?.ok ? resultat.total_ttc : null;
+  const dConvenu = dossier.data as DossierAvecContact | undefined;
+  const prixConvenu =
+    edition && dConvenu && SOURCES_CONVENUES.includes(dConvenu.montant_source ?? '') && dConvenu.montant !== null && dConvenu.montant !== undefined ? dConvenu.montant : null;
+  const garde = !f.montantManuel && prixConvenu !== null && f.garderPrixConvenu;
+  const totalAffiche = f.montantManuel ? montantSaisi : garde ? prixConvenu : resultat?.ok ? resultat.total_ttc : null;
 
   // Erreurs de validation recalculées en direct après une première tentative d'envoi.
   const validation = useMemo(() => valider(f, conversion.erreurs), [f, conversion.erreurs]);
@@ -221,7 +239,7 @@ export default function NouveauDossier() {
     const corps = construire(f, conversion.specs);
     setEnvoi(true);
     try {
-      let res: DossierDetail;
+      let res: DossierDetail | undefined;
       if (!edition) {
         res = await api.post<DossierDetail>('/dossiers', corps);
       } else {
@@ -231,18 +249,22 @@ export default function NouveauDossier() {
           if (JSON.stringify(val) !== JSON.stringify((avant as Record<string, unknown>)[k])) patch[k] = val;
         }
         if (patch.machine !== undefined) patch.specs = corps.specs;
-        // Retour au prix calculé après une saisie manuelle : montant null demande à l'API de recalculer.
-        if (!f.montantManuel && initial.current!.montantManuel) {
-          patch.montant = null;
-          patch.specs = corps.specs;
-        }
-        if (!Object.keys(patch).length) {
+        // Retour au prix calculé : montant null demande à l'API de recalculer. Deux cas : après une saisie
+        // manuelle, ou quand la personne renonce au prix convenu (devis…) pour la grille du jour (A6 : sinon
+        // le prix convenu est gardé par le serveur). A2 : le recalcul part dans une requête à part, après
+        // l'enregistrement des spécifications.
+        const convenu = !!d && SOURCES_CONVENUES.includes(d.montant_source ?? '') && d.montant !== null && d.montant !== undefined;
+        const revenirAuCalcul = !f.montantManuel && (initial.current!.montantManuel || (convenu && !f.garderPrixConvenu));
+        if (revenirAuCalcul) delete patch.montant;
+        if (!Object.keys(patch).length && !revenirAuCalcul) {
           toast.info('Aucune modification', 'Le dossier est inchangé.');
           navigate(`/dossiers/${id}`);
           return;
         }
-        res = await api.patch<DossierDetail>(`/dossiers/${id}`, patch);
+        if (Object.keys(patch).length) res = await api.patch<DossierDetail>(`/dossiers/${id}`, patch);
+        if (revenirAuCalcul) res = await api.patch<DossierDetail>(`/dossiers/${id}`, { montant: null });
       }
+      if (!res) return;
       qc.setQueryData(['dossier', res.id], res);
       qc.invalidateQueries({ queryKey: ['dossiers'] });
       qc.invalidateQueries({ queryKey: ['stats'] });
@@ -300,7 +322,7 @@ export default function NouveauDossier() {
         </Alert>
       )}
 
-      <form id="form-dossier" className="nd-layout" onSubmit={soumettre} noValidate>
+      <form id="form-dossier" className="nd-layout" data-machine={f.machine} onSubmit={soumettre} noValidate>
         <div className="nd-main">
           <SuggestionIA
             brouillon={f.specs}
@@ -386,22 +408,37 @@ export default function NouveauDossier() {
             )}
           </Card>
 
-          <Card title={<><span className="nd-section__num">5</span>Livraison et paiement</>} className="nd-section">
-            <div className="nd-grid">
-              <TextField label="Date promise au client" type="date" mono value={f.date_promise} onChange={(e) => maj('date_promise', e.target.value)} error={erreurs.date_promise} />
-              <SelectField
-                label="Mode de paiement prévu"
-                value={f.mode_paiement_prevu}
-                onChange={(e) => maj('mode_paiement_prevu', e.target.value as ModePaiement | '')}
-                placeholder="Non précisé"
-                options={MODES_PAIEMENT.map((m) => ({ value: m, label: MODE_PAIEMENT_LABELS[m] }))}
-                help="Prérempli pour le livreur à l'encaissement."
+          <Card title={<><span className="nd-section__num">5</span>Remise au client et délai</>} className="nd-section">
+            <div className="stack">
+              <RemiseClient
+                machine={f.machine}
+                tarifs={tarifs.data}
+                draft={f.specs}
+                onDraft={(specs) => maj('specs', specs)}
+                mode={f.mode_remise}
+                onMode={(m) => maj('mode_remise', m)}
+                adresse={f.adresse_livraison}
+                onAdresse={(v) => maj('adresse_livraison', v)}
+                erreurs={{ ...erreurs, ...(erreursSpecs.livraison_contact ? { livraison_contact: erreursSpecs.livraison_contact } : {}) }}
               />
-              <TextField className="nd-full" label="Adresse de livraison" value={f.adresse_livraison} onChange={(e) => maj('adresse_livraison', e.target.value)} placeholder="Quartier, rue, repère" error={erreurs.adresse_livraison} maxLength={500} />
-              <div className="nd-full">
-                <Checkbox label="Dossier urgent : il passe en tête de la file d'impression" checked={f.urgent} onChange={(v) => maj('urgent', v)} />
+              <UrgenceChoix machine={f.machine} tarifs={tarifs.data} draft={f.specs} onDraft={(specs) => maj('specs', specs)} onUrgent={(v) => maj('urgent', v)} />
+              <div className="nd-grid">
+                <TextField label="Date promise au client" type="date" mono value={f.date_promise} onChange={(e) => maj('date_promise', e.target.value)} error={erreurs.date_promise} />
+                <SelectField
+                  label="Mode de paiement prévu"
+                  value={f.mode_paiement_prevu}
+                  onChange={(e) => maj('mode_paiement_prevu', e.target.value as ModePaiement | '')}
+                  placeholder="Non précisé"
+                  options={MODES_PAIEMENT.map((m) => ({ value: m, label: MODE_PAIEMENT_LABELS[m] }))}
+                  help={f.mode_remise === 'retrait' ? 'Rappel pour l’encaissement au comptoir.' : 'Prérempli pour le livreur à l’encaissement.'}
+                />
               </div>
+              <Checkbox label="Dossier urgent : il passe en tête de la file d'impression" checked={f.urgent} onChange={(v) => maj('urgent', v)} />
             </div>
+          </Card>
+
+          <Card title={<><span className="nd-section__num">6</span>Fichiers et BAT</>} className="nd-section">
+            <FichiersEtBat machine={f.machine} tarifs={tarifs.data} draft={f.specs} onDraft={(specs) => maj('specs', specs)} />
           </Card>
         </div>
 
@@ -417,13 +454,28 @@ export default function NouveauDossier() {
             libelle={libelle}
             peutEditerTarifs={peutEditerTarifs}
             saisieManuelle
-            montantRetenu={f.montantManuel ? montantSaisi : undefined}
+            montantRetenu={f.montantManuel ? montantSaisi : garde ? prixConvenu : undefined}
+            libelleRetenu={garde ? (d?.montant_source === 'devis' ? 'Prix du devis' : 'Prix convenu') : undefined}
           >
             <Checkbox
               label="Saisir le montant à la main"
               checked={f.montantManuel}
               onChange={(v) => setF((x) => ({ ...x, montantManuel: v, montant: v && !x.montant && resultat?.ok ? String(resultat.total_ttc) : x.montant }))}
             />
+            {prixConvenu !== null && !f.montantManuel && (
+              <div className="stack-sm">
+                <Checkbox
+                  label={`Garder le prix ${d?.montant_source === 'devis' ? 'du devis' : 'convenu'} : ${formatFCFA(prixConvenu)}`}
+                  checked={f.garderPrixConvenu}
+                  onChange={(v) => maj('garderPrixConvenu', v)}
+                />
+                <span className="ev-help">
+                  {f.garderPrixConvenu
+                    ? 'Ce prix reste celui du dossier, même si vous modifiez les lignes.'
+                    : 'Le dossier sera rechiffré avec la grille du jour : voir le total calculé ci-dessus.'}
+                </span>
+              </div>
+            )}
             {f.montantManuel && (
               <TextField
                 label="Montant TTC"
@@ -443,7 +495,7 @@ export default function NouveauDossier() {
 
       <div className="du-barre" role="region" aria-label="Enregistrer le dossier">
         <div className="du-barre__info">
-          <small>{f.montantManuel ? 'Montant saisi' : 'Total calculé'}</small>
+          <small>{f.montantManuel ? 'Montant saisi' : garde ? (d?.montant_source === 'devis' ? 'Prix du devis' : 'Prix convenu') : 'Total calculé'}</small>
           <span className="ev-num">{totalAffiche === null ? 'À définir' : formatFCFA(totalAffiche)}</span>
         </div>
         <div className="du-barre__actions">
@@ -458,7 +510,7 @@ export default function NouveauDossier() {
 }
 
 const TITRE_A_CORRIGER = 'Certains champs sont à corriger.';
-const CHAMPS_FORM = ['client_nom', 'client_telephone', 'client_email', 'description', 'consignes', 'montant', 'date_promise', 'adresse_livraison', 'mode_paiement_prevu'];
+const CHAMPS_FORM = ['client_nom', 'client_telephone', 'client_email', 'description', 'consignes', 'montant', 'date_promise', 'adresse_livraison', 'mode_paiement_prevu', 'mode_remise'];
 
 function construire(f: Formulaire, specs: unknown) {
   return {
@@ -473,8 +525,10 @@ function construire(f: Formulaire, specs: unknown) {
     montant: f.montantManuel ? parseMontant(f.montant) : null,
     urgent: f.urgent,
     date_promise: f.date_promise || null,
-    adresse_livraison: vide(f.adresse_livraison),
+    // Retrait sur place : pas d'adresse de livraison.
+    adresse_livraison: f.mode_remise === 'retrait' ? null : vide(f.adresse_livraison),
     mode_paiement_prevu: f.mode_paiement_prevu || null,
+    mode_remise: f.mode_remise || undefined,
   };
 }
 
@@ -494,5 +548,6 @@ function valider(f: Formulaire, erreursSpecs: Record<string, string>) {
     }
   }
   if (f.montantManuel && parseMontant(f.montant) === null) form.montant = 'Saisissez un montant entier en FCFA, sans centimes.';
+  if (!f.mode_remise) form.mode_remise = 'Choisissez : à venir chercher sur place, ou à livrer.';
   return { form, specs: erreursSpecs };
 }

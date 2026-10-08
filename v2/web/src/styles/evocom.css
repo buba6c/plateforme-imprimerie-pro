@@ -164,29 +164,30 @@
   content: ""; width: 7px; height: 7px; border-radius: 50%; flex: none;
   border: 1.5px solid currentColor; background: transparent;
 }
-.ev-status[data-statut="en_cours"] { background: var(--st-prep-bg); color: var(--st-prep-ink); }
-.ev-status[data-statut="a_revoir"] { background: var(--warning-soft); color: var(--warning-ink); }
-.ev-status[data-statut="a_revoir"]::before { border-radius: 1px; transform: rotate(45deg); background: currentColor; }
-.ev-status[data-statut="pret_impression"] { background: var(--info-soft); color: var(--info-ink); }
-.ev-status[data-statut="en_impression"] { background: var(--accent); color: var(--on-accent); }
-.ev-status[data-statut="en_impression"]::before { background: currentColor; }
-.ev-status[data-statut="pret_livraison"] { background: var(--st-ship-bg); color: var(--st-ship-ink); }
-.ev-status[data-statut="en_livraison"] { background: var(--st-ship-solid); color: var(--on-st-ship-solid); }
-.ev-status[data-statut="en_livraison"]::before { background: currentColor; }
-.ev-status[data-statut="livre"] { background: var(--success-soft); color: var(--success-ink); }
-.ev-status[data-statut="livre"]::before { background: currentColor; }
-.ev-status[data-statut="termine"] { background: var(--st-closed-bg); color: var(--ink); }
+.ev-status[data-statut="en_cours"] { --s: var(--s-en-cours); background: var(--s-en-cours-bg); color: var(--s-en-cours-ink); }
+.ev-status[data-statut="a_revoir"] { --s: var(--s-a-revoir); background: var(--s-a-revoir-bg); color: var(--s-a-revoir-ink); }
+.ev-status[data-statut="pret_impression"] { --s: var(--s-pret-impression); background: var(--s-pret-impression-bg); color: var(--s-pret-impression-ink); }
+.ev-status[data-statut="en_impression"] { --s: var(--s-en-impression); background: var(--s-en-impression-bg); color: var(--s-en-impression-ink); }
+.ev-status[data-statut="pret_livraison"] { --s: var(--s-pret-livraison); background: var(--s-pret-livraison-bg); color: var(--s-pret-livraison-ink); }
+.ev-status[data-statut="en_livraison"] { --s: var(--s-en-livraison); background: var(--s-en-livraison-bg); color: var(--s-en-livraison-ink); }
+.ev-status[data-statut="livre"] { --s: var(--s-livre); background: var(--s-livre-bg); color: var(--s-livre-ink); }
+.ev-status[data-statut="termine"] { --s: var(--s-termine); background: var(--s-termine-bg); color: var(--s-termine-ink); }
+.ev-status::before { border-color: var(--s, currentColor); }
+.ev-status[data-statut="a_revoir"]::before { border-radius: 1px; transform: rotate(45deg); background: var(--s); }
+.ev-status[data-statut="en_impression"]::before, .ev-status[data-statut="en_livraison"]::before, .ev-status[data-statut="livre"]::before { background: var(--s); }
 .ev-status[data-statut="termine"]::before {
   border: 0; width: 8px; height: 5px; border-radius: 0; margin-top: -3px;
-  border-left: 2px solid currentColor; border-bottom: 2px solid currentColor; transform: rotate(-45deg);
+  border-left: 2px solid var(--s); border-bottom: 2px solid var(--s); transform: rotate(-45deg);
 }
+/* Numéros de commande, devis et factures : toujours en très gras pour les repérer d'un coup d'œil. */
+.ev-numero { font-family: var(--font-display); font-weight: 700; letter-spacing: 0.01em; color: var(--ink); font-variant-numeric: tabular-nums; }
 .ev-machine {
   display: inline-flex; align-items: center; gap: 6px; height: 22px; padding: 0 8px;
   border-radius: var(--radius-sm); font-family: var(--font-mono); font-size: 11px; font-weight: 600;
   letter-spacing: 0.06em; text-transform: uppercase; white-space: nowrap;
 }
-.ev-machine[data-machine="roland"] { background: var(--ink); color: var(--surface); }
-.ev-machine[data-machine="xerox"] { background: transparent; color: var(--ink); box-shadow: inset 0 0 0 1.5px var(--ink); }
+.ev-machine[data-machine="roland"] { background: var(--roland); color: var(--on-roland); }
+.ev-machine[data-machine="xerox"] { background: var(--xerox); color: var(--on-xerox); }
 .ev-urgent {
   display: inline-flex; align-items: center; height: 22px; padding: 0 10px;
   border-radius: var(--radius-full); background: var(--coral); color: var(--on-coral);
@@ -196,6 +197,7 @@
 .ev-pay[data-pay="partiel"] { background: var(--warning-soft); color: var(--warning-ink); }
 .ev-pay[data-pay="a_valider"] { background: var(--info-soft); color: var(--info-ink); }
 .ev-pay[data-pay="paye"] { background: var(--success-soft); color: var(--success-ink); }
+.ev-pay[data-pay="offert"] { background: var(--s-pret-impression-bg); color: var(--s-pret-impression-ink); }
 .ev-pay[data-pay="refuse"] { background: var(--danger-soft); color: var(--danger-ink); }
 .ev-count {
   display: inline-grid; place-items: center; min-width: 20px; height: 20px; padding: 0 6px;
@@ -205,14 +207,15 @@
 
 /* ---------- Cartes et indicateurs ---------- */
 .ev-card {
-  background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius-lg);
-  box-shadow: var(--shadow-card); min-width: 0;
+  background: var(--surface); border: 1px solid var(--line); border-radius: 16px;
+  box-shadow: var(--shadow-card); min-width: 0; overflow: clip;
 }
 .ev-card__head {
   display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); flex-wrap: wrap;
   padding: var(--space-4) var(--space-6); border-bottom: 1px solid var(--line);
+  background: color-mix(in srgb, var(--surface-sunken) 70%, var(--surface));
 }
-.ev-card__title { font-size: 16px; line-height: 24px; font-weight: 600; color: var(--text); margin: 0; }
+.ev-card__title { font-family: var(--font-display); font-size: 16.5px; line-height: 24px; font-weight: 700; letter-spacing: -0.005em; color: var(--ink); margin: 0; }
 .ev-card__body { padding: var(--space-6); }
 .ev-card__foot { padding: var(--space-3) var(--space-6); border-top: 1px solid var(--line); display: flex; gap: var(--space-2); justify-content: flex-end; flex-wrap: wrap; }
 .ev-card--interactive { transition: border-color .15s ease-out, transform .15s ease-out; cursor: pointer; }
@@ -466,3 +469,29 @@
 @media (prefers-reduced-motion: reduce) {
   .ev-root *, .ev-btn, .ev-card--interactive, .ev-sidebar, .ev-progress > span { transition: none !important; animation: none !important; }
 }
+
+/* ---------- Mouvement ----------
+   Un seul vocabulaire : apparition douce (montée de 8 px + fondu, courbe expo), cascade courte pour les
+   cartes, petit rebond sur un statut qui change, barre de chargement en haut de l'écran. */
+@keyframes ev-apparition { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+@keyframes ev-statut { 0% { transform: scale(0.82); filter: brightness(1.35); } 60% { transform: scale(1.08); } 100% { transform: none; filter: none; } }
+@keyframes ev-barre { 0% { transform: translateX(-100%); } 100% { transform: translateX(260%); } }
+.ev-page-entree { animation: ev-apparition 420ms cubic-bezier(0.16, 1, 0.3, 1) both; }
+.ev-status { animation: ev-statut 520ms cubic-bezier(0.34, 1.56, 0.64, 1) both; }
+.cc, .fiche, .aimant, .somme, .ev-card { animation: ev-apparition 460ms cubic-bezier(0.16, 1, 0.3, 1) both; animation-delay: calc(min(var(--i, 0), 12) * 40ms); }
+.ev-chargement { position: fixed; inset: 0 0 auto; height: 3px; z-index: 60; overflow: hidden; pointer-events: none; opacity: 0; transition: opacity 200ms; }
+.ev-chargement[data-actif="true"] { opacity: 1; }
+.ev-chargement::before { content: ""; position: absolute; inset: 0; width: 40%; background: linear-gradient(90deg, transparent, var(--brand-start), var(--brand-end), transparent); animation: ev-barre 1.1s cubic-bezier(0.45, 0, 0.55, 1) infinite; }
+@media (prefers-reduced-motion: reduce) {
+  .ev-page-entree, .ev-status, .cc, .fiche, .aimant, .somme, .ev-card { animation: none; }
+  .ev-chargement::before { animation-duration: 2.4s; }
+}
+
+/* URGENT : un halo corail qui bat, pour attirer l'œil sans masquer le texte. */
+@keyframes ev-urgent-pouls {
+  0%, 100% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--coral) 65%, transparent); transform: scale(1); }
+  50% { box-shadow: 0 0 0 6px color-mix(in srgb, var(--coral) 0%, transparent); transform: scale(1.06); }
+}
+.ev-urgent, .cc__urgent, .fiche__urgent { animation: ev-urgent-pouls 1.6s cubic-bezier(0.45, 0, 0.55, 1) infinite; }
+.cc[data-urgent] { box-shadow: 0 0 0 1px color-mix(in srgb, var(--coral) 35%, transparent), 0 10px 24px -16px color-mix(in srgb, var(--coral) 70%, transparent); }
+@media (prefers-reduced-motion: reduce) { .ev-urgent, .cc__urgent, .fiche__urgent { animation: none; } }

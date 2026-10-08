@@ -11,7 +11,8 @@ import {
 
 export function StatusBadge({ statut }: { statut: Statut }) {
   return (
-    <span className="ev-badge ev-status" data-statut={statut}>
+    // La clé change avec le statut : le badge est recréé et rejoue son petit rebond.
+    <span key={statut} className="ev-badge ev-status" data-statut={statut}>
       {STATUT_LABELS[statut]}
     </span>
   );
@@ -29,7 +30,7 @@ export function UrgentTag() {
   return <span className="ev-urgent">Urgent</span>;
 }
 
-const PAY_KEY: Record<SituationPaiement, string> = { sans_montant: 'non_paye', non_paye: 'non_paye', partiel: 'partiel', paye: 'paye' };
+const PAY_KEY: Record<SituationPaiement, string> = { sans_montant: 'non_paye', offert: 'offert', non_paye: 'non_paye', partiel: 'partiel', paye: 'paye' };
 
 export function PaymentBadge({ situation, enAttente }: { situation: SituationPaiement; enAttente?: number }) {
   if (enAttente && enAttente > 0 && situation !== 'paye') {
@@ -61,5 +62,5 @@ export function Count({ n }: { n: number | undefined }) {
 }
 
 export function Ref({ children }: { children: React.ReactNode }) {
-  return <span className="ev-ref">{children}</span>;
+  return <span className="ev-ref ev-numero">{children}</span>;
 }

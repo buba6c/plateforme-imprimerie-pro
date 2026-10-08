@@ -1,18 +1,32 @@
-// Liste transversale des fichiers : filtres (dans l'adresse de la page), totaux, tableau ou cartes,
-// aperçu dans un panneau latéral.
+// Fichiers d'impression : grille de cartes (ou liste), tri très visible, filtres dans l'adresse de la page,
+// sélection multiple avec barre d'actions, aperçu dans un panneau latéral.
 
 import { useCallback, useEffect, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
-import { Download, Eye, Files, Search, SlidersHorizontal } from 'lucide-react';
+import { useMutation } from '@tanstack/react-query';
+import { Download, Files, Search, SlidersHorizontal, Trash2 } from 'lucide-react';
 import { formatDateHeure, formatEntier, formatTaille, MACHINE_LABELS, MACHINES, STATUT_LABELS, STATUTS } from '@evocom/shared';
-import { fichierUrl, messageErreur } from '../../lib/api';
-import { Alert, Button, Card, EmptyState, IconButton, LoadingRows, MachineChip, Pagination, StatusBadge, UrgentTag } from '../../ui';
-import { extension } from '../fichiers/ListeFichiers';
+import { useUser } from '../../auth/AuthContext';
+import { api, fichierUrl, messageErreur } from '../../lib/api';
+import { Alert, Button, Card, ConfirmDialog, EmptyState, LoadingRows, Pagination, StatusBadge, UrgentTag, useToast } from '../../ui';
 import { ApercuPanneau } from './ApercuPanneau';
-import { useAuteurs, useFichiersGlobaux } from './hooks';
-import type { FichierGlobal } from './types';
+import {
+  BarreSelection,
+  BasculeVue,
+  CarteFichier,
+  CaseSelection,
+  IconeType,
+  PuceMachine,
+  telechargerUnParUn,
+  ToutSelectionner,
+  Tris,
+  useSelection,
+  useVue,
+} from './Cartes';
+import { useAuteurs, useFichiersGlobaux, useRafraichirFichiers } from './hooks';
+import type { FichierGlobal, ResultatCorbeilleGroupee } from './types';
 
-const LIMIT = 50;
+const LIMIT = 48;
 const DATE = /^\d{4}-\d{2}-\d{2}$/;
 
 const TYPES = [
@@ -22,13 +36,14 @@ const TYPES = [
 ];
 
 const TRIS = [
-  { value: 'date_desc', label: 'Plus récents d’abord' },
-  { value: 'date_asc', label: 'Plus anciens d’abord' },
-  { value: 'nom_asc', label: 'Nom, de A à Z' },
-  { value: 'nom_desc', label: 'Nom, de Z à A' },
-  { value: 'taille_desc', label: 'Plus volumineux d’abord' },
-  { value: 'taille_asc', label: 'Plus légers d’abord' },
+  { value: 'taille_desc', label: 'Plus lourds' },
+  { value: 'taille_asc', label: 'Plus légers' },
+  { value: 'date_desc', label: 'Plus récents' },
+  { value: 'date_asc', label: 'Plus anciens' },
+  { value: 'nom_asc', label: 'Nom' },
 ];
+/** Aussi accepté dans l'adresse (lien partagé), sans bouton dédié. */
+const TRIS_ADRESSE = [...TRIS.map((t) => t.value), 'nom_desc'];
 
 function useDebounced<T>(value: T, delay = 300): T {
   const [v, setV] = useState(value);
@@ -40,8 +55,12 @@ function useDebounced<T>(value: T, delay = 300): T {
 }
 
 const choix = (v: string | null, permis: readonly string[]) => (v && permis.includes(v) ? v : '');
+const envoyePar = (f: FichierGlobal) => f.uploaded_by_nom ?? (f.importe ? 'l’ancienne plateforme' : '—');
 
 export function OngletFichiers() {
+  const admin = useUser().role === 'admin';
+  const toast = useToast();
+  const rafraichir = useRafraichirFichiers();
   const [params, setParams] = useSearchParams();
   const [saisie, setSaisie] = useState(params.get('q') ?? '');
   const q = useDebounced(saisie.trim(), 300);
@@ -54,14 +73,14 @@ export function OngletFichiers() {
   const auteur = /^\d+$/.test(params.get('auteur') ?? '') ? params.get('auteur')! : '';
   const from = DATE.test(params.get('from') ?? '') ? params.get('from')! : '';
   const to = DATE.test(params.get('to') ?? '') ? params.get('to')! : '';
-  const tri =
-    choix(
-      params.get('tri'),
-      TRIS.map((t) => t.value),
-    ) || 'date_desc';
+  const tri = choix(params.get('tri'), TRIS_ADRESSE) || 'date_desc';
   const page = Math.max(1, Number(params.get('page')) || 1);
   const [apercu, setApercu] = useState<FichierGlobal | null>(null);
   const [filtresOuverts, setFiltresOuverts] = useState(false);
+  const [vue, setVue] = useVue();
+  const sel = useSelection<FichierGlobal>();
+  const [confirmer, setConfirmer] = useState(false);
+  const [telechargement, setTelechargement] = useState(false);
 
   const maj = useCallback(
     (patch: Record<string, string | null>) => {
@@ -132,11 +151,34 @@ export function OngletFichiers() {
     );
   };
 
+  const corbeille = useMutation({
+    mutationFn: (ids: number[]) => api.post<ResultatCorbeilleGroupee>('/gestion-fichiers/corbeille-groupee', { ids }),
+    onSuccess: (r, ids) => {
+      setConfirmer(false);
+      sel.retirer(ids);
+      rafraichir();
+      toast.success(
+        r.mis_a_la_corbeille > 1 ? `${r.mis_a_la_corbeille} fichiers mis à la corbeille` : 'Fichier mis à la corbeille',
+        `${formatTaille(r.taille)} au total. Vous pouvez les restaurer depuis l’onglet Corbeille.`,
+      );
+    },
+    onError: (e) => toast.error('Mise à la corbeille impossible', messageErreur(e)),
+  });
+
+  const telecharger = async () => {
+    setTelechargement(true);
+    try {
+      await telechargerUnParUn(sel.liste);
+    } finally {
+      setTelechargement(false);
+    }
+  };
+
   const total = liste.data?.total ?? 0;
   const pagination = <Pagination page={page} total={total} limit={LIMIT} onPage={(p) => maj({ page: p > 1 ? String(p) : null })} />;
 
   return (
-    <div className="stack">
+    <div className="stack fa-onglet">
       <div className="fa-filtres" role="search" aria-label="Filtrer les fichiers" data-ouvert={filtresOuverts}>
         <div className="ev-field ev-search" style={{ alignSelf: 'flex-end' }}>
           <Search aria-hidden="true" />
@@ -145,7 +187,7 @@ export function OngletFichiers() {
             type="search"
             value={saisie}
             onChange={(e) => setSaisie(e.target.value)}
-            placeholder="Fichier, numéro de dossier ou client"
+            placeholder="Nom du fichier, numéro de commande ou client"
             aria-label="Rechercher un fichier"
           />
         </div>
@@ -157,7 +199,7 @@ export function OngletFichiers() {
           aria-controls="fa-filtres-plus"
           onClick={() => setFiltresOuverts((o) => !o)}
         >
-          {filtresOuverts ? 'Masquer les filtres' : nbFiltres ? `Filtres (${nbFiltres})` : 'Filtres et tri'}
+          {filtresOuverts ? 'Masquer les filtres' : nbFiltres ? `Filtres (${nbFiltres})` : 'Filtres'}
         </Button>
         <div className="fa-filtres__plus" id="fa-filtres-plus">
           <div className="ev-field">
@@ -188,7 +230,7 @@ export function OngletFichiers() {
           </div>
           <div className="ev-field">
             <label className="ev-label" htmlFor="fa-statut">
-              Statut du dossier
+              Statut de la commande
             </label>
             <select id="fa-statut" className="ev-select" value={statut} onChange={(e) => maj({ statut: e.target.value || null })}>
               <option value="">Tous</option>
@@ -232,27 +274,6 @@ export function OngletFichiers() {
               aria-invalid={periodeInvalide || undefined}
             />
           </div>
-          <div className="ev-field">
-            <label className="ev-label" htmlFor="fa-tri">
-              Trier
-            </label>
-            <select
-              id="fa-tri"
-              className="ev-select"
-              value={tri}
-              onChange={(e) =>
-                maj({
-                  tri: e.target.value === 'date_desc' ? null : e.target.value,
-                })
-              }
-            >
-              {TRIS.map((t) => (
-                <option key={t.value} value={t.value}>
-                  {t.label}
-                </option>
-              ))}
-            </select>
-          </div>
         </div>
         {filtre && (
           <Button size="sm" variant="ghost" onClick={effacer}>
@@ -261,8 +282,24 @@ export function OngletFichiers() {
         )}
       </div>
 
+      <div className="fa-outils">
+        <Tris valeur={tri} options={TRIS} onChange={(v) => maj({ tri: v === 'date_desc' ? null : v })} />
+        <BasculeVue vue={vue} onChange={setVue} />
+      </div>
+
+      <BarreSelection nb={sel.nb} taille={sel.taille} onAnnuler={sel.vider}>
+        <Button size="sm" icon={<Download />} busy={telechargement} onClick={() => void telecharger()}>
+          Télécharger
+        </Button>
+        {admin && (
+          <Button size="sm" variant="danger" icon={<Trash2 />} onClick={() => setConfirmer(true)}>
+            Mettre à la corbeille ({sel.nb})
+          </Button>
+        )}
+      </BarreSelection>
+
       {periodeInvalide ? (
-        <Alert tone="warning">La date de début est postérieure à la date de fin : corrigez la période.</Alert>
+        <Alert tone="warning">La date de début est après la date de fin : corrigez la période.</Alert>
       ) : liste.isError ? (
         <Alert tone="error">
           La liste des fichiers n’a pas pu être chargée : {messageErreur(liste.error)}{' '}
@@ -288,88 +325,67 @@ export function OngletFichiers() {
             </EmptyState>
           ) : (
             <EmptyState title="Aucun fichier pour l’instant" icon={<Files aria-hidden="true" />}>
-              Les fichiers déposés sur les fiches des dossiers apparaissent ici, avec leur dossier, leur client et leur auteur.
+              Les fichiers déposés sur les commandes apparaissent ici, avec leur commande, leur client et la personne qui les a envoyés.
             </EmptyState>
           )}
         </Card>
       ) : (
         <>
-          <p className="fa-totaux" aria-live="polite">
-            <strong className="ev-num">{formatEntier(total)}</strong> {total > 1 ? 'fichiers' : 'fichier'} ·{' '}
-            <strong className="ev-num">{formatTaille(liste.data?.taille_totale ?? 0)}</strong> au total
-            {filtre ? ' (filtre en cours)' : ''}
-          </p>
+          <div className="fa-entete-liste">
+            <p className="fa-totaux" aria-live="polite">
+              <strong className="ev-num">{formatEntier(total)}</strong> {total > 1 ? 'fichiers' : 'fichier'} ·{' '}
+              <strong className="ev-num">{formatTaille(liste.data?.taille_totale ?? 0)}</strong> au total
+              {filtre ? ' (filtre en cours)' : ''}
+            </p>
+            <ToutSelectionner items={items} sel={sel} />
+          </div>
           <div className="fa-layout" data-apercu={!!apercu}>
-            <div className="stack" style={{ minWidth: 0 }}>
-              <div className="ev-table-wrap fa-large" style={{ opacity: liste.isPlaceholderData ? 0.6 : 1 }}>
-                <table className="ev-table ev-table--clickable">
-                  <thead>
-                    <tr>
-                      <th scope="col">Fichier</th>
-                      <th scope="col" className="fa-detail">
-                        Dossier
-                      </th>
-                      <th scope="col" className="fa-detail">
-                        Client
-                      </th>
-                      <th scope="col">Statut</th>
-                      <th scope="col" style={{ textAlign: 'right' }}>
-                        Taille
-                      </th>
-                      <th scope="col" className="fa-detail">
-                        Envoi
-                      </th>
-                      <th scope="col" className="ev-cell-actions">
-                        <span className="sr-only">Actions</span>
-                      </th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {items.map((f) => (
-                      <LigneFichier key={f.id} f={f} actif={apercu?.id === f.id} onApercu={() => setApercu(f)} />
-                    ))}
-                  </tbody>
-                </table>
-                {pagination}
-              </div>
-              <div className="fa-etroit fa-cartes">
-                {items.map((f) => (
-                  <CarteFichier key={f.id} f={f} onApercu={() => setApercu(f)} />
-                ))}
-                {pagination}
-              </div>
+            <div className="fa-zone" style={{ opacity: liste.isPlaceholderData ? 0.6 : 1 }}>
+              {vue === 'grille' ? (
+                <div className="fa-grille">
+                  {items.map((f) => (
+                    <CarteFichier
+                      key={f.id}
+                      f={f}
+                      actif={apercu?.id === f.id}
+                      selectionne={sel.a(f.id)}
+                      onSelection={(v) => sel.basculer(f, v)}
+                      onOuvrir={() => setApercu(f)}
+                      meta={<span className="fa-card__date ev-ref">{formatDateHeure(f.created_at)}</span>}
+                      badges={f.urgent ? <UrgentTag /> : f.a_reimprimer ? <span className="fi-tag-reimp">À réimprimer</span> : null}
+                      pied={<Telecharger f={f} />}
+                    />
+                  ))}
+                </div>
+              ) : (
+                <ul className="fa-liste" aria-label="Fichiers">
+                  {items.map((f) => (
+                    <LigneFichier key={f.id} f={f} actif={apercu?.id === f.id} selectionne={sel.a(f.id)} onSelection={(v) => sel.basculer(f, v)} onApercu={() => setApercu(f)} />
+                  ))}
+                </ul>
+              )}
+              {pagination}
             </div>
             {apercu && <ApercuPanneau fichier={apercu} onClose={fermer} />}
           </div>
         </>
       )}
-    </div>
-  );
-}
 
-function NomFichier({ f, onApercu }: { f: FichierGlobal; onApercu: () => void }) {
-  return (
-    <div className="fa-nom">
-      <span className="ev-file__type" aria-hidden="true">
-        {extension(f.nom_original)}
-      </span>
-      <span className="fa-nom__texte">
-        <button
-          type="button"
-          className="fa-nom__bouton"
-          title={f.nom_original}
-          onClick={(e) => {
-            e.stopPropagation();
-            onApercu();
-          }}
-        >
-          {f.nom_original}
-        </button>
-        <span className="fa-sub fa-resume">
-          <span className="ev-ref">{f.dossier_numero}</span> · {f.client_nom}
-        </span>
-        {f.a_reimprimer && <span className="fi-tag-reimp">À réimprimer</span>}
-      </span>
+      <ConfirmDialog
+        open={confirmer}
+        onClose={() => setConfirmer(false)}
+        onConfirm={() => corbeille.mutate(sel.liste.map((f) => f.id))}
+        busy={corbeille.isPending}
+        danger
+        title={sel.nb > 1 ? `Mettre ${sel.nb} fichiers à la corbeille ?` : 'Mettre ce fichier à la corbeille ?'}
+        confirmLabel={`Mettre à la corbeille (${sel.nb})`}
+        description={
+          <>
+            {formatTaille(sel.taille)} au total. Les fichiers sont retirés de leur commande, même si elle est déjà validée ou livrée. Ils restent sur le
+            serveur : vous pourrez les restaurer depuis l’onglet Corbeille, ou les supprimer définitivement pour libérer de la place.
+          </>
+        }
+      />
     </div>
   );
 }
@@ -389,90 +405,44 @@ function Telecharger({ f }: { f: FichierGlobal }) {
   );
 }
 
-function LigneFichier({ f, actif, onApercu }: { f: FichierGlobal; actif: boolean; onApercu: () => void }) {
+function LigneFichier({
+  f,
+  actif,
+  selectionne,
+  onSelection,
+  onApercu,
+}: {
+  f: FichierGlobal;
+  actif: boolean;
+  selectionne: boolean;
+  onSelection: (v: boolean) => void;
+  onApercu: () => void;
+}) {
   return (
-    <tr aria-selected={actif || undefined} onClick={onApercu}>
-      <td>
-        <NomFichier f={f} onApercu={onApercu} />
-      </td>
-      <td className="nowrap fa-detail">
-        <span className="row" style={{ gap: 6, flexWrap: 'nowrap' }}>
-          <Link className="ev-link ev-ref" to={`/dossiers/${f.dossier_id}`} onClick={(e) => e.stopPropagation()}>
+    <li className="fa-ligne" data-selected={selectionne} data-actif={actif || undefined}>
+      <CaseSelection checked={selectionne} onChange={onSelection} label={`Sélectionner ${f.nom_original}`} />
+      <IconeType categorie={f.categorie} nom={f.nom_original} taille={32} />
+      <div className="fa-ligne__texte">
+        <button type="button" className="fa-ligne__nom" title={f.nom_original} onClick={onApercu}>
+          {f.nom_original}
+        </button>
+        <span className="fa-ligne__meta">
+          <Link className="ev-link ev-ref" to={`/dossiers/${f.dossier_id}`}>
             {f.dossier_numero}
           </Link>
-          <MachineChip machine={f.machine} />
+          <span>{f.client_nom}</span>
+          <span className="ev-ref">{formatDateHeure(f.created_at)}</span>
+          <span>par {envoyePar(f)}</span>
+          <span className="fa-ligne__taille-etroit ev-num">{formatTaille(f.taille)}</span>
         </span>
-      </td>
-      <td className="fa-detail" style={{ minWidth: 160, maxWidth: 240 }}>
-        <span className="ev-cell-main">{f.client_nom}</span>
-        {f.urgent && (
-          <span className="fa-sub">
-            <UrgentTag />
-          </span>
-        )}
-      </td>
-      <td>
-        <StatusBadge statut={f.dossier_statut} />
-      </td>
-      <td className="ev-cell-num">{formatTaille(f.taille)}</td>
-      <td className="nowrap fa-detail">
-        <span className="ev-ref">{formatDateHeure(f.created_at)}</span>
-        <span className="fa-sub">par {f.uploaded_by_nom ?? (f.importe ? 'l’ancienne plateforme' : '—')}</span>
-      </td>
-      <td className="ev-cell-actions">
-        <div className="fa-actions">
-          <IconButton
-            size="sm"
-            label={`Aperçu de ${f.nom_original}`}
-            onClick={(e) => {
-              e.stopPropagation();
-              onApercu();
-            }}
-          >
-            <Eye />
-          </IconButton>
-          <Telecharger f={f} />
-        </div>
-      </td>
-    </tr>
-  );
-}
-
-function CarteFichier({ f, onApercu }: { f: FichierGlobal; onApercu: () => void }) {
-  return (
-    <article className="ev-card fa-carte">
-      <div className="fa-carte__tete">
-        <span className="ev-file__type" aria-hidden="true">
-          {extension(f.nom_original)}
-        </span>
-        <span className="fa-nom__texte">
-          <button type="button" className="fa-nom__bouton" onClick={onApercu}>
-            {f.nom_original}
-          </button>
-          <span className="fa-sub">
-            <span className="ev-num">{formatTaille(f.taille)}</span> · <span className="ev-ref">{formatDateHeure(f.created_at)}</span>
-          </span>
-        </span>
-        <div className="fa-actions">
-          <IconButton size="sm" label={`Aperçu de ${f.nom_original}`} onClick={onApercu}>
-            <Eye />
-          </IconButton>
-          <Telecharger f={f} />
-        </div>
       </div>
-      <div className="fa-carte__ligne">
-        <Link className="ev-link ev-ref" to={`/dossiers/${f.dossier_id}`}>
-          {f.dossier_numero}
-        </Link>
-        <MachineChip machine={f.machine} />
+      <span className="fa-ligne__badges">
+        <PuceMachine machine={f.machine} />
         <StatusBadge statut={f.dossier_statut} />
         {f.urgent && <UrgentTag />}
-        {f.a_reimprimer && <span className="fi-tag-reimp">À réimprimer</span>}
-      </div>
-      <div className="fa-carte__ligne">
-        <span style={{ color: 'var(--text)' }}>{f.client_nom}</span>
-        <span>· envoyé par {f.uploaded_by_nom ?? (f.importe ? 'l’ancienne plateforme' : '—')}</span>
-      </div>
-    </article>
+      </span>
+      <span className="fa-ligne__taille ev-num">{formatTaille(f.taille)}</span>
+      <Telecharger f={f} />
+    </li>
   );
 }

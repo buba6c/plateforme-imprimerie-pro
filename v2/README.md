@@ -25,7 +25,8 @@ jusqu'à la bascule (voir `deploy/GUIDE_MISE_EN_LIGNE.md`).
 - Les montants sont des entiers en FCFA. Un tarif inconnu ou sans prix bloque le calcul avec un message ; il n'est
   jamais compté pour 0.
 - Les numéros CMD, DEV et FAC sont attribués sans trou ni doublon (table `compteurs`).
-- Rien n'est supprimé définitivement : les dossiers et les fichiers vont à la corbeille.
+- Rien n'est supprimé définitivement : les dossiers et les fichiers vont à la corbeille. Seule exception : la purge des
+  fichiers de la corbeille par l'administrateur (mot de passe, mot SUPPRIMER), dont la ligne reste en base comme trace.
 - Les fichiers ne sont jamais servis en accès libre : chaque lecture vérifie les droits sur le dossier.
 
 ## Développer

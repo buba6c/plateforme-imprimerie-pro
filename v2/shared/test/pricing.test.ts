@@ -20,13 +20,14 @@ describe('moteur de prix Roland', () => {
     expect(r.total_ttc).toBe(45000);
   });
 
-  it('multiplie la surface par la quantité', () => {
+  it('multiplie la surface et la découpe (par exemplaire) par la quantité', () => {
     const r = calculerPrix(
       'roland',
       { lignes: [{ support: 'bache_m2', largeur: 3, hauteur: 2, unite: 'm', quantite: 2, finitions: [{ code: 'coupage_decoupe' }], options: [] }], forfaits: [] },
       TARIFS_DEFAUT,
     );
-    expect(r.ok && r.total_ttc).toBe(87000);
+    // 2 × 6 m² × 7 000 + découpe 2 × 3 000
+    expect(r.ok && r.total_ttc).toBe(90000);
   });
 
   it('convertit les millimètres : 1000 × 1000 mm = 1 m²', () => {
@@ -83,14 +84,14 @@ describe('moteur de prix Roland', () => {
 });
 
 describe('moteur de prix Xerox', () => {
-  it('10 pages × 20 exemplaires en A4 N&B + reliure spirale', () => {
+  it('10 pages × 20 exemplaires en A4 N&B + reliure spirale par exemplaire (A5)', () => {
     const r = calculerPrix(
       'xerox',
       { lignes: [{ support: 'papier_a4_nb', pages: 10, recto_verso: false, quantite: 20, finitions: [{ code: 'reliure_spirale' }], options: [] }], forfaits: [] },
       TARIFS_DEFAUT,
     );
-    expect(r.ok && r.lignes.map((l) => l.total)).toEqual([10000, 500]);
-    expect(r.ok && r.total_ttc).toBe(10500);
+    expect(r.ok && r.lignes.map((l) => l.total)).toEqual([10000, 10000]);
+    expect(r.ok && r.total_ttc).toBe(20000);
   });
 
   it('ajoute le supplément recto-verso par feuille, comme l\'ancienne plateforme', () => {

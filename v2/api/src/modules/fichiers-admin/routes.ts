@@ -1,5 +1,11 @@
 // Gestionnaire global des fichiers : liste transversale des fichiers des dossiers visibles,
-// corbeille des fichiers (restauration) et contrôle d'intégrité du stockage.
+// corbeille des fichiers (restauration, mise à la corbeille et restauration groupées), purge définitive
+// et contrôle d'intégrité du stockage.
+//
+// Purge : une ligne purgée (purge_at renseigné) reste en base comme trace ; elle n'apparaît plus nulle part
+// (liste, corbeille, contrôle) et ne peut plus être restaurée. La base est mise à jour d'abord (transaction,
+// journal), le disque ensuite. Les fichiers importés sont des liens durs partagés avec l'ancienne application
+// et les instantanés de sauvegarde : effacer ce nom ne libère la place que s'il était le dernier (nlink = 1).
 //
 // L'aperçu et le téléchargement ne sont pas servis ici : ils passent par
 // GET /api/fichiers/:id/contenu (module fichiers), qui vérifie les droits sur le dossier.
@@ -8,12 +14,14 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { Router } from 'express';
+import bcrypt from 'bcryptjs';
+import { z } from 'zod';
 import { MACHINES, STATUTS, type Machine, type Statut } from '@evocom/shared';
 import type { Config } from '../../config';
 import { one, query, tx } from '../../db/pool';
 import { journal } from '../../lib/audit';
 import { me, requireAuth, requireRole } from '../../lib/auth';
-import { badRequest, conflict, notFound } from '../../lib/errors';
+import { badRequest, conflict, HttpError, notFound, zodDetails } from '../../lib/errors';
 import { intParam, qInt, qList, qStr } from '../../lib/http';
 import { getParametres } from '../../lib/params';
 import { signalDossier } from '../../realtime';
@@ -21,6 +29,8 @@ import type { AuthUser } from '../../types';
 import { visibilite } from '../dossiers/access';
 import { evenement } from '../dossiers/service';
 import { Conditions, filtrePeriode, intervalle, motifLike, pagination } from '../commun/requete';
+import { cheminSous, parLots } from '../commun/disque';
+import { invaliderStockage } from '../systeme/stockage';
 
 export const CATEGORIES = ['pdf', 'image', 'autre'] as const;
 const TRIS = ['date', 'nom', 'taille'] as const;
@@ -59,33 +69,48 @@ async function conditionsVisibles(user: AuthUser): Promise<Conditions> {
   return c;
 }
 
-/** Chemin absolu d'un fichier sous le stockage, ou null s'il en sortirait. */
-function cheminAbsolu(racine: string, chemin: string): string | null {
-  const abs = path.resolve(racine, chemin);
-  return abs.startsWith(racine + path.sep) ? abs : null;
-}
+const cheminAbsolu = cheminSous;
 
-async function tailleSurDisque(racine: string, chemin: string): Promise<number | null> {
+/** Taille du fichier sur le disque et nombre de noms qui partagent son contenu (liens durs). */
+async function statDisque(racine: string, chemin: string): Promise<{ taille: number; nlink: number } | null> {
   const abs = cheminAbsolu(racine, chemin);
   if (!abs) return null;
   const st = await fs.promises.stat(abs).catch(() => null);
-  return st?.isFile() ? st.size : null;
+  return st?.isFile() ? { taille: st.size, nlink: st.nlink } : null;
 }
 
-/** Applique `fn` à chaque élément avec au plus `n` opérations simultanées. */
-async function parLots<T, R>(items: T[], n: number, fn: (t: T) => Promise<R>): Promise<R[]> {
-  const out = new Array<R>(items.length);
-  let i = 0;
-  await Promise.all(
-    Array.from({ length: Math.min(n, items.length) }, async () => {
-      while (i < items.length) {
-        const k = i++;
-        out[k] = await fn(items[k]!);
-      }
-    }),
-  );
-  return out;
+async function tailleSurDisque(racine: string, chemin: string): Promise<number | null> {
+  return (await statDisque(racine, chemin))?.taille ?? null;
 }
+
+const MAX_GROUPE = 500;
+const idsSchema = z.object({
+  ids: z
+    .array(z.number({ invalid_type_error: 'Identifiant de fichier : nombre entier attendu' }).int('Identifiant de fichier : nombre entier attendu').positive(), {
+      required_error: 'Sélectionnez au moins un fichier',
+      invalid_type_error: 'Liste de fichiers attendue',
+    })
+    .min(1, 'Sélectionnez au moins un fichier')
+    .max(MAX_GROUPE, `Pas plus de ${MAX_GROUPE} fichiers à la fois : faites plusieurs opérations.`),
+});
+
+function lireIds(body: unknown): number[] {
+  const r = idsSchema.safeParse(body ?? {});
+  if (!r.success) throw badRequest(r.error.issues[0]?.message ?? 'Liste de fichiers invalide.', { champs: zodDetails(r.error) });
+  return [...new Set(r.data.ids)];
+}
+
+type DossierSignalRow = { id: number; numero: string; statut: Statut; machine: Machine; preparateur_id: number | null };
+
+async function signalerDossiers(ids: number[]) {
+  if (!ids.length) return;
+  const ds = await query<DossierSignalRow>(`SELECT id, numero, statut, machine, preparateur_id FROM dossiers WHERE id = ANY($1::int[])`, [ids]);
+  for (const d of ds) signalDossier({ ...d, ancien_statut: d.statut });
+}
+
+/** Purge : 5 mots de passe faux par heure au plus, puis 429. */
+const PURGE_ECHECS_PAR_HEURE = 5;
+let purgeEnCours = false;
 
 /** Fichiers présents sous `dir` (récursif) : chemin absolu normalisé → taille. */
 async function inventaire(dir: string, out = new Map<string, number>()): Promise<Map<string, number>> {
@@ -166,7 +191,7 @@ export function fichiersAdminRouter(config: Config) {
 
   router.get('/corbeille', requireRole('admin'), async (req, res) => {
     const { page, limit, offset } = pagination(req, 50, 200);
-    const c = new Conditions().add('f.deleted_at IS NOT NULL');
+    const c = new Conditions().add('f.deleted_at IS NOT NULL').add('f.purge_at IS NULL');
     const q = qStr(req, 'q');
     if (q) c.add(`lower(f.nom_original || ' ' || d.numero || ' ' || d.client_nom) LIKE ?`, motifLike(q.slice(0, 200)));
     const totaux = await one<{ n: number; taille: number }>(
@@ -182,11 +207,16 @@ export function fichiersAdminRouter(config: Config) {
        ORDER BY f.deleted_at DESC, f.id DESC LIMIT ${limit} OFFSET ${offset}`,
       c.args,
     );
-    const items = await parLots(rows, 16, async ({ chemin, ...r }) => ({
-      ...r,
-      present: (await tailleSurDisque(racine, chemin)) !== null,
-      peut_restaurer: !r.dossier_supprime,
-    }));
+    const items = await parLots(rows, 16, async ({ chemin, ...r }) => {
+      const st = await statDisque(racine, chemin);
+      return {
+        ...r,
+        present: st !== null,
+        // Contenu partagé avec d'autres noms (ancienne application, instantanés) : le supprimer ne libère pas la place tout de suite.
+        partage: !!st && st.nlink > 1,
+        peut_restaurer: !r.dossier_supprime,
+      };
+    });
     res.json({ items, total: totaux?.n ?? 0, taille_totale: totaux?.taille ?? 0, page, limit });
   });
 
@@ -194,14 +224,15 @@ export function fichiersAdminRouter(config: Config) {
     const user = me(req);
     const id = intParam(req);
     const d = await tx(async (db) => {
-      const f = await one<{ id: number; nom_original: string; dossier_id: number; deleted_at: string | null; numero: string; dossier_deleted_at: string | null }>(
-        `SELECT f.id, f.nom_original, f.dossier_id, f.deleted_at, d.numero, d.deleted_at AS dossier_deleted_at
+      const f = await one<{ id: number; nom_original: string; dossier_id: number; deleted_at: string | null; purge_at: string | null; numero: string; dossier_deleted_at: string | null }>(
+        `SELECT f.id, f.nom_original, f.dossier_id, f.deleted_at, f.purge_at, d.numero, d.deleted_at AS dossier_deleted_at
          FROM fichiers f JOIN dossiers d ON d.id = f.dossier_id WHERE f.id = $1 FOR UPDATE OF f`,
         [id],
         db,
       );
       if (!f) throw notFound("Ce fichier n'existe pas.");
       if (!f.deleted_at) throw conflict("Ce fichier n'est pas dans la corbeille.");
+      if (f.purge_at) throw conflict('Ce fichier a été supprimé définitivement du disque : il ne peut plus être restauré.');
       if (f.dossier_deleted_at) {
         throw conflict(
           `Le dossier ${f.numero} est lui-même dans la corbeille : restaurez d'abord le dossier (Corbeille des dossiers), puis ce fichier.`,
@@ -219,6 +250,228 @@ export function fichiersAdminRouter(config: Config) {
     });
     if (d) signalDossier({ ...d, ancien_statut: d.statut });
     res.json(await one(`SELECT ${COLONNES} ${FROM_FICHIERS} WHERE f.id = $1`, [id]));
+  });
+
+  // -------------------------------------------------------------------------
+  // Actions groupées (administrateur)
+
+  /**
+   * Met des fichiers à la corbeille, même si leur dossier est validé ou livré (place disque). Les fichiers
+   * déjà à la corbeille sont ignorés. Événement « fichier/suppression » sur chaque dossier, une entrée au journal.
+   */
+  router.post('/corbeille-groupee', requireRole('admin'), async (req, res) => {
+    const user = me(req);
+    const ids = lireIds(req.body);
+    const r = await tx(async (db) => {
+      const rows = await query<{ id: number; nom_original: string; taille: number; dossier_id: number; numero: string; deleted_at: string | null }>(
+        `SELECT f.id, f.nom_original, f.taille, f.dossier_id, d.numero, f.deleted_at
+         FROM fichiers f JOIN dossiers d ON d.id = f.dossier_id
+         WHERE f.id = ANY($1::int[]) ORDER BY f.id FOR UPDATE OF f`,
+        [ids],
+        db,
+      );
+      const trouves = new Set(rows.map((x) => x.id));
+      const aMettre = rows.filter((x) => !x.deleted_at);
+      const taille = aMettre.reduce((t, x) => t + Number(x.taille), 0);
+      if (aMettre.length) {
+        await query(`UPDATE fichiers SET deleted_at = now(), deleted_by = $2 WHERE id = ANY($1::int[])`, [aMettre.map((x) => x.id), user.id], db);
+        for (const f of aMettre) {
+          await evenement(db, f.dossier_id, user.id, { type: 'fichier', action: 'suppression', data: { fichier_id: f.id, nom: f.nom_original, groupe: true } });
+        }
+        await journal(
+          req,
+          'fichiers_corbeille_groupee',
+          'fichier',
+          null,
+          { nb: aMettre.length, taille, fichiers: aMettre.map((f) => ({ id: f.id, nom: f.nom_original, taille: Number(f.taille), dossier_id: f.dossier_id, numero: f.numero })) },
+          db,
+        );
+      }
+      return {
+        mis_a_la_corbeille: aMettre.length,
+        taille,
+        deja_a_la_corbeille: rows.filter((x) => x.deleted_at).map((x) => x.id),
+        introuvables: ids.filter((id) => !trouves.has(id)),
+        dossiers: [...new Set(aMettre.map((x) => x.dossier_id))],
+      };
+    });
+    await signalerDossiers(r.dossiers);
+    invaliderStockage();
+    res.json(r);
+  });
+
+  /** Restaure des fichiers de la corbeille ; ceux qui ne peuvent pas l'être sont listés avec la raison. */
+  router.post('/restaurer-groupe', requireRole('admin'), async (req, res) => {
+    const user = me(req);
+    const ids = lireIds(req.body);
+    const r = await tx(async (db) => {
+      const rows = await query<{
+        id: number;
+        nom_original: string;
+        dossier_id: number;
+        numero: string;
+        deleted_at: string | null;
+        purge_at: string | null;
+        dossier_deleted_at: string | null;
+      }>(
+        `SELECT f.id, f.nom_original, f.dossier_id, d.numero, f.deleted_at, f.purge_at, d.deleted_at AS dossier_deleted_at
+         FROM fichiers f JOIN dossiers d ON d.id = f.dossier_id
+         WHERE f.id = ANY($1::int[]) ORDER BY f.id FOR UPDATE OF f`,
+        [ids],
+        db,
+      );
+      const trouves = new Set(rows.map((x) => x.id));
+      const ignores: { id: number; nom: string | null; raison: string; message: string }[] = ids
+        .filter((id) => !trouves.has(id))
+        .map((id) => ({ id, nom: null, raison: 'introuvable', message: "Ce fichier n'existe pas." }));
+      const ok: typeof rows = [];
+      for (const f of rows) {
+        if (!f.deleted_at) ignores.push({ id: f.id, nom: f.nom_original, raison: 'pas_a_la_corbeille', message: "Ce fichier n'est pas dans la corbeille." });
+        else if (f.purge_at) ignores.push({ id: f.id, nom: f.nom_original, raison: 'purge', message: 'Supprimé définitivement : il ne peut plus être restauré.' });
+        else if (f.dossier_deleted_at) {
+          ignores.push({ id: f.id, nom: f.nom_original, raison: 'dossier_a_la_corbeille', message: `Le dossier ${f.numero} est à la corbeille : restaurez d'abord le dossier.` });
+        } else ok.push(f);
+      }
+      if (ok.length) {
+        await query(`UPDATE fichiers SET deleted_at = NULL, deleted_by = NULL WHERE id = ANY($1::int[])`, [ok.map((f) => f.id)], db);
+        for (const f of ok) await evenement(db, f.dossier_id, user.id, { type: 'fichier', action: 'restauration', data: { fichier_id: f.id, nom: f.nom_original, groupe: true } });
+        await journal(req, 'fichiers_restaures_groupe', 'fichier', null, { nb: ok.length, fichiers: ok.map((f) => ({ id: f.id, nom: f.nom_original, dossier_id: f.dossier_id, numero: f.numero })) }, db);
+      }
+      return { restaures: ok.length, ignores, dossiers: [...new Set(ok.map((f) => f.dossier_id))] };
+    });
+    await signalerDossiers(r.dossiers);
+    invaliderStockage();
+    res.json(r);
+  });
+
+  // -------------------------------------------------------------------------
+  // Purge définitive (administrateur, mot de passe)
+
+  /**
+   * Efface du disque le fichier d'une ligne déjà purgée en base. Garde-fous : chemin sous STORAGE_DIR/dossiers,
+   * fichier ordinaire (jamais un lien symbolique ni un dossier), aucune autre ligne non purgée avec ce chemin.
+   */
+  async function effacerDuDisque(chemin: string): Promise<{ resultat: string; supprime: boolean; libere: number; partage: number; erreur?: string }> {
+    const base = path.join(racine, 'dossiers');
+    const abs = cheminAbsolu(racine, chemin);
+    if (!abs || !abs.startsWith(base + path.sep)) {
+      return { resultat: 'conserve : chemin hors du dossier des fichiers', supprime: false, libere: 0, partage: 0, erreur: 'Chemin hors du dossier des fichiers : rien n’a été effacé.' };
+    }
+    const autres = await one<{ n: number }>(`SELECT count(*)::int AS n FROM fichiers WHERE chemin = $1 AND purge_at IS NULL`, [chemin]);
+    if (autres?.n) {
+      return { resultat: 'conserve : utilisé par un autre fichier', supprime: false, libere: 0, partage: 0, erreur: 'Gardé sur le disque : le même fichier sert encore à un autre dossier.' };
+    }
+    let st: fs.Stats;
+    try {
+      st = await fs.promises.lstat(abs);
+    } catch (e) {
+      const code = (e as NodeJS.ErrnoException).code;
+      if (code === 'ENOENT') return { resultat: 'absent du disque', supprime: false, libere: 0, partage: 0 };
+      return { resultat: `erreur : ${code ?? 'lecture'}`, supprime: false, libere: 0, partage: 0, erreur: `Lecture impossible (${code ?? (e as Error).message}).` };
+    }
+    if (!st.isFile()) {
+      return { resultat: 'conserve : pas un fichier ordinaire', supprime: false, libere: 0, partage: 0, erreur: 'Ce n’est pas un fichier ordinaire (lien symbolique ou dossier) : rien n’a été effacé.' };
+    }
+    try {
+      await fs.promises.unlink(abs);
+    } catch (e) {
+      const code = (e as NodeJS.ErrnoException).code;
+      if (code === 'ENOENT') return { resultat: 'absent du disque', supprime: false, libere: 0, partage: 0 };
+      return { resultat: `erreur : ${code ?? 'effacement'}`, supprime: false, libere: 0, partage: 0, erreur: `Effacement impossible (${code ?? (e as Error).message}).` };
+    }
+    await fs.promises.rmdir(path.dirname(abs)).catch(() => {}); // dossier du dossier vide : retiré, sinon gardé
+    return st.nlink > 1
+      ? { resultat: `supprime (contenu partagé : ${st.nlink} noms)`, supprime: true, libere: 0, partage: st.size }
+      : { resultat: 'supprime', supprime: true, libere: st.size, partage: 0 };
+  }
+
+  router.post('/purger', requireRole('admin'), async (req, res) => {
+    const user = me(req);
+    const echecs = await one<{ n: number }>(
+      `SELECT count(*)::int AS n FROM journal WHERE user_id = $1 AND action = 'purge_refusee' AND created_at > now() - interval '1 hour'`,
+      [user.id],
+    );
+    if ((echecs?.n ?? 0) >= PURGE_ECHECS_PAR_HEURE) {
+      throw new HttpError(429, 'Trop de mots de passe incorrects : la suppression définitive est bloquée pendant une heure.', undefined, 'trop_de_tentatives');
+    }
+    const motDePasse = typeof req.body?.mot_de_passe === 'string' ? (req.body.mot_de_passe as string) : '';
+    if (!motDePasse) throw badRequest('Saisissez votre mot de passe pour confirmer la suppression définitive.', { champs: { mot_de_passe: 'Saisissez votre mot de passe' } });
+    const ids = lireIds(req.body);
+    const u = await one<{ password_hash: string }>(`SELECT password_hash FROM users WHERE id = $1`, [user.id]);
+    if (!u || motDePasse.length > 200 || !(await bcrypt.compare(motDePasse, u.password_hash))) {
+      await journal(req, 'purge_refusee', 'fichier', null, { motif: 'mot_de_passe', nb: ids.length });
+      throw badRequest('Mot de passe incorrect : rien n’a été supprimé.', { champs: { mot_de_passe: 'Mot de passe incorrect' } });
+    }
+    if (purgeEnCours) throw conflict('Une suppression définitive est déjà en cours : attendez qu’elle se termine.');
+    purgeEnCours = true;
+    try {
+      // 1. Base : les lignes sont marquées purgées et journalisées (id, chemin, sha256, taille) en une transaction.
+      const rows = await tx(async (db) => {
+        const r = await query<{
+          id: number;
+          nom_original: string;
+          chemin: string;
+          sha256: string | null;
+          taille: number;
+          dossier_id: number;
+          numero: string;
+          deleted_at: string | null;
+          purge_at: string | null;
+        }>(
+          `SELECT f.id, f.nom_original, f.chemin, f.sha256, f.taille, f.dossier_id, d.numero, f.deleted_at, f.purge_at
+           FROM fichiers f JOIN dossiers d ON d.id = f.dossier_id
+           WHERE f.id = ANY($1::int[]) ORDER BY f.id FOR UPDATE OF f`,
+          [ids],
+          db,
+        );
+        const trouves = new Set(r.map((x) => x.id));
+        const introuvables = ids.filter((id) => !trouves.has(id));
+        const horsCorbeille = r.filter((x) => !x.deleted_at).map((x) => x.id);
+        const dejaPurges = r.filter((x) => x.purge_at).map((x) => x.id);
+        if (introuvables.length || horsCorbeille.length || dejaPurges.length) {
+          const n = introuvables.length + horsCorbeille.length + dejaPurges.length;
+          throw conflict(
+            `Seuls les fichiers de la corbeille peuvent être supprimés définitivement : ${n} ${n > 1 ? 'fichiers sélectionnés ne le sont pas' : 'fichier sélectionné ne l’est pas'} (hors corbeille, déjà supprimé ou introuvable). Rien n’a été supprimé.`,
+            { hors_corbeille: horsCorbeille, deja_purges: dejaPurges, introuvables },
+          );
+        }
+        await query(`UPDATE fichiers SET purge_at = now(), purge_par = $2 WHERE id = ANY($1::int[])`, [ids, user.id], db);
+        await journal(
+          req,
+          'fichiers_purges',
+          'fichier',
+          null,
+          {
+            nb: r.length,
+            taille: r.reduce((t, x) => t + Number(x.taille), 0),
+            fichiers: r.map((x) => ({ id: x.id, nom: x.nom_original, chemin: x.chemin, sha256: x.sha256, taille: Number(x.taille), dossier_id: x.dossier_id, numero: x.numero })),
+          },
+          db,
+        );
+        return r;
+      });
+
+      // 2. Disque, après le commit : chaque fichier est effacé s'il remplit les garde-fous.
+      const resultats = await parLots(rows, 8, (f) => effacerDuDisque(f.chemin));
+      await query(
+        `UPDATE fichiers f SET purge_resultat = v.resultat FROM unnest($1::int[], $2::text[]) AS v(id, resultat) WHERE f.id = v.id`,
+        [rows.map((f) => f.id), resultats.map((x) => x.resultat)],
+      );
+      const bilan = {
+        purges: rows.length,
+        supprimes_du_disque: resultats.filter((x) => x.supprime).length,
+        octets_liberes_maintenant: resultats.reduce((t, x) => t + x.libere, 0),
+        octets_partages: resultats.reduce((t, x) => t + x.partage, 0),
+        fichiers_partages: resultats.filter((x) => x.partage > 0).length,
+        absents: resultats.filter((x) => x.resultat === 'absent du disque').length,
+        erreurs: resultats.flatMap((x, i) => (x.erreur ? [{ id: rows[i]!.id, nom: rows[i]!.nom_original, message: x.erreur }] : [])),
+      };
+      await journal(req, 'fichiers_purges_resultat', 'fichier', null, bilan);
+      invaliderStockage();
+      res.json(bilan);
+    } finally {
+      purgeEnCours = false;
+    }
   });
 
   // -------------------------------------------------------------------------
@@ -248,6 +501,7 @@ export function fichiersAdminRouter(config: Config) {
               (f.legacy_id IS NOT NULL) AS importe, d.id AS dossier_id, d.numero AS dossier_numero, d.statut AS dossier_statut,
               d.client_nom, (d.deleted_at IS NOT NULL) AS dossier_supprime
        FROM fichiers f JOIN dossiers d ON d.id = f.dossier_id
+       WHERE f.purge_at IS NULL
        ORDER BY f.created_at DESC, f.id DESC`,
     );
     const tailles = await parLots(rows, 32, (r) => tailleSurDisque(racine, r.chemin));

@@ -30,6 +30,10 @@ dossiersRouter.post('/', requireRole('admin', 'preparateur'), async (req, res) =
   res.status(201).json(await svc.detailDossier(me(req), d.id));
 });
 
+dossiersRouter.post('/:id/dupliquer', requireRole('admin', 'preparateur'), async (req, res) => {
+  res.status(201).json(await svc.dupliquerDossier(me(req), intParam(req), req.body));
+});
+
 dossiersRouter.get('/:id', async (req, res) => {
   res.json(await svc.detailDossier(me(req), intParam(req)));
 });

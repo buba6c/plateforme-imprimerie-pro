@@ -1,47 +1,147 @@
-// Grille tarifaire de départ d'une installation neuve. Elle reprend les 24 tarifs de
-// l'ancienne plateforme (mêmes codes et mêmes prix) et ajoute, sans prix, les supports et
-// formats que l'atelier propose mais qui n'avaient pas de tarif : l'administrateur les
-// renseigne dans l'écran Tarifs. En production, l'import reprend la grille réelle.
+// Grille tarifaire de départ d'une installation neuve. Elle reprend les tarifs de l'ancienne
+// plateforme (mêmes codes et mêmes prix) et ajoute, sans prix, les supports, formats, papiers,
+// finitions et services du formulaire de commande : l'administrateur les renseigne dans l'écran
+// Tarifs ; tant qu'un prix manque, le calcul s'arrête avec « Prix de … à renseigner dans Tarifs ».
+// En production, l'import reprend la grille réelle et complète avec cette liste.
+//
+// Une base déjà installée reçoit les mêmes ajouts par la migration 008_tarifs_enrichis.sql
+// (à tenir alignée avec cette liste).
 
-import type { Tarif } from './pricing';
+import { verifierCombinaisonTarif, type CategorieTarif, type Tarif, type UniteTarif } from './pricing';
+
+const roland = (categorie: CategorieTarif, code: string, libelle: string, unite: UniteTarif, prix: number | null): Tarif => ({ machine: 'roland', categorie, code, libelle, unite, prix, actif: true });
+const xerox = (categorie: CategorieTarif, code: string, libelle: string, unite: UniteTarif, prix: number | null): Tarif => ({ machine: 'xerox', categorie, code, libelle, unite, prix, actif: true });
+const global = (categorie: CategorieTarif, code: string, libelle: string, unite: UniteTarif, prix: number | null): Tarif => ({ machine: 'global', categorie, code, libelle, unite, prix, actif: true });
 
 export const TARIFS_DEFAUT: Tarif[] = [
-  // Roland : supports au m²
-  { machine: 'roland', categorie: 'support', code: 'bache_m2', libelle: 'Bâche standard', unite: 'm2', prix: 7000, actif: true },
-  { machine: 'roland', categorie: 'support', code: 'vinyle_m2', libelle: 'Vinyle adhésif', unite: 'm2', prix: 9500, actif: true },
-  { machine: 'roland', categorie: 'support', code: 'papier_photo_m2', libelle: 'Papier photo', unite: 'm2', prix: 8500, actif: true },
-  { machine: 'roland', categorie: 'support', code: 'toile_canvas_m2', libelle: 'Toile canvas', unite: 'm2', prix: 12000, actif: true },
-  { machine: 'roland', categorie: 'support', code: 'vinyle_transparent_m2', libelle: 'Vinyle transparent', unite: 'm2', prix: null, actif: true },
-  { machine: 'roland', categorie: 'support', code: 'micro_perfore_m2', libelle: 'Vinyle micro-perforé', unite: 'm2', prix: null, actif: true },
-  { machine: 'roland', categorie: 'support', code: 'backlit_m2', libelle: 'Backlit', unite: 'm2', prix: null, actif: true },
-  { machine: 'roland', categorie: 'support', code: 'mesh_m2', libelle: 'Bâche mesh', unite: 'm2', prix: null, actif: true },
-  { machine: 'roland', categorie: 'support', code: 'tissu_m2', libelle: 'Tissu', unite: 'm2', prix: null, actif: true },
+  // Roland : supports au m² (le kakémono se vend à l'exemplaire, structure comprise)
+  roland('support', 'bache_m2', 'Bâche standard', 'm2', 7000),
+  roland('support', 'vinyle_m2', 'Vinyle adhésif', 'm2', 9500),
+  roland('support', 'papier_photo_m2', 'Papier photo', 'm2', 8500),
+  roland('support', 'toile_canvas_m2', 'Toile canvas', 'm2', 12000),
+  roland('support', 'vinyle_transparent_m2', 'Vinyle transparent', 'm2', null),
+  roland('support', 'micro_perfore_m2', 'Vinyle micro-perforé', 'm2', null),
+  roland('support', 'backlit_m2', 'Backlit', 'm2', null),
+  roland('support', 'mesh_m2', 'Bâche mesh', 'm2', null),
+  roland('support', 'tissu_m2', 'Tissu', 'm2', null),
+  roland('support', 'kakemono', 'Kakémono (structure comprise)', 'exemplaire', null),
   // Roland : finitions et options
-  { machine: 'roland', categorie: 'finition', code: 'pelliculage', libelle: 'Pelliculage', unite: 'm2', prix: 1500, actif: true },
-  { machine: 'roland', categorie: 'finition', code: 'vernis', libelle: 'Vernis sélectif', unite: 'm2', prix: 2000, actif: true },
-  { machine: 'roland', categorie: 'finition', code: 'coupage_decoupe', libelle: 'Découpe à la forme', unite: 'forfait', prix: 3000, actif: true },
-  { machine: 'roland', categorie: 'finition', code: 'oeillets', libelle: 'Œillets', unite: 'unite', prix: null, actif: true },
-  { machine: 'roland', categorie: 'finition', code: 'ourlet', libelle: 'Ourlet', unite: 'ml', prix: null, actif: true },
-  { machine: 'roland', categorie: 'option', code: 'livraison', libelle: 'Livraison', unite: 'forfait', prix: 5000, actif: true },
-  { machine: 'roland', categorie: 'option', code: 'montage', libelle: 'Montage et installation', unite: 'forfait', prix: 10000, actif: true },
+  roland('finition', 'pelliculage', 'Pelliculage', 'm2', 1500),
+  roland('finition', 'vernis', 'Vernis sélectif', 'm2', 2000),
+  // Découpe à la forme : par exemplaire (A5 : même quantité en saisie manuelle et avec l'assistant).
+  roland('finition', 'coupage_decoupe', 'Découpe à la forme', 'exemplaire', 3000),
+  roland('finition', 'contrecollage_m2', 'Contrecollage PVC ou forex', 'm2', null),
+  roland('finition', 'oeillets', 'Œillets', 'unite', null),
+  roland('finition', 'ourlet', 'Ourlet', 'ml', null),
+  roland('finition', 'collage', 'Collage des bords', 'ml', null),
+  roland('option', 'montage', 'Pose sur site', 'forfait', 10000),
   // Xerox : formats à la face imprimée
-  { machine: 'xerox', categorie: 'support', code: 'papier_a4_couleur', libelle: 'A4 couleur', unite: 'page', prix: 100, actif: true },
-  { machine: 'xerox', categorie: 'support', code: 'papier_a4_nb', libelle: 'A4 noir et blanc', unite: 'page', prix: 50, actif: true },
-  { machine: 'xerox', categorie: 'support', code: 'papier_a3_couleur', libelle: 'A3 couleur', unite: 'page', prix: 200, actif: true },
-  { machine: 'xerox', categorie: 'support', code: 'papier_a3_nb', libelle: 'A3 noir et blanc', unite: 'page', prix: 100, actif: true },
-  { machine: 'xerox', categorie: 'support', code: 'papier_a5_couleur', libelle: 'A5 couleur', unite: 'page', prix: null, actif: true },
-  { machine: 'xerox', categorie: 'support', code: 'carte_visite', libelle: 'Carte de visite', unite: 'exemplaire', prix: null, actif: true },
-  // Xerox : finitions et options
-  { machine: 'xerox', categorie: 'finition', code: 'reliure_spirale', libelle: 'Reliure spirale', unite: 'forfait', prix: 500, actif: true },
-  { machine: 'xerox', categorie: 'finition', code: 'reliure_thermique', libelle: 'Reliure thermique', unite: 'forfait', prix: 800, actif: true },
-  { machine: 'xerox', categorie: 'finition', code: 'plastification', libelle: 'Plastification', unite: 'page', prix: 300, actif: true },
-  { machine: 'xerox', categorie: 'finition', code: 'perforation', libelle: 'Perforation', unite: 'page', prix: 50, actif: true },
-  { machine: 'xerox', categorie: 'finition', code: 'agrafage', libelle: 'Agrafage', unite: 'exemplaire', prix: null, actif: true },
-  { machine: 'xerox', categorie: 'option', code: 'papier_premium', libelle: 'Papier premium', unite: 'page', prix: 50, actif: true },
-  { machine: 'xerox', categorie: 'option', code: 'impression_recto_verso', libelle: 'Recto-verso', unite: 'feuille', prix: 20, actif: true },
-  // Global
-  { machine: 'global', categorie: 'divers', code: 'conception_graphique', libelle: 'Conception graphique', unite: 'forfait', prix: 15000, actif: true },
-  { machine: 'global', categorie: 'divers', code: 'epreuve_numerique', libelle: 'Épreuve numérique (BAT)', unite: 'forfait', prix: 2000, actif: true },
-  { machine: 'global', categorie: 'divers', code: 'urgence_24h', libelle: 'Urgence 24 h', unite: 'forfait', prix: 10000, actif: true },
-  { machine: 'global', categorie: 'divers', code: 'urgence_48h', libelle: 'Urgence 48 h', unite: 'forfait', prix: 5000, actif: true },
+  xerox('support', 'papier_a4_couleur', 'A4 couleur', 'page', 100),
+  xerox('support', 'papier_a4_nb', 'A4 noir et blanc', 'page', 50),
+  xerox('support', 'papier_a3_couleur', 'A3 couleur', 'page', 200),
+  xerox('support', 'papier_a3_nb', 'A3 noir et blanc', 'page', 100),
+  xerox('support', 'papier_a5_couleur', 'A5 couleur', 'page', null),
+  xerox('support', 'papier_a5_nb', 'A5 noir et blanc', 'page', null),
+  xerox('support', 'papier_a6_couleur', 'A6 couleur', 'page', null),
+  xerox('support', 'papier_a6_nb', 'A6 noir et blanc', 'page', null),
+  xerox('support', 'papier_sra3_couleur', 'SRA3 couleur', 'page', null),
+  xerox('support', 'papier_sra3_nb', 'SRA3 noir et blanc', 'page', null),
+  xerox('support', 'papier_10x15_couleur', 'Photo 10 × 15', 'page', null),
+  xerox('support', 'papier_13x18_couleur', 'Photo 13 × 18', 'page', null),
+  xerox('support', 'papier_20x30_couleur', 'Photo 20 × 30', 'page', null),
+  xerox('support', 'carte_visite', 'Carte de visite', 'exemplaire', null),
+  // Xerox : papiers (supplément par feuille ; l'ordinaire 80 g est compris dans le format)
+  xerox('option', 'papier_couche_135', 'Papier couché 135 g', 'feuille', null),
+  xerox('option', 'papier_couche_170', 'Papier couché 170 g', 'feuille', null),
+  xerox('option', 'papier_carte_250_350', 'Papier carte 250 à 350 g', 'feuille', null),
+  xerox('option', 'autocollant', 'Papier autocollant', 'feuille', null),
+  xerox('option', 'papier_offset', 'Papier offset', 'feuille', null),
+  xerox('option', 'papier_grimat', 'Papier grimat', 'feuille', null),
+  // Xerox : finitions et façonnage
+  xerox('finition', 'pelliculage_mat', 'Pelliculage mat', 'feuille', null),
+  xerox('finition', 'pelliculage_brillant', 'Pelliculage brillant', 'feuille', null),
+  xerox('finition', 'vernis_uv', 'Vernis UV', 'feuille', null),
+  xerox('finition', 'coupe', 'Coupe au format', 'forfait', null),
+  xerox('finition', 'agrafage', 'Agrafage (piqûre)', 'exemplaire', null),
+  xerox('finition', 'dos_carre_colle', 'Dos carré collé', 'exemplaire', null),
+  xerox('finition', 'rainage_pliage', 'Rainage et pliage', 'exemplaire', null),
+  // Reliures : par exemplaire, comme l'ancienne plateforme les comptait (A5).
+  xerox('finition', 'reliure_spirale', 'Reliure spirale', 'exemplaire', 500),
+  xerox('finition', 'reliure_thermique', 'Reliure thermique', 'exemplaire', 800),
+  xerox('finition', 'plastification', 'Plastification', 'page', 300),
+  xerox('finition', 'perforation', 'Perforation', 'page', 50),
+  xerox('finition', 'decoupe_forme', 'Découpe à la forme', 'exemplaire', null),
+  xerox('finition', 'numerotation', 'Numérotation', 'exemplaire', null),
+  xerox('option', 'papier_premium', 'Papier premium', 'page', 50),
+  xerox('option', 'impression_recto_verso', 'Recto-verso', 'feuille', 20),
+  // Commun aux deux machines. La livraison est commune (elle était rangée en Roland, donc
+  // introuvable pour un dossier Xerox).
+  global('option', 'livraison', 'Livraison', 'forfait', 5000),
+  global('divers', 'conception_graphique', 'Conception graphique', 'forfait', 15000),
+  global('divers', 'correction_fichiers', 'Correction des fichiers', 'forfait', null),
+  global('divers', 'epreuve_numerique', 'Épreuve numérique (BAT)', 'forfait', 2000),
+  global('divers', 'urgence_24h', 'Urgence 24 h', 'forfait', 10000),
+  global('divers', 'urgence_48h', 'Urgence 48 h', 'forfait', 5000),
 ];
+
+/** Tarif importé de l'ancienne plateforme, avant correction. */
+export interface TarifImporte {
+  machine: Tarif['machine'];
+  /** Catégorie telle qu'écrite dans l'ancienne base (« papier », « service »…). */
+  categorie: string;
+  code: string;
+  unite: UniteTarif;
+}
+
+/**
+ * Corrige un tarif de l'ancienne plateforme pour qu'il soit utilisable par le moteur de prix (A3) :
+ * - catégorie « papier » : un format (papier_a4_…, carte_visite) devient un support Xerox, un papier
+ *   devient une option par feuille ;
+ * - carte de visite : support Xerox par exemplaire (importée en « divers à l'unité », 100 cartes
+ *   valaient le prix d'une seule) ;
+ * - livraison : commune aux deux machines ;
+ * - catégorie « service » : forfaits et services.
+ * Renvoie la correction et une note lisible pour le rapport d'import, ou null si rien ne change.
+ */
+export function corrigerTarifImporte(t: TarifImporte): { machine: Tarif['machine']; categorie: CategorieTarif; unite: UniteTarif; note: string } | null {
+  const cat = t.categorie.trim().toLowerCase();
+  let machine = t.machine;
+  let categorie: CategorieTarif = (['support', 'finition', 'option', 'divers'] as const).find((c) => c === cat) ?? 'divers';
+  let unite = t.unite;
+  const notes: string[] = [];
+  const estFormat = /^(papier_(a\d|sra3|\d+x\d+)_|carte_visite|cdv)/.test(t.code);
+  if (t.code === 'carte_visite') {
+    machine = 'xerox';
+    categorie = 'support';
+    if (!['exemplaire', 'page', 'feuille'].includes(unite)) unite = 'exemplaire';
+    notes.push('carte de visite : support Xerox facturé par exemplaire');
+  } else if (cat === 'papier') {
+    if (estFormat) {
+      categorie = 'support';
+      if (machine === 'global') machine = 'xerox';
+      notes.push('catégorie « papier » : format rangé dans les supports Xerox');
+    } else {
+      categorie = 'option';
+      if (machine === 'global') machine = 'xerox';
+      if (unite === 'unite' || unite === 'forfait' || unite === 'm2' || unite === 'ml') unite = 'feuille';
+      notes.push('catégorie « papier » : supplément papier rangé dans les options Xerox, par feuille');
+    }
+  } else if (cat === 'service' || cat === 'services') {
+    categorie = 'divers';
+    notes.push('catégorie « service » : forfaits et services');
+  }
+  if (t.code === 'livraison' && machine !== 'global') {
+    machine = 'global';
+    notes.push('livraison : commune aux deux machines');
+  }
+  if (t.code.startsWith('reliure') && unite === 'forfait') {
+    unite = 'exemplaire';
+    notes.push('reliure : comptée par exemplaire, comme dans l’ancienne plateforme');
+  }
+  if (verifierCombinaisonTarif({ machine, categorie, unite }) && categorie !== 'divers') {
+    // Combinaison encore impossible : on garde les valeurs d'origine, l'écran Tarifs signalera l'erreur.
+    return null;
+  }
+  if (machine === t.machine && categorie === cat && unite === t.unite) return null;
+  return { machine, categorie, unite, note: notes.join(' ; ') || 'catégorie corrigée' };
+}

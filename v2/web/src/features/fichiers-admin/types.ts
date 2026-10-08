@@ -38,6 +38,8 @@ export interface FichierSupprime extends FichierGlobal {
   dossier_supprime: boolean;
   dossier_deleted_at: string | null;
   present: boolean;
+  /** Contenu partagé avec d'autres noms (ancienne application, sauvegardes) : place libérée plus tard. */
+  partage: boolean;
   peut_restaurer: boolean;
 }
 
@@ -88,4 +90,26 @@ export interface Integrite {
   taille_differente: { nb: number; items: FichierControle[] };
   orphelins: Bloc;
   espace: { libre_octets: number; total_octets: number } | null;
+}
+
+export interface ResultatCorbeilleGroupee {
+  mis_a_la_corbeille: number;
+  taille: number;
+  deja_a_la_corbeille: number[];
+  introuvables: number[];
+}
+
+export interface ResultatRestaurationGroupee {
+  restaures: number;
+  ignores: { id: number; nom: string | null; raison: string; message: string }[];
+}
+
+export interface ResultatPurge {
+  purges: number;
+  supprimes_du_disque: number;
+  octets_liberes_maintenant: number;
+  octets_partages: number;
+  fichiers_partages: number;
+  absents: number;
+  erreurs: { id: number; nom: string; message: string }[];
 }

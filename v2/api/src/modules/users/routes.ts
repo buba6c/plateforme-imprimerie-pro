@@ -1,3 +1,4 @@
+import { deconnecterUtilisateur } from '../../realtime';
 import crypto from 'node:crypto';
 import { Router } from 'express';
 import bcrypt from 'bcryptjs';
@@ -65,6 +66,7 @@ usersRouter.patch('/:id', requireRole('admin'), async (req, res) => {
     throw e;
   });
   if (!u) throw notFound('Utilisateur introuvable.');
+  if (input.is_active === false || input.role) deconnecterUtilisateur(id);
   await journal(req, 'utilisateur_modifie', 'user', id, input);
   res.json(u);
 });
@@ -82,6 +84,7 @@ usersRouter.post('/:id/reinitialiser-mot-de-passe', requireRole('admin'), async 
     [id, hash],
   );
   if (!u) throw notFound('Utilisateur introuvable.');
+  deconnecterUtilisateur(id);
   await journal(req, 'mot_de_passe_reinitialise', 'user', id);
   res.json({ mot_de_passe_provisoire: provisoire });
 });

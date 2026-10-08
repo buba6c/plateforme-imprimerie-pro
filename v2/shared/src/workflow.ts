@@ -13,6 +13,7 @@ export type ActionId =
   | 'programmer_livraison'
   | 'retirer_tournee'
   | 'confirmer_livraison'
+  | 'remettre_client'
   | 'cloturer'
   | 'rouvrir'
   | 'reimprimer';
@@ -35,6 +36,8 @@ export interface ActionDef {
   requiresComment?: boolean;
   /** Formulaire complémentaire à remplir dans l'interface. */
   form?: 'livraison' | 'confirmation_livraison';
+  /** Action réservée aux dossiers livrés par le livreur, ou à ceux que le client vient chercher sur place. */
+  remise?: 'livraison' | 'retrait';
   tone: 'primary' | 'secondary' | 'danger';
 }
 
@@ -111,6 +114,7 @@ export const ACTIONS: readonly ActionDef[] = [
     to: 'en_livraison',
     roles: ['livreur', 'admin'],
     form: 'livraison',
+    remise: 'livraison',
     tone: 'primary',
   },
   {
@@ -120,6 +124,7 @@ export const ACTIONS: readonly ActionDef[] = [
     from: ['en_livraison'],
     to: 'pret_livraison',
     roles: ['livreur', 'admin'],
+    remise: 'livraison',
     tone: 'secondary',
   },
   {
@@ -129,6 +134,18 @@ export const ACTIONS: readonly ActionDef[] = [
     from: ['pret_livraison', 'en_livraison'],
     to: 'livre',
     roles: ['livreur', 'admin'],
+    form: 'confirmation_livraison',
+    remise: 'livraison',
+    tone: 'primary',
+  },
+  {
+    id: 'remettre_client',
+    label: 'Remis au client',
+    journal: 'Retiré par le client sur place',
+    from: ['pret_livraison'],
+    to: 'livre',
+    roles: ['preparateur', 'admin'],
+    remise: 'retrait',
     form: 'confirmation_livraison',
     tone: 'primary',
   },
@@ -163,6 +180,11 @@ export const ACTIONS: readonly ActionDef[] = [
   },
 ];
 
+/** Accès sûr par identifiant (pas d'héritage d'Object.prototype : « constructor » n'est pas une action). */
+export function actionParId(id: string): ActionDef | undefined {
+  return Object.hasOwn(ACTIONS_BY_ID, id) ? ACTIONS_BY_ID[id as ActionId] : undefined;
+}
+
 export const ACTIONS_BY_ID: Record<ActionId, ActionDef> = Object.fromEntries(ACTIONS.map((a) => [a.id, a])) as Record<
   ActionId,
   ActionDef
@@ -178,11 +200,15 @@ export interface WorkflowDossier {
   machine: Machine;
   preparateur_id: number | null;
   nb_fichiers: number;
+  /** Livreur désigné (une tournée programmée appartient à son livreur). */
+  livreur_id?: number | null;
+  /** livraison (par défaut) ou retrait sur place par le client. */
+  mode_remise?: 'livraison' | 'retrait' | null;
 }
 
 export type Refus =
   | { ok: true }
-  | { ok: false; code: 'role' | 'statut' | 'proprietaire' | 'machine' | 'fichiers' | 'commentaire'; message: string };
+  | { ok: false; code: 'role' | 'statut' | 'proprietaire' | 'machine' | 'fichiers' | 'commentaire' | 'remise' | 'livreur'; message: string };
 
 /** Vérifie qu'une action est permise. Le message est destiné à l'utilisateur. */
 export function verifierAction(
@@ -196,6 +222,16 @@ export function verifierAction(
   }
   if (!action.from.includes(dossier.statut)) {
     return { ok: false, code: 'statut', message: "Cette action n'est pas possible dans l'état actuel du dossier." };
+  }
+  if (action.remise && (dossier.mode_remise ?? 'livraison') !== action.remise) {
+    return {
+      ok: false,
+      code: 'remise',
+      message: action.remise === 'retrait' ? 'Ce dossier est à livrer : c’est le livreur qui le remet au client.' : 'Ce dossier est à retirer sur place par le client : il ne passe pas par le livreur.',
+    };
+  }
+  if (user.role === 'livreur' && dossier.statut === 'en_livraison' && dossier.livreur_id && dossier.livreur_id !== user.id) {
+    return { ok: false, code: 'livreur', message: 'Cette livraison est dans la tournée d’un autre livreur.' };
   }
   if (user.role !== 'admin') {
     if (action.ownerOnly && user.role === 'preparateur' && dossier.preparateur_id !== user.id) {

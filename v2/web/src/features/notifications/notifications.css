@@ -1,0 +1,72 @@
+/* Cloche des notifications, bandeau d'activation, signal du menu. Couleurs : variables de la charte. */
+
+/* ---------- Cloche ---------- */
+.notif-popover {
+  display: flex; flex-direction: column;
+  max-height: calc(100dvh - var(--topbar) - var(--space-6));
+}
+.notif-popover .popover__list { flex: 1 1 auto; min-height: 96px; max-height: 360px; }
+.notif-etat {
+  display: flex; align-items: flex-start; gap: var(--space-2); margin: 0;
+  padding: var(--space-2) var(--space-4); border-bottom: 1px solid var(--line);
+  background: var(--warning-soft); color: var(--warning-ink); font-size: 13px; line-height: 18px;
+}
+.notif-etat svg { width: 16px; height: 16px; flex: none; margin-top: 1px; }
+
+.notif-reglages {
+  display: grid; gap: var(--space-2); padding: var(--space-3) var(--space-4) var(--space-4);
+  border-top: 1px solid var(--line); background: var(--surface-sunken);
+  border-radius: 0 0 var(--radius-lg) var(--radius-lg);
+}
+.notif-reglages__titre {
+  margin: 0; font-size: 11px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--text-muted);
+}
+.notif-reglages__ligne { display: grid; gap: var(--space-1); justify-items: start; }
+.notif-reglages__aide { margin: 0; font-size: 13px; line-height: 18px; color: var(--text-muted); }
+.notif-reglages .ev-check { font-size: 13px; }
+
+/* ---------- Bandeau « Activer les notifications » ---------- */
+.notif-bandeau {
+  position: absolute; right: 0; top: calc(100% + 8px); z-index: 29;
+  width: min(340px, calc(100vw - 32px));
+  display: grid; grid-template-columns: auto minmax(0, 1fr); gap: var(--space-3);
+  padding: var(--space-4); border: 1px solid var(--line); border-radius: var(--radius-lg);
+  background: var(--surface-raised); box-shadow: var(--shadow-pop); color: var(--text);
+}
+.notif-bandeau::before {
+  content: ""; position: absolute; top: -6px; right: 14px; width: 10px; height: 10px;
+  background: var(--surface-raised); border-left: 1px solid var(--line); border-top: 1px solid var(--line);
+  transform: rotate(45deg);
+}
+.notif-bandeau__icone {
+  display: grid; place-items: center; width: 36px; height: 36px; border-radius: var(--radius-md);
+  background: var(--accent-soft); color: var(--accent-ink);
+}
+.notif-bandeau__icone svg { width: 18px; height: 18px; }
+.notif-bandeau__texte { display: grid; gap: var(--space-1); }
+.notif-bandeau__texte strong { font-size: 14px; }
+.notif-bandeau__texte p { margin: 0; font-size: 13px; line-height: 18px; color: var(--text-muted); }
+.notif-bandeau__actions { display: flex; flex-wrap: wrap; gap: var(--space-2); margin-top: var(--space-2); }
+
+/* ---------- Menu : nouveaux travaux à imprimer ----------
+   À poser sur l'entrée « File d'impression » (barre latérale ou onglets du téléphone) quand
+   useNouveauxTravaux() > 0. Couleur de la machine avec .nav-clignote--roland / --xerox. */
+.nav-clignote { --nav-signal: var(--accent); position: relative; }
+.nav-clignote--roland { --nav-signal: var(--roland); }
+.nav-clignote--xerox { --nav-signal: var(--xerox); }
+.nav-clignote::after {
+  content: ""; width: 8px; height: 8px; border-radius: 50%; flex: none;
+  background: var(--nav-signal); box-shadow: 0 0 0 0 var(--nav-signal);
+  animation: nav-signal 1.8s ease-out infinite;
+}
+.ev-nav-item.nav-clignote::after { margin-left: auto; }
+.ev-nav-item.nav-clignote:has(.ev-count)::after { margin-left: var(--space-2); }
+.ev-tabbar a.nav-clignote::after { position: absolute; top: 6px; left: calc(50% + 8px); }
+@keyframes nav-signal {
+  0% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--nav-signal) 60%, transparent); }
+  70% { box-shadow: 0 0 0 7px color-mix(in srgb, var(--nav-signal) 0%, transparent); }
+  100% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--nav-signal) 0%, transparent); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .nav-clignote::after { animation: none; box-shadow: 0 0 0 3px color-mix(in srgb, var(--nav-signal) 35%, transparent); }
+}

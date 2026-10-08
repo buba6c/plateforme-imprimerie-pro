@@ -53,6 +53,10 @@ export const TYPES_NOTIFICATION = [
   'paiement_a_valider',
   'paiement_valide',
   'paiement_refuse',
+  'statut_force',
+  'report_livraison',
+  'livraison_programmee',
+  'livraison_annulee',
 ] as const;
 export type TypeNotification = (typeof TYPES_NOTIFICATION)[number];
 export type ReglesNotifications = Record<TypeNotification, boolean>;

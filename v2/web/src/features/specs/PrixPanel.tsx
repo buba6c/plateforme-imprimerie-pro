@@ -11,6 +11,7 @@ import {
   type ParamsPrix,
   type ResultatPrix,
   type UniteTarif,
+  TYPE_DOCUMENT_LABELS,
 } from '@evocom/shared';
 import type { Tarif } from '../../lib/types';
 import { Alert } from '../../ui';
@@ -91,11 +92,12 @@ export function LignesPrix({ lignes, titreGroupe }: { lignes: LignePrix[]; titre
             <div key={`${l.code}-${i}`} className="sp-recu__ligne">
               <span className="sp-recu__lib">{l.libelle}</span>
               <span className="ev-num sp-recu__total">{formatEntier(l.total)}</span>
-              {l.unite !== 'pourcent' && (
+              {l.unite !== 'pourcent' && l.total >= 0 && (
                 <span className="sp-recu__calc ev-mono">
                   {quantiteAvecUnite(l.quantite, l.unite)} × {formatEntier(l.prix_unitaire)}
                 </span>
               )}
+              {l.explication && <span className="sp-recu__clair">{l.explication}</span>}
             </div>
           ))}
         </div>
@@ -105,6 +107,8 @@ export function LignesPrix({ lignes, titreGroupe }: { lignes: LignePrix[]; titre
 }
 
 export function TotauxPrix({ r, params, montantRetenu }: { r: ResultatPrix; params: ParamsPrix; montantRetenu?: number | null }) {
+  // Grille hors taxes : la TVA s'ajoute avant l'arrondi ; le total TTC est ensuite ventilé (HT + TVA = TTC).
+  const tvaAjoutee = params.tva_applicable && params.prix_saisis_ht ? r.total_ttc - r.arrondi - (r.sous_total - r.remise) : 0;
   return (
     <dl className="sp-totaux">
       <div>
@@ -117,28 +121,28 @@ export function TotauxPrix({ r, params, montantRetenu }: { r: ResultatPrix; para
           <dd className="ev-num">−{formatEntier(r.remise)}</dd>
         </div>
       )}
-      {r.arrondi !== 0 && (
+      {tvaAjoutee > 0 && (
         <div>
-          <dt>Arrondi{params.arrondi_pas ? ` (${formatEntier(params.arrondi_pas)} FCFA)` : ''}</dt>
-          <dd className="ev-num">+{formatEntier(r.arrondi)}</dd>
+          <dt>TVA {formatDecimal(params.tva_taux)} % ajoutée</dt>
+          <dd className="ev-num">+{formatEntier(tvaAjoutee)}</dd>
         </div>
       )}
-      {params.tva_applicable && (
-        <>
-          <div>
-            <dt>Total HT</dt>
-            <dd className="ev-num">{formatEntier(r.total_ht)}</dd>
-          </div>
-          <div>
-            <dt>TVA {formatDecimal(params.tva_taux)} %</dt>
-            <dd className="ev-num">{formatEntier(r.tva)}</dd>
-          </div>
-        </>
+      {r.arrondi !== 0 && (
+        <div>
+          <dt>Arrondi{params.arrondi_pas ? ` (${formatEntier(params.arrondi_pas)} FCFA supérieur)` : ''}</dt>
+          <dd className="ev-num">+{formatEntier(r.arrondi)}</dd>
+        </div>
       )}
       <div className="sp-totaux__total" data-barre={montantRetenu !== undefined && montantRetenu !== null && montantRetenu !== r.total_ttc}>
         <dt>{params.tva_applicable ? 'Total TTC' : 'Total'}</dt>
         <dd className="ev-num">{formatFCFA(r.total_ttc)}</dd>
       </div>
+      {params.tva_applicable && (
+        <div className="sp-totaux__dont">
+          <dt>Dont HT {formatEntier(r.total_ht)} · TVA {formatDecimal(params.tva_taux)} %</dt>
+          <dd className="ev-num">{formatEntier(r.tva)}</dd>
+        </div>
+      )}
     </dl>
   );
 }
@@ -154,8 +158,10 @@ interface PrixPanelProps {
   libelle: (machine: Machine, code: string) => string;
   /** L'utilisateur peut corriger la grille (lien vers Tarifs). */
   peutEditerTarifs?: boolean;
-  /** Montant saisi à la main (remplace le calcul). */
+  /** Montant saisi à la main ou prix convenu (remplace le calcul). */
   montantRetenu?: number | null;
+  /** Origine du montant retenu (« Prix du devis ») ; par défaut « Saisi à la main ». */
+  libelleRetenu?: string;
   children?: ReactNode;
   titre?: string;
   /** Le formulaire propose la saisie manuelle du montant (dossier). */
@@ -174,15 +180,17 @@ export function PrixPanel({
   libelle,
   peutEditerTarifs,
   montantRetenu,
+  libelleRetenu,
   children,
   titre = 'Prix',
   saisieManuelle,
 }: PrixPanelProps) {
   const lignes = lignesDe(machine, draft);
   const titreGroupe = (g: number) => {
-    if (g === -1) return 'Forfaits et services';
-    const l = conversion.apercu.lignes[g];
-    return `Ligne ${indexOrigine(conversion, g) + 1} · ${l ? libelle(machine, l.support) : ''}`;
+    if (g === -1) return 'Services du dossier';
+    const l = conversion.apercu.lignes[g] as (typeof conversion.apercu.lignes)[number] & { type_document?: keyof typeof TYPE_DOCUMENT_LABELS | null };
+    const type = l?.type_document ? `${TYPE_DOCUMENT_LABELS[l.type_document]} · ` : '';
+    return `Ligne ${indexOrigine(conversion, g) + 1} · ${type}${l ? libelle(machine, l.support) : ''}`;
   };
   const manuel = montantRetenu !== undefined && montantRetenu !== null;
 
@@ -221,6 +229,16 @@ export function PrixPanel({
   } else if (resultat && resultat.ok) {
     contenu = (
       <>
+        {!!resultat.avertissements?.length && (
+          <Alert tone="warning">
+            <strong>À vérifier</strong>
+            <ul className="sp-erreurs">
+              {resultat.avertissements.map((e) => (
+                <li key={e}>{e}</li>
+              ))}
+            </ul>
+          </Alert>
+        )}
         <LignesPrix lignes={resultat.lignes} titreGroupe={titreGroupe} />
         <TotauxPrix r={resultat} params={params} montantRetenu={montantRetenu} />
       </>
@@ -232,7 +250,7 @@ export function PrixPanel({
       <header className="ev-card__head">
         <h2 className="ev-card__title">{titre}</h2>
         {manuel ? (
-          <span className="sp-tag">Saisi à la main</span>
+          <span className="sp-tag">{libelleRetenu ?? 'Saisi à la main'}</span>
         ) : (
           <span className="ev-muted sp-prix__note">Calcul en direct</span>
         )}
@@ -248,7 +266,7 @@ export function PrixPanel({
         {manuel && (
           <div className="sp-totaux sp-totaux--retenu">
             <div className="sp-totaux__total">
-              <dt>Montant retenu</dt>
+              <dt>{libelleRetenu ?? 'Montant retenu'}</dt>
               <dd className="ev-num">{formatFCFA(montantRetenu)}</dd>
             </div>
           </div>
@@ -256,6 +274,11 @@ export function PrixPanel({
         {parDefaut && (
           <p className="ev-help" style={{ margin: 0 }}>
             Paramètres de prix par défaut : arrondi au {formatEntier(params.arrondi_pas)} FCFA supérieur, sans TVA.
+          </p>
+        )}
+        {resultat && resultat.ok && !manuel && (
+          <p className="ev-help" style={{ margin: 0 }}>
+            Chaque ligne = quantité × prix de la grille Tarifs. Le serveur refait le calcul à l’enregistrement.
           </p>
         )}
       </div>

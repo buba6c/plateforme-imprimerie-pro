@@ -37,6 +37,40 @@ function ecrirePreference(v: boolean) {
   }
 }
 
+/**
+ * Prépare le son pour une page qui n'a pas de bouton dédié (cloche des notifications) :
+ * le contexte audio est créé et réveillé au premier geste de la personne.
+ * Renvoie une fonction qui retire l'écoute.
+ */
+export function preparerSonAuPremierGeste(): () => void {
+  const reveiller = () => {
+    const c = contexte();
+    if (c && c.state !== 'running') void c.resume().catch(() => {});
+  };
+  if (ctx?.state === 'running') return () => {};
+  document.addEventListener('pointerdown', reveiller, { once: true });
+  document.addEventListener('keydown', reveiller, { once: true });
+  return () => {
+    document.removeEventListener('pointerdown', reveiller);
+    document.removeEventListener('keydown', reveiller);
+  };
+}
+
+/** Réveille le son pendant un geste (clic sur une case) et joue le signal pour l'essayer. */
+export async function essayerSon(): Promise<boolean> {
+  const c = contexte();
+  if (!c) return false;
+  await c.resume().catch(() => {});
+  if (c.state !== 'running') return false;
+  jouerCarillon();
+  return true;
+}
+
+/** Vrai si un son peut être joué tout de suite (contexte audio réveillé par un geste). */
+export function sonPret(): boolean {
+  return ctx?.state === 'running';
+}
+
 /** Deux notes courtes, volume modéré. */
 export function jouerCarillon() {
   const c = ctx;

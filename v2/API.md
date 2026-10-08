@@ -57,9 +57,12 @@ Socket.IO (`/socket.io`, cookie) : événements `dossier {type,id,numero,statut,
 | POST | /clients/:id/fusionner `{dans_id}` | admin | déplace dossiers/devis/factures vers `dans_id`, marque `fusionne_dans` |
 | GET | /paiements?statut=a_valider\|valide\|refuse&livreur_id&from&to&page&limit | admin (tout) ; livreur (les siens) ; préparateur (les siens) | `{items:[{id,dossier_id,numero,client_nom,montant,mode,reference,statut,notes,encaisse_par_nom,encaisse_at,valide_par_nom,valide_at,motif_refus}], total, somme}` |
 | POST | /dossiers/:id/paiements `{montant,mode,reference?,notes?}` | admin (validé d'office), préparateur, livreur (à valider) | paiement créé ; refuse un dépassement du reste à payer |
-| POST | /paiements/:id/valider | admin | |
+| POST | /paiements/:id/valider | admin | 409 si déjà traité, dossier à la corbeille ou dépassement du montant (`details:{deja_paye,montant_dossier}`) |
 | POST | /paiements/:id/refuser `{motif}` | admin | motif obligatoire |
-| GET | /caisse | admin | par encaisseur : `[{user_id,nom,role,a_valider:{n,somme},valide_aujourdhui:{n,somme}}]` + par mode |
+| POST | /paiements/valider-groupe `{ids}` | admin | 1 à 500 ids ; `{valides, somme, ids[], refuses:[{id,numero,code,message,details?}]}` (voir plus bas) |
+| GET | /paiements/historique?avant | admin | aperçu sans écriture de la validation de l'historique importé : `{avant, borne, n, somme, ignores:{n,somme,depassement,exemples[]}, importes_a_valider:{n,somme}}` |
+| POST | /paiements/valider-historique `{avant, mot_de_passe}` | admin | valide d'un coup les paiements importés à valider (voir plus bas) ; `{avant, borne, n, somme, ignores}` |
+| GET | /caisse | admin | par encaisseur : `[{user_id,nom,role,a_valider:{n,somme},valide_aujourdhui:{n,somme},refuse_aujourdhui:{n,somme}}]` + par mode |
 | GET | /devis?statut&q&page&limit | admin (tous), préparateur (les siens) | `{items,total}` |
 | POST | /devis `{machine,client_id?,client_nom,client_telephone?,client_email?,description?,specs,notes?,validite_jours?}` | admin, preparateur | prix calculé par le moteur ; 422 avec `details.erreurs` si incalculable |
 | GET | /devis/:id | | devis + `detail_prix` |
@@ -116,16 +119,52 @@ jamais renvoyée telle quelle (elle déconnecterait l'utilisateur).
 ## Gestion des fichiers
 
 Préfixe distinct de `/fichiers` pour qu'aucune route ne se marche dessus. Visibilité appliquée dans le SQL (mêmes règles
-que les dossiers) ; les fichiers à la corbeille sont exclus de la liste ; le chemin disque n'est jamais renvoyé.
+que les dossiers) ; les fichiers à la corbeille sont exclus de la liste ; le chemin disque n'est jamais renvoyé. Les
+fichiers purgés (`purge_at` renseigné) n'apparaissent plus nulle part (liste, corbeille, contrôle d'intégrité) et ne
+peuvent plus être restaurés ; leur ligne reste en base comme trace.
 Aperçu et téléchargement : `GET /fichiers/:id/contenu`.
 
 | Méthode | Route | Rôles | Réponse |
 |---|---|---|---|
 | GET | /gestion-fichiers?q&type=pdf,image,autre&machine&statut=a,b&uploaded_by&dossier_id&from&to&tri=date\|nom\|taille&ordre=asc\|desc&page&limit | admin, preparateur | `{items:[{id,nom_original,mime,taille,a_reimprimer,created_at,uploaded_by,uploaded_by_nom,categorie,importe,dossier_id,dossier_numero,dossier_statut,machine,client_id,client_nom,urgent}], total, taille_totale, page, limit}` ; valeur de filtre inconnue : 400 avec les valeurs possibles ; période sur la date d'envoi (fuseau des paramètres) |
 | GET | /gestion-fichiers/auteurs | admin, preparateur | `[{id,nom,role,nb}]` |
-| GET | /gestion-fichiers/corbeille?q&page&limit | admin | mêmes champs + `deleted_at, deleted_by, deleted_by_nom, dossier_supprime, dossier_deleted_at, present, peut_restaurer` ; `total, taille_totale` |
-| POST | /gestion-fichiers/:id/restaurer | admin | le fichier ; 404 ; 409 s'il n'est pas à la corbeille ; 409 avec `details.dossier_id` si son dossier est à la corbeille ; journal `fichier_restaure` et historique `fichier/restauration` |
-| GET | /gestion-fichiers/integrite | admin | `{verifie_at, duree_ms, fichiers:{nb,taille}, repartition:{actifs,corbeille,dossiers_corbeille}, presents:{nb,taille}, manquants:{nb,taille_declaree,items}, taille_differente:{nb,items}, orphelins:{nb,taille}, espace:{libre_octets,total_octets}\|null}` (listes limitées à 500 ; relit le stockage à chaque appel) |
+| GET | /gestion-fichiers/corbeille?q&page&limit | admin | mêmes champs + `deleted_at, deleted_by, deleted_by_nom, dossier_supprime, dossier_deleted_at, present, partage, peut_restaurer` ; `total, taille_totale` ; fichiers purgés exclus ; `partage` = le contenu a d'autres noms sur le disque (nlink > 1 : ancienne application, instantanés de sauvegarde) |
+| POST | /gestion-fichiers/:id/restaurer | admin | le fichier ; 404 ; 409 s'il n'est pas à la corbeille ou s'il a été purgé ; 409 avec `details.dossier_id` si son dossier est à la corbeille ; journal `fichier_restaure` et historique `fichier/restauration` |
+| POST | /gestion-fichiers/corbeille-groupee `{ids: number[]}` (1 à 500) | admin | `{mis_a_la_corbeille, taille, deja_a_la_corbeille[], introuvables[], dossiers[]}` ; aussi pour un dossier validé ou livré ; historique `fichier/suppression` sur chaque dossier ; journal `fichiers_corbeille_groupee` |
+| POST | /gestion-fichiers/restaurer-groupe `{ids}` (1 à 500) | admin | `{restaures, ignores:[{id,nom,raison: introuvable\|pas_a_la_corbeille\|purge\|dossier_a_la_corbeille,message}], dossiers[]}` ; historique `fichier/restauration` ; journal `fichiers_restaures_groupe` |
+| POST | /gestion-fichiers/purger `{ids (1 à 500), mot_de_passe}` | admin | `{purges, supprimes_du_disque, octets_liberes_maintenant, octets_partages, fichiers_partages, absents, erreurs:[{id,nom,message}]}` (voir « Purge définitive ») |
+| GET | /gestion-fichiers/integrite | admin | `{verifie_at, duree_ms, fichiers:{nb,taille}, repartition:{actifs,corbeille,dossiers_corbeille}, presents:{nb,taille}, manquants:{nb,taille_declaree,items}, taille_differente:{nb,items}, orphelins:{nb,taille}, espace:{libre_octets,total_octets}\|null}` (listes limitées à 500 ; relit le stockage à chaque appel ; fichiers purgés exclus) |
+
+### Purge définitive
+
+`POST /gestion-fichiers/purger` : 400 sans mot de passe ou s'il est faux (`champs.mot_de_passe`, journal `purge_refusee`) ;
+429 après 5 mots de passe faux dans l'heure ; 409 si un des fichiers n'est pas à la corbeille, est déjà purgé ou n'existe
+pas (`details:{hors_corbeille, deja_purges, introuvables}`, rien n'est purgé) ; 409 si une autre purge tourne.
+Déroulé : 1. une transaction (`FOR UPDATE`) pose `purge_at`/`purge_par` et journalise `fichiers_purges` avec, pour chaque
+fichier, `id, nom, chemin, sha256, taille, dossier_id, numero` ; 2. après le commit, pour chaque fichier : chemin sous
+`STORAGE_DIR/dossiers`, `lstat` d'un fichier ordinaire (jamais un lien symbolique), aucune autre ligne non purgée avec le
+même chemin, puis lecture de `nlink` et `unlink` ; 3. `purge_resultat` écrit sur chaque ligne (`supprime`,
+`supprime (contenu partagé : n noms)`, `absent du disque`, `conserve : …`, `erreur : …`), journal `fichiers_purges_resultat`.
+`octets_liberes_maintenant` = somme des tailles où `nlink` valait 1 ; `octets_partages` = fichiers dont le contenu avait
+d'autres noms (ancienne application, instantanés `rsync --link-dest`) : la place ne revient qu'à la disparition du dernier
+nom. Un fichier gardé (chemin partagé, hors du dossier des fichiers, lien symbolique, erreur) figure dans `erreurs`.
+
+## Sauvegardes et espace disque
+
+Routes `/systeme/*`, administrateur seulement.
+
+| Méthode | Route | Réponse |
+|---|---|---|
+| GET | /systeme/sauvegardes | `{items:[{id, ok, fichier, nom, taille, message, created_at, present, taille_reelle}], en_cours, dossier}` : 30 dernières lignes de `sauvegardes` ; `present`/`taille_reelle` lus sur le disque, seulement pour un fichier situé sous `BACKUP_DIR` (liens symboliques résolus) |
+| POST | /systeme/sauvegardes | lance `deploy/backup.sh` et attend sa fin : 200 `{ok:true, message, duree_ms}` ; 500 `{ok:false, error, message, duree_ms, code:'sauvegarde_echouee'}` avec la dernière ligne d'erreur du script ; 409 si une sauvegarde tourne déjà (dans l'API ou la tâche de la nuit : code 75 du script) ; arrêtée au bout de 30 minutes ; journal `sauvegarde_lancee` |
+| GET | /systeme/sauvegardes/:id/telecharger | le fichier `.dump` (pièce jointe) seulement s'il est sous `BACKUP_DIR` ; 404 sinon ; journal `sauvegarde_telechargee` |
+| GET | /systeme/stockage[?rafraichir=1] | `{disque:{total,libre,utilise}\|null, fichiers:{actifs:{nb,taille}, corbeille:{nb,taille}, purges:{nb,taille}}, liberable:{dossiers_livres_plus_3_mois:{nb,taille}}, partages:{nb,taille,calcule_at}}` ; `partages` = fichiers actifs (chemins distincts) dont `nlink > 1`, lu sur le disque et gardé 10 minutes (`rafraichir=1` force la relecture ; vidé après une purge, une action groupée ou une sauvegarde) |
+
+Script : chemin `BACKUP_SCRIPT` s'il est défini, sinon `deploy/backup.sh` trouvé en remontant depuis le code de l'API.
+L'API lui passe `ENV_FILE` vide et ses propres `DATABASE_URL`, `STORAGE_DIR`, `BACKUP_DIR` (le script ne charge un
+fichier `.env` que s'il existe). Après chaque instantané rsync, le script fait `touch` sur le répertoire de l'instantané
+(sinon il héritait de la date du stockage et `find -mtime` l'effaçait le soir même) ; `rclone sync` utilise
+`--backup-dir <dest>/fichiers-supprimes/<date>` (gardés `RCLONE_JOURS`, 30 jours par défaut).
 
 ## Livraisons : planning et historique
 
@@ -178,9 +217,12 @@ Précisions et ajouts par rapport au tableau ci-dessus (les champs listés dans 
 - **Listes paginées** (`/clients`, `/paiements`, `/devis`, `/factures`, `/journal`) : renvoient aussi `page` et `limit` (par défaut 50, maximum 200).
 - **`/parametres` (PUT)** : fusion partielle (un champ absent garde sa valeur). Bornes : textes de `entreprise` ≤ 200 caractères (nom non vide, e-mail valide ou vide) ; `prix.arrondi_pas` entier 0..10 000 ; `prix.tva_taux` 0..100 ; `prix.surface_min_m2` 0..100 ; `livreur_jours_historique` entier 1..90 ; `fuseau` = nom IANA connu de PostgreSQL. Journalisé sous `parametres_modifies` avec `{cle:{avant,apres}}`.
 - **`/clients`** : `items[]` contient aussi `adresse` et `total_paye`. `reste_du` = Σ par dossier de max(0, montant − paiements validés), dossiers supprimés exclus. Tri : dernier dossier le plus récent d'abord. `POST /clients` renvoie 409 (`details.client_id`) si un client actif a déjà le même nom et le même téléphone. `GET /clients/:id` renvoie la fiche même fusionnée (`fusionne_dans`, `fusionne_dans_nom`) ; `PATCH` d'une fiche fusionnée : 409. `POST /clients/:id/fusionner` renvoie la fiche de destination (format de `GET /clients/:id`) plus `fusion:{dossiers,devis,factures}` ; les coordonnées manquantes de la destination sont complétées par la source. Journalisé (`client_fusionne`, `client_modifie`).
-- **`/paiements`** : filtres supplémentaires `mode` et `dossier_id` ; `statut` accepte une liste (`a_valider,valide`). `livreur_id` filtre sur l'encaisseur (quel que soit son rôle) et n'est pris en compte que pour l'administrateur. Chaque élément porte aussi `encaisse_par`, `valide_par` et `dossier_supprime`. `valide_par_nom`/`valide_at` désignent aussi la personne et la date d'un **refus**. `somme` = Σ des montants filtrés, tous statuts confondus.
+- **`/paiements`** : filtres supplémentaires `mode` et `dossier_id` ; `statut` accepte une liste (`a_valider,valide`). `livreur_id` filtre sur l'encaisseur (quel que soit son rôle) et n'est pris en compte que pour l'administrateur. `q` (100 caractères au plus) cherche dans le numéro du dossier, le nom du client et la référence ; `importe=1|0` ne garde que les paiements repris de l'ancienne plateforme (ou les autres) ; `tri=ancien` trie du plus ancien au plus récent (défaut : plus récent d'abord). Chaque élément porte aussi `encaisse_par`, `valide_par`, `dossier_supprime`, `importe` (paiement importé, `legacy_id` renseigné), `dossier_statut` et `machine`. `valide_par_nom`/`valide_at` désignent aussi la personne et la date d'un **refus**. `somme` = Σ des montants filtrés, tous statuts confondus.
+- **Validation (unitaire, groupée, historique)** : mêmes contrôles partout, dans une transaction, après verrouillage des paiements puis des dossiers (par id croissant) ; le total déjà validé de chaque dossier est **relu après le verrou** (défaut A8). Un paiement n'est validé que s'il est « à valider », que son dossier n'est pas à la corbeille et que le total validé ne dépasse pas le montant du dossier (pas de plafond si le montant est vide). Plusieurs paiements d'un même dossier sont examinés du plus ancien au plus récent, chacun s'ajoutant au déjà payé. Chaque validation ajoute l'événement `paiement/valide` à l'historique du dossier (`data.origine` = `groupe` ou `historique` le cas échéant).
+- **`POST /paiements/valider-groupe`** : `ids` = tableau de 1 à 500 entiers (doublons ignorés), sinon 400. Les paiements valides sont validés, les autres sont listés dans `refuses` avec `code` : `introuvable`, `deja_valide`, `refuse`, `dossier_supprime`, `depassement` (avec `details:{deja_paye,montant_dossier}`). Journal : une ligne `paiement_valide` par paiement (`data.groupe=true`) et une ligne `paiements_valides_groupe` (`demandes`, `valides`, `somme`, `refuses`). Chaque encaisseur (hors l'administrateur lui-même) reçoit une seule notification `paiement_valide` récapitulative.
+- **Historique importé** (`GET /paiements/historique`, `POST /paiements/valider-historique`) : concerne les paiements « à valider » importés (`legacy_id` non nul) de dossiers **livrés ou terminés**, non supprimés, encaissés **avant** `avant`. `avant` = `AAAA-MM-JJ` (début de ce jour dans le fuseau des paramètres) ou date-heure ISO 8601 avec fuseau ; 400 si absente, invalide ou dans le futur. Le POST exige `mot_de_passe` (celui de l'administrateur connecté, vérifié avec bcrypt) : 400 si absent ou faux (`champs.mot_de_passe`, journal `validation_historique_refusee`), 429 après 5 échecs en une heure. Les paiements qui dépasseraient le montant de leur dossier restent « à valider » et sont comptés dans `ignores` (`ignores.depassement`, 20 `exemples` au plus). Journal `paiements_historique_valides` (`avant`, `borne`, `valides`, `somme`, `ignores`, `somme_ignoree`, `ids`). Pas de notification aux encaisseurs (données importées).
 - **`POST /dossiers/:id/paiements`** : 201 avec le paiement (même format que la liste). Le livreur ne peut encaisser que sur un dossier qu'il voit (404 sinon). Valider ou refuser un paiement déjà traité : 409. À la validation, si le total validé dépassait le montant du dossier : 409 avec `details:{deja_paye, montant_dossier}`. Valider et refuser sont journalisés et notifient l'encaisseur (`paiement_valide`, `paiement_refuse`).
-- **`GET /caisse`** : objet `{ par_encaisseur: [{user_id,nom,role,a_valider:{n,somme},valide_aujourdhui:{n,somme}}], par_mode: [{mode,libelle,a_valider,valide_aujourdhui}], totaux:{a_valider,valide_aujourdhui} }`. « Aujourd'hui » = jour civil dans le fuseau des paramètres.
+- **`GET /caisse`** : objet `{ par_encaisseur: [{user_id,nom,role,a_valider:{n,somme},valide_aujourdhui:{n,somme},refuse_aujourdhui:{n,somme}}], par_mode: [{mode,libelle,a_valider,valide_aujourdhui,refuse_aujourdhui}], totaux:{a_valider,valide_aujourdhui,refuse_aujourdhui} }`. « Aujourd'hui » = jour civil dans le fuseau des paramètres ; `refuse_aujourdhui` compte les refus prononcés aujourd'hui (`valide_at` du refus).
 - **`/devis`** : chaque devis porte `statut_label`, `date_validite` (AAAA-MM-JJ), `expire`, `created_by_nom`, `dossier_numero`, et dans la fiche `transitions[]`, `peut_modifier`, `peut_supprimer`, `peut_convertir`. Un préparateur ne voit que ses devis (404 sinon). Circuit : brouillon → envoye → accepte | refuse ; en plus, accepte → refuse (le client se rétracte) et refuse → envoye (nouvelle proposition). `PATCH` ne recalcule le prix que si `machine` ou `specs` sont fournis. `detail_prix` contient aussi `tva_applicable`, `tva_taux`, `prix_saisis_ht` (règle appliquée au chiffrage).
 - **`POST /devis/:id/convertir`** : 201 `{dossier_id, numero}`. Corps facultatif `{urgent?, date_promise?, consignes?, adresse_livraison?, mode_paiement_prevu?}` repris sur le dossier. Le `detail_prix` du dossier est celui du devis (prix convenus). Deuxième conversion : 409 avec `details.dossier_id`.
 - **`/factures`** : `somme_ttc` ne compte que les factures émises (pas les annulées) parmi les résultats filtrés ; filtres supplémentaires `client_id`, `dossier_id`, `statut` en liste. `from`/`to` portent sur `date_emission`. `GET /factures/:id` ajoute `dossier_numero`, `deja_paye`, `en_attente_validation`, `reste`, `situation_paiement`, `created_by_nom`, `annulee_par_nom`. Lignes : `{designation, detail, quantite, unite, prix_unitaire, total}` ; quand la TVA s'applique elles sont exprimées hors taxes et leur somme vaut `total_ht` (une ligne « Remise », « Arrondi » ou « Ajustement au prix convenu » rend l'écart explicite). Un dossier sans montant ou à 0 : 409. Émission et annulation sont journalisées.

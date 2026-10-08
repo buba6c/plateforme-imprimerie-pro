@@ -94,3 +94,51 @@
 .sp-totaux .sp-totaux__total dd { font-size: 20px; line-height: 28px; color: var(--ink); }
 .sp-totaux__total[data-barre="true"] dd { text-decoration: line-through; color: var(--text-muted); font-size: 15px; }
 .sp-totaux--retenu { border-top: 0; padding-top: 0; }
+
+/* Formulaire de commande enrichi : sous-blocs, champs qui apparaissent selon les choix, aides courtes. */
+.sp-grid--doc { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.sp-grid--format,
+.sp-grid--bords,
+.sp-grid--pell,
+.sp-grid--num { grid-template-columns: repeat(auto-fit, minmax(min(100%, 190px), 1fr)); }
+.sp-grid--xerox .sp-col-papier { min-width: 0; }
+@container (max-width: 620px) {
+  .sp-grid--doc { grid-template-columns: minmax(0, 1fr); }
+  .sp-grid--xerox .sp-col-papier { grid-column: 1 / -1; }
+}
+
+.sp-sousbloc { display: grid; gap: var(--space-2); min-width: 0; }
+.sp-aide { font-size: 12px; line-height: 16px; color: var(--text-muted); }
+.sp-info { font-weight: 400; font-size: 12px; }
+.sp-tarif { margin: calc(var(--space-2) * -1) 0 0; font-size: 12px; line-height: 16px; color: var(--text-muted); overflow-wrap: anywhere; }
+.sp-tarif[data-alerte="true"] { color: var(--warning-ink); font-weight: 500; }
+.sp-alerte {
+  margin: calc(var(--space-2) * -1) 0 0; padding: var(--space-2) var(--space-3); border-radius: var(--radius-sm);
+  background: var(--warning-soft); color: var(--warning-ink); font-size: 13px; line-height: 18px;
+}
+
+/* Groupes de boutons (Segmented) avec un libellé visible, pleine largeur, empilés sur téléphone. */
+.sp-groupe { min-width: 0; }
+.sp-groupe .ev-segmented { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); width: 100%; }
+.sp-groupe .ev-segmented span { min-width: 0; overflow-wrap: anywhere; }
+.sp-segment-large { min-width: 0; }
+@media (max-width: 600px) {
+  .sp-segment-large .ev-segmented { grid-auto-flow: row; }
+}
+
+/* Couleur de la machine (variables posées par .nd-layout[data-machine]) sur les choix cochés. */
+.nd-layout .sp-pill[data-on="true"] { border-color: var(--nd-trait, var(--accent)); background: var(--nd-teinte, var(--accent-soft)); }
+.nd-layout .sp-pill input:checked + .ev-check__box { background: var(--nd-plein, var(--accent)); border-color: var(--nd-plein, var(--accent)); }
+.nd-layout .sp-pill input:checked + .ev-check__box::after { border-color: var(--nd-sur-plein, var(--on-accent)); }
+.nd-layout .sp-groupe .ev-segmented input:checked + span { outline-color: var(--nd-trait, var(--line)); box-shadow: inset 0 -2px 0 var(--nd-trait, var(--accent)), var(--shadow-card); }
+.nd-layout .sp-ligne__num { background: var(--nd-teinte, var(--surface-sunken)); color: var(--nd-encre, var(--text-muted)); }
+
+/* Livraison */
+.sp-livraison { display: grid; gap: var(--space-3); grid-template-columns: repeat(2, minmax(0, 1fr)); padding: var(--space-3); border: 1px solid var(--line); border-radius: var(--radius-md); background: var(--surface-sunken); }
+.sp-livraison__adresse, .sp-livraison__forfait { grid-column: 1 / -1; }
+.sp-livraison__forfait { display: grid; gap: 2px; }
+@media (max-width: 600px) { .sp-livraison { grid-template-columns: minmax(0, 1fr); } }
+
+/* Panneau de prix : explication en clair et ventilation TVA */
+.sp-recu__clair { grid-column: 1 / -1; font-size: 12px; line-height: 16px; color: var(--text-muted); }
+.sp-totaux .sp-totaux__dont dt, .sp-totaux .sp-totaux__dont dd { font-size: 12px; color: var(--text-muted); }

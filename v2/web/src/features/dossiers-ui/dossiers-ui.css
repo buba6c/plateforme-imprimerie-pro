@@ -85,7 +85,16 @@
 
 /* ---------- Fiche ---------- */
 .fd-head { display: grid; gap: var(--space-3); }
-.fd-head__top { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--space-4); flex-wrap: wrap; }
+.fd-head__top {
+  --fd-teinte: var(--xerox-soft); --fd-trait: var(--xerox);
+  position: relative; overflow: hidden; display: flex; align-items: flex-start; justify-content: space-between; gap: var(--space-4); flex-wrap: wrap;
+  padding: 22px 24px 20px; border-radius: 18px; border: 1px solid var(--line); box-shadow: var(--shadow-card);
+  background: linear-gradient(120deg, var(--fd-teinte), var(--surface) 70%);
+}
+.fd-head[data-machine="roland"] .fd-head__top { --fd-teinte: var(--roland-soft); --fd-trait: var(--roland); }
+.fd-head__top::before { content: ""; position: absolute; inset: 0 0 auto; height: 6px; background: var(--fd-trait); }
+.fd-head__titre .ev-h-display { font-size: clamp(24px, 2.4vw, 32px); line-height: 1.2; }
+.fd-head__numero { font-family: var(--font-display); font-size: 17px; font-weight: 700; color: var(--ink); letter-spacing: 0.01em; }
 .fd-head__titre { display: grid; gap: 6px; min-width: 0; }
 .fd-head__badges { display: flex; flex-wrap: wrap; gap: var(--space-2); align-items: center; }
 .fd-head__actions { display: flex; flex-wrap: wrap; gap: var(--space-2); align-items: center; justify-content: flex-end; }
@@ -177,3 +186,105 @@
 .fd-montant-foot { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--space-2); padding-top: var(--space-4); padding-bottom: var(--space-4); }
 .nd-grid--conditions { grid-template-columns: minmax(0, 180px) minmax(0, 1fr); }
 @media (max-width: 600px) { .nd-grid--conditions { grid-template-columns: minmax(0, 1fr); } }
+
+/* ---------- Cartes de commande (liste des dossiers) ---------- */
+.cc-grille { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 330px), 1fr)); gap: var(--space-6); align-items: stretch; }
+.cc {
+  display: flex; flex-direction: column; min-width: 0; overflow: hidden; border-radius: 16px; background: var(--surface);
+  border: 1px solid var(--line); box-shadow: 0 1px 2px #0f162912, 0 10px 24px -16px #0f162966;
+  transition: box-shadow 220ms cubic-bezier(0.16, 1, 0.3, 1), transform 220ms cubic-bezier(0.16, 1, 0.3, 1), border-color 220ms;
+}
+.cc:hover { transform: translateY(-3px); border-color: color-mix(in srgb, var(--cc-bande) 45%, var(--line)); box-shadow: 0 2px 4px #0f162914, 0 22px 40px -22px #0f162999; }
+.cc:focus-within { border-color: var(--accent); }
+.cc[data-statut="en_cours"] { --cc-bande: var(--s-en-cours); --cc-fond: var(--s-en-cours-bg); --cc-encre: var(--s-en-cours-ink); }
+.cc[data-statut="a_revoir"] { --cc-bande: var(--s-a-revoir); --cc-fond: var(--s-a-revoir-bg); --cc-encre: var(--s-a-revoir-ink); }
+.cc[data-statut="pret_impression"] { --cc-bande: var(--s-pret-impression); --cc-fond: var(--s-pret-impression-bg); --cc-encre: var(--s-pret-impression-ink); }
+.cc[data-statut="en_impression"] { --cc-bande: var(--s-en-impression); --cc-fond: var(--s-en-impression-bg); --cc-encre: var(--s-en-impression-ink); }
+.cc[data-statut="pret_livraison"] { --cc-bande: var(--s-pret-livraison); --cc-fond: var(--s-pret-livraison-bg); --cc-encre: var(--s-pret-livraison-ink); }
+.cc[data-statut="en_livraison"] { --cc-bande: var(--s-en-livraison); --cc-fond: var(--s-en-livraison-bg); --cc-encre: var(--s-en-livraison-ink); }
+.cc[data-statut="livre"] { --cc-bande: var(--s-livre); --cc-fond: var(--s-livre-bg); --cc-encre: var(--s-livre-ink); }
+.cc[data-statut="termine"] { --cc-bande: var(--s-termine); --cc-fond: var(--s-termine-bg); --cc-encre: var(--s-termine-ink); }
+.cc[data-urgent] { border-color: color-mix(in srgb, var(--coral) 55%, var(--line)); }
+.cc__bande { height: 6px; background: var(--cc-bande); flex: none; }
+.cc__corps { display: grid; gap: 10px; padding: 16px 18px 14px; cursor: pointer; flex: 1; align-content: start; }
+.cc__haut { display: flex; align-items: center; gap: 6px 8px; min-width: 0; flex-wrap: wrap; }
+.cc__numero { font-family: var(--font-display); font-size: 16px; font-weight: 700; letter-spacing: 0.01em; color: var(--ink); white-space: nowrap; }
+.cc__urgent {
+  padding: 2px 8px; border-radius: 999px; background: var(--coral); color: var(--on-coral); font-size: 11px; line-height: 18px; font-weight: 700;
+  letter-spacing: 0.04em; text-transform: uppercase;
+}
+.cc__statut {
+  margin-left: auto; padding: 3px 10px; border-radius: 999px; background: var(--cc-fond); color: var(--cc-encre); font-size: 12.5px; line-height: 18px;
+  font-weight: 600; max-width: 100%; overflow-wrap: anywhere; text-align: center;
+}
+.cc__client { margin: 0; font-family: var(--font-display); font-size: 19px; line-height: 25px; font-weight: 700; letter-spacing: -0.01em; color: var(--ink); overflow-wrap: anywhere; }
+.cc__client a { color: inherit; text-decoration: none; }
+.cc__client a:hover { color: var(--accent-ink); }
+.cc__client a:focus-visible { outline: none; box-shadow: var(--focus-ring); border-radius: 4px; }
+.cc__badges { display: flex; flex-wrap: wrap; gap: 6px; }
+.cc__machine {
+  padding: 2px 10px; border-radius: 7px; font-size: 12px; line-height: 20px; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase;
+  background: var(--xerox); color: var(--on-xerox);
+}
+.cc__machine[data-machine="roland"] { background: var(--roland); color: var(--on-roland); }
+.cc__badge {
+  display: inline-flex; align-items: center; gap: 5px; padding: 2px 9px; border-radius: 7px; font-size: 12.5px; line-height: 20px;
+  background: var(--surface-sunken); color: var(--text); border: 1px solid var(--line);
+}
+.cc__badge svg { width: 14px; height: 14px; color: var(--text-muted); }
+.cc__badge[data-vide] { color: var(--text-muted); border-style: dashed; }
+.cc__travail { margin: 0; font-size: 14px; line-height: 20px; color: var(--text-muted); display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.cc__suite {
+  margin: 0; padding: 8px 10px; border-radius: 10px; font-size: 13.5px; line-height: 19px; font-weight: 500;
+  background: color-mix(in srgb, var(--accent) 8%, var(--surface)); color: var(--accent-ink);
+}
+.cc__suite[data-tone="alerte"] { background: var(--s-a-revoir-bg); color: var(--s-a-revoir-ink); }
+.cc__infos { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
+.cc__date { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; color: var(--text-muted); }
+.cc__date svg { width: 15px; height: 15px; }
+.cc__date[data-retard] { color: var(--warning-ink); font-weight: 600; }
+.cc__montant { display: inline-flex; align-items: center; gap: 8px; font-size: 14px; font-weight: 600; color: var(--text); }
+.cc__actions {
+  display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 12px 18px; border-top: 1px solid var(--line);
+  background: color-mix(in srgb, var(--surface-sunken) 60%, var(--surface));
+}
+.cc__actions .ev-btn-group { flex-wrap: wrap; }
+.cc__ouvrir { margin-left: auto; }
+.dl-vue { display: inline-flex; }
+@media (prefers-reduced-motion: reduce) { .cc { transition: none; } .cc:hover { transform: none; } }
+
+/* Le formulaire prend la couleur de la machine choisie : rose pour Roland, bleu pour Xerox. */
+.nd-layout { --nd-teinte: var(--xerox-soft); --nd-trait: var(--xerox); --nd-encre: var(--xerox-ink); --nd-plein: var(--xerox); --nd-sur-plein: var(--on-xerox); }
+.nd-layout[data-machine="roland"] { --nd-teinte: var(--roland-soft); --nd-trait: var(--roland); --nd-encre: var(--roland-ink); --nd-plein: var(--roland); --nd-sur-plein: var(--on-roland); }
+.nd-layout .ev-card { border-top: 4px solid var(--nd-trait); transition: border-color 260ms ease-out; }
+.nd-layout .ev-card__head { background: color-mix(in srgb, var(--nd-teinte) 75%, var(--surface)); transition: background-color 260ms ease-out; }
+.nd-layout .nd-section__num { color: var(--nd-encre); font-weight: 700; }
+.nd-machine .ev-segmented input:checked + span { background: var(--nd-plein); color: var(--nd-sur-plein); box-shadow: 0 2px 6px -2px color-mix(in srgb, var(--nd-plein) 60%, transparent); }
+.nd-machine .ev-segmented input:checked + span * { color: inherit; }
+
+/* Assistant de réimpression */
+.reimp { display: grid; gap: var(--space-5); }
+.reimp__q { display: grid; gap: var(--space-3); }
+.reimp__q h3 { margin: 0; font-family: var(--font-display); font-size: 15.5px; font-weight: 700; color: var(--ink); }
+.reimp .ev-segmented { width: 100%; grid-auto-columns: 1fr; }
+.fd-lien { text-decoration: none; background: var(--accent-soft); color: var(--accent-ink); }
+.fd-lien:hover { text-decoration: underline; }
+.fd-retrait { background: var(--s-pret-livraison-bg); color: var(--s-pret-livraison-ink); }
+
+/* Fiche dossier : bouton retour, titres de carte avec pastille d'icône */
+.fd-retour { justify-self: start; }
+.fd-titre { display: inline-flex; align-items: center; gap: 10px; }
+.fd-titre__icone {
+  width: 32px; height: 32px; flex: none; display: grid; place-items: center; border-radius: 10px;
+  background: var(--fd-icone-fond, var(--accent-soft)); color: var(--fd-icone-encre, var(--accent-ink));
+}
+.fd-titre__icone svg { width: 17px; height: 17px; }
+.fd-o-fichiers { --fd-icone-fond: var(--s-pret-impression-bg); --fd-icone-encre: var(--s-pret-impression-ink); }
+.fd-o-specs { --fd-icone-fond: var(--s-en-impression-bg); --fd-icone-encre: var(--s-en-impression-ink); }
+.fd-o-histo { --fd-icone-fond: var(--s-termine-bg); --fd-icone-encre: var(--s-termine-ink); }
+.fd-o-client { --fd-icone-fond: var(--s-pret-livraison-bg); --fd-icone-encre: var(--s-pret-livraison-ink); }
+.fd-o-suivi { --fd-icone-fond: var(--s-en-livraison-bg); --fd-icone-encre: var(--s-en-livraison-ink); }
+.fd-o-montant { --fd-icone-fond: var(--s-livre-bg); --fd-icone-encre: var(--s-livre-ink); }
+.fd-layout .ev-card { border-radius: 18px; }
+.fd-layout .ev-card__head { padding: 14px 20px; }
+.fd-layout .ev-card__body { padding: 20px; }

@@ -4,7 +4,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
-import { CheckCircle2, Inbox, Printer, RotateCw, Volume2, VolumeX } from 'lucide-react';
+import { CheckCheck, CheckCircle2, Inbox, Printer, RotateCw, Volume2, VolumeX } from 'lucide-react';
 import { formatHeure, formatRelatif, MACHINE_LABELS, machineOfRole, type ActionId, type Machine } from '@evocom/shared';
 import { useUser } from '../../auth/AuthContext';
 import { useDossiers } from '../../features/dossiers/hooks';
@@ -12,6 +12,7 @@ import { DossierActions } from '../../features/dossiers/DossierActions';
 import { JobCard } from '../../features/dossiers/JobCard';
 import { jouerCarillon, useSonAtelier } from '../../features/atelier/son';
 import { useArrivees } from '../../features/atelier/useArrivees';
+import { FILTRES_FILE_TRAVAIL, useVusAtelier, type DossierAtelier } from '../../features/atelier/vus';
 import '../../features/atelier/atelier.css';
 import { messageErreur } from '../../lib/api';
 import type { DossierResume } from '../../lib/types';
@@ -55,6 +56,7 @@ const principales = (d: DossierResume): DossierResume => ({ ...d, actions: d.act
 const secondaires = (d: DossierResume): DossierResume => ({ ...d, actions: d.actions.filter((a) => SECONDAIRES.includes(a)) });
 const recent = (iso: string | null | undefined) => !!iso && Date.now() - new Date(iso).getTime() < H48;
 const temps = (iso: string | null | undefined) => (iso ? new Date(iso).getTime() : 0);
+const estReimpression = (d: DossierResume) => (d as DossierAtelier).origine_type === 'reimpression';
 
 export default function FileImpression() {
   const user = useUser();
@@ -63,10 +65,11 @@ export default function FileImpression() {
   const machine: Machine = machineRole ?? (params.get('machine') === 'xerox' ? 'xerox' : 'roland');
   const [onglet, setOnglet] = useState<Colonne>('pret');
   const son = useSonAtelier();
+  const vus = useVusAtelier();
 
   const q = useDossiers(
     machineRole
-      ? { file: 'travail', limit: 200 }
+      ? { ...FILTRES_FILE_TRAVAIL }
       : { machine, statut: ['pret_impression', 'en_impression', 'pret_livraison', 'a_revoir'], limit: 200 },
     { refetchInterval: 30_000 },
   );
@@ -96,12 +99,24 @@ export default function FileImpression() {
     },
     [son.etat],
   );
-  const nouveaux = useArrivees(
+  const arrivees = useArrivees(
     chargee ? colonnes.pret.map((d) => d.id) : undefined,
     chargee ? colonnes.encours.map((d) => d.id) : undefined,
     machine,
     onArrivee,
   );
+
+  // Imprimeur : un dossier reste « nouveau » (il clignote) jusqu'à ce qu'il l'ouvre ou clique « Vu »,
+  // même après un rechargement. Administrateur : simple surbrillance des arrivées pendant la visite.
+  const { observer, estNouveau, marquerVu, marquerTousVus } = vus;
+  useEffect(() => {
+    if (machineRole && chargee) observer(chargee.items.filter((d) => d.machine === machine));
+  }, [machineRole, chargee, machine, observer]);
+  const nouveaux = useMemo(
+    () => (machineRole ? new Set(colonnes.pret.filter(estNouveau).map((d) => d.id)) : arrivees),
+    [machineRole, colonnes.pret, estNouveau, arrivees],
+  );
+  const nbNouveaux = colonnes.pret.filter((d) => nouveaux.has(d.id)).length;
 
   // Le nombre de dossiers à imprimer reste visible dans l'onglet du navigateur.
   useEffect(() => {
@@ -128,6 +143,11 @@ export default function FileImpression() {
               <span>
                 <strong>{colonnes.pret.length}</strong> à imprimer
                 {urgents > 0 && <span className="atelier-compteurs__urgent">, dont {urgents} urgent{urgents > 1 ? 's' : ''}</span>}
+                {machineRole && nbNouveaux > 0 && (
+                  <span className="atelier-compteurs__nouveaux">
+                    {' '}· {nbNouveaux} nouveau{nbNouveaux > 1 ? 'x' : ''}
+                  </span>
+                )}
               </span>
               <span>
                 <strong>{colonnes.encours.length}</strong> en impression
@@ -142,6 +162,11 @@ export default function FileImpression() {
         }
         actions={
           <div className="atelier-head-actions">
+            {machineRole && nbNouveaux > 1 && (
+              <Button variant="ghost" size="sm" icon={<CheckCheck />} onClick={() => marquerTousVus([...nouveaux])}>
+                Tout marquer comme vu
+              </Button>
+            )}
             {!machineRole && (
               <Segmented
                 name="machine"
@@ -220,17 +245,39 @@ export default function FileImpression() {
                     </EmptyState>
                   </div>
                 ) : (
-                  colonnes[c.id].map((d) => (
-                    <div key={d.id} className="atelier-item" data-nouveau={c.id === 'pret' && nouveaux.has(d.id)} data-plus={secondaires(d).actions.length > 0}>
-                      {c.id === 'pret' && nouveaux.has(d.id) && <span className="ev-badge atelier-nouveau">Nouveau</span>}
-                      <JobCard d={principales(d)} contexte="atelier" />
-                      {secondaires(d).actions.length > 0 && (
-                        <div className="atelier-item__plus">
-                          <DossierActions dossier={secondaires(d)} size="sm" />
-                        </div>
-                      )}
-                    </div>
-                  ))
+                  colonnes[c.id].map((d) => {
+                    const nouveau = c.id === 'pret' && nouveaux.has(d.id);
+                    const reimpression = estReimpression(d);
+                    return (
+                      <div
+                        key={d.id}
+                        className="atelier-item"
+                        data-machine={d.machine}
+                        data-nouveau={nouveau}
+                        data-plus={secondaires(d).actions.length > 0}
+                        // Ouvrir la fiche ou agir sur la carte vaut « vu ».
+                        onClick={nouveau && machineRole ? () => marquerVu(d.id) : undefined}
+                      >
+                        {(nouveau || reimpression) && (
+                          <div className="atelier-etiquettes">
+                            {reimpression && <span className="ev-badge atelier-reimpression">Réimpression</span>}
+                            {nouveau && <span className="ev-badge atelier-nouveau">Nouveau</span>}
+                            {nouveau && machineRole && (
+                              <button type="button" className="atelier-vu" aria-label={`Marquer ${d.numero} comme vu`} onClick={() => marquerVu(d.id)}>
+                                Vu
+                              </button>
+                            )}
+                          </div>
+                        )}
+                        <JobCard d={principales(d)} contexte="atelier" />
+                        {secondaires(d).actions.length > 0 && (
+                          <div className="atelier-item__plus">
+                            <DossierActions dossier={secondaires(d)} size="sm" />
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })
                 )}
               </section>
             ))}

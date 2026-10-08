@@ -16,6 +16,7 @@
     "@evocom/shared": "*",
     "@tanstack/react-query": "^5.104.1",
     "lucide-react": "^1.50.0",
+    "pdfjs-dist": "^4.10.38",
     "react": "^19.3.0",
     "react-dom": "^19.3.0",
     "react-router-dom": "^7.18.4",
