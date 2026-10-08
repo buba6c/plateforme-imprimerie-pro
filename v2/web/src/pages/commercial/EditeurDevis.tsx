@@ -28,7 +28,7 @@ import { FichiersEtBat, RemiseClient, UrgenceChoix, type ModeRemise } from '../.
 import { SuggestionIA } from '../../features/ia/SuggestionIA';
 import { useLibelles, useParamsPrix, useTarifs } from '../../features/specs/useTarifs';
 import { useRegles } from '../../features/parametres/api';
-import { Alert, Button, Card, EmptyState, LoadingRows, PageHeader, Segmented, TextareaField, TextField, useToast } from '../../ui';
+import { Alert, Button, Card, EmptyState, LoadingRows, PageHeader, Segmented, TextareaField, TextField, useToast, MachineIcone } from '../../ui';
 import '../../features/dossiers-ui/dossiers-ui.css';
 
 interface Devis {
@@ -360,7 +360,7 @@ export default function EditeurDevis() {
                   label="Machine"
                   value={f.machine}
                   onChange={changerMachine}
-                  options={MACHINES.map((m) => ({ value: m, label: MACHINE_LABELS[m], help: MACHINE_DESCRIPTIONS[m] }))}
+                  options={MACHINES.map((m) => ({ value: m, label: MACHINE_LABELS[m], help: MACHINE_DESCRIPTIONS[m], icon: <MachineIcone machine={m} taille={30} /> }))}
                 />
               </div>
               <TextField label="Description" value={f.description} onChange={(e) => maj('description', e.target.value)} placeholder="Ex. 500 flyers A5 pour l'ouverture du magasin" error={erreursForm.description} maxLength={2000} />

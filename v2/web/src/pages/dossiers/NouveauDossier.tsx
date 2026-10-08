@@ -30,7 +30,7 @@ import { SpecsEditor } from '../../features/specs/SpecsEditor';
 import { FichiersEtBat, RemiseClient, UrgenceChoix, type ModeRemise } from '../../features/specs/Commande';
 import { SuggestionIA } from '../../features/ia/SuggestionIA';
 import { useLibelles, useParamsPrix, useTarifs } from '../../features/specs/useTarifs';
-import { Alert, Button, Card, Checkbox, EmptyState, LoadingRows, MachineChip, PageHeader, Segmented, SelectField, TextareaField, TextField, useToast } from '../../ui';
+import { Alert, Button, Card, Checkbox, EmptyState, LoadingRows, MachineChip, PageHeader, Segmented, SelectField, TextareaField, TextField, useToast, MachineIcone } from '../../ui';
 import '../../features/dossiers-ui/dossiers-ui.css';
 
 interface Formulaire {
@@ -337,7 +337,7 @@ export default function NouveauDossier() {
                   label="Machine"
                   value={f.machine}
                   onChange={changerMachine}
-                  options={MACHINES.map((m) => ({ value: m, label: MACHINE_LABELS[m], help: MACHINE_DESCRIPTIONS[m] }))}
+                  options={MACHINES.map((m) => ({ value: m, label: MACHINE_LABELS[m], help: MACHINE_DESCRIPTIONS[m], icon: <MachineIcone machine={m} taille={30} /> }))}
                 />
               </div>
             ) : (

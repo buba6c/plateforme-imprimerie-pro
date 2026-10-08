@@ -223,6 +223,7 @@
 .cc__client a:focus-visible { outline: none; box-shadow: var(--focus-ring); border-radius: 4px; }
 .cc__badges { display: flex; flex-wrap: wrap; gap: 6px; }
 .cc__machine {
+  display: inline-flex; align-items: center; gap: 6px;
   padding: 2px 10px; border-radius: 7px; font-size: 12px; line-height: 20px; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase;
   background: var(--xerox); color: var(--on-xerox);
 }
@@ -288,3 +289,37 @@
 .fd-layout .ev-card { border-radius: 18px; }
 .fd-layout .ev-card__head { padding: 14px 20px; }
 .fd-layout .ev-card__body { padding: 20px; }
+
+/* Frise du parcours (fiche dossier) */
+.parcours { flex-basis: 100%; list-style: none; margin: 6px 0 0; padding: 0; display: grid; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); gap: 0; }
+.parcours__etape { position: relative; display: grid; justify-items: center; gap: 4px; padding: 0 4px; text-align: center; min-width: 0; }
+.parcours__etape::before {
+  content: ""; position: absolute; top: 15px; right: 50%; width: 100%; height: 3px; border-radius: 3px;
+  background: var(--line); z-index: 0;
+}
+.parcours__etape:first-child::before { display: none; }
+.parcours__etape[data-etat="fait"]::before, .parcours__etape[data-etat="en_cours"]::before { background: var(--p); }
+.parcours__pastille {
+  position: relative; z-index: 1; width: 32px; height: 32px; border-radius: 50%; display: grid; place-items: center;
+  font-family: var(--font-display); font-size: 14px; font-weight: 700; background: var(--surface); color: var(--text-muted);
+  box-shadow: inset 0 0 0 2px var(--line-strong);
+  transition: background-color 300ms, box-shadow 300ms, transform 300ms cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+.parcours__pastille svg { width: 17px; height: 17px; }
+.parcours__etape[data-etat="fait"] .parcours__pastille { background: var(--p); color: #ffffff; box-shadow: none; }
+.parcours__etape[data-etat="en_cours"] .parcours__pastille {
+  background: var(--p); color: #ffffff; box-shadow: 0 0 0 4px var(--p-fond); transform: scale(1.12);
+  animation: parcours-pouls 2s cubic-bezier(0.45, 0, 0.55, 1) infinite;
+}
+@keyframes parcours-pouls { 0%, 100% { box-shadow: 0 0 0 4px var(--p-fond); } 50% { box-shadow: 0 0 0 8px var(--p-fond); } }
+.parcours__titre { font-size: 13px; line-height: 17px; font-weight: 600; color: var(--text-muted); }
+.parcours__etape[data-etat="fait"] .parcours__titre { color: var(--text); }
+.parcours__etape[data-etat="en_cours"] .parcours__titre { color: var(--p-encre); font-weight: 700; }
+.parcours__detail { font-size: 12px; line-height: 16px; color: var(--text-muted); min-height: 16px; }
+.parcours__etape[data-etat="en_cours"] .parcours__detail { padding: 1px 8px; border-radius: 999px; background: var(--p-fond); color: var(--p-encre); font-weight: 600; }
+@media (max-width: 640px) {
+  .parcours { grid-auto-flow: row; grid-auto-columns: auto; gap: 10px; }
+  .parcours__etape { grid-template-columns: 32px 1fr auto; justify-items: start; align-items: center; text-align: left; gap: 10px; }
+  .parcours__etape::before { top: auto; bottom: 50%; right: auto; left: 15px; width: 3px; height: calc(100% + 10px); }
+}
+@media (prefers-reduced-motion: reduce) { .parcours__etape[data-etat="en_cours"] .parcours__pastille { animation: none; } .parcours__pastille { transition: none; } }

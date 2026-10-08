@@ -18,7 +18,7 @@ import { formatEntier, formatFCFA, MACHINE_LABELS, type Statut } from '@evocom/s
 import { api, messageErreur } from '../../lib/api';
 import type { DossierResume, ListeDossiers } from '../../lib/types';
 import { useUser } from '../../auth/AuthContext';
-import { Alert, Segmented, Skeleton } from '../../ui';
+import { Alert, MachineIcone, Segmented, Skeleton } from '../../ui';
 import { EvolutionChart } from '../../features/admin/charts';
 import { ajouterJours, bornesPeriode, jourFr, joursEntre, PERIODE_LABELS } from '../../features/admin/dates';
 import { useAujourdhui } from '../../features/admin/hooks';
@@ -378,6 +378,7 @@ function Fiche({ d, today, retard, index }: { d: DossierResume; today: string; r
       <span className="fiche__suite">{clair ? clair.suite(d) : d.statut_label}</span>
       <span className="fiche__bas">
         <span className="fiche__machine" data-machine={d.machine}>
+          <MachineIcone machine={d.machine} taille={12} />
           {MACHINE_LABELS[d.machine]}
         </span>
         <span className="fiche__echeance" data-retard={retard || undefined}>

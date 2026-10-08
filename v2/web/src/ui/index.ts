@@ -4,3 +4,4 @@ export * from './Badges';
 export * from './Misc';
 export * from './Dialog';
 export * from './Toast';
+export * from './MachineIcone';

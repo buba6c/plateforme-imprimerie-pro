@@ -1,5 +1,6 @@
 // Fiche dossier, commune à tous les rôles (l'API ne renvoie que ce que le rôle peut voir).
 
+import { ParcoursDossier } from '../../features/dossiers-ui/ParcoursDossier';
 import { ReimpressionDialog } from '../../features/dossiers-ui/ReimpressionDialog';
 import { lazy, Suspense, useMemo, useState } from 'react';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
@@ -185,6 +186,7 @@ export default function FicheDossier() {
             <MenuActions items={menu.filter((m) => m.id !== 'bon')} />
             <DossierActions dossier={d} />
           </div>
+          <ParcoursDossier d={d} />
         </div>
       </header>
 

@@ -1,3 +1,4 @@
+import { MachineIcone } from './MachineIcone';
 import {
   MACHINE_LABELS,
   SITUATION_PAIEMENT_LABELS,
@@ -21,6 +22,7 @@ export function StatusBadge({ statut }: { statut: Statut }) {
 export function MachineChip({ machine }: { machine: Machine }) {
   return (
     <span className="ev-machine" data-machine={machine}>
+      <MachineIcone machine={machine} taille={13} />
       {MACHINE_LABELS[machine]}
     </span>
   );

@@ -130,7 +130,7 @@ export function Segmented<T extends string>({
   name: string;
   value: T;
   onChange: (v: T) => void;
-  options: { value: T; label: string; help?: string }[];
+  options: { value: T; label: string; help?: string; icon?: React.ReactNode }[];
   label: string;
 }) {
   return (
@@ -138,9 +138,12 @@ export function Segmented<T extends string>({
       {options.map((o) => (
         <label key={o.value}>
           <input type="radio" name={name} value={o.value} checked={value === o.value} onChange={() => onChange(o.value)} />
-          <span>
-            {o.label}
-            {o.help && <small>{o.help}</small>}
+          <span data-icone={o.icon ? true : undefined}>
+            {o.icon && <span className="ev-segmented__icone">{o.icon}</span>}
+            <span className="ev-segmented__texte">
+              {o.label}
+              {o.help && <small>{o.help}</small>}
+            </span>
           </span>
         </label>
       ))}

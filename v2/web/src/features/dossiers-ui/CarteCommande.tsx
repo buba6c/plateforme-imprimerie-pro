@@ -5,7 +5,7 @@ import { useNavigate } from 'react-router-dom';
 import { ArrowRight, CalendarDays, Paperclip, UserRound } from 'lucide-react';
 import { formatDate, formatFCFA, MACHINE_LABELS, type Machine } from '@evocom/shared';
 import type { DossierResume } from '../../lib/types';
-import { PaymentBadge } from '../../ui';
+import { MachineIcone, PaymentBadge } from '../../ui';
 import { DossierActions } from '../dossiers/DossierActions';
 import { enRetard, resumeSpecs } from './CarteDossier';
 import { EN_CLAIR } from './enClair';
@@ -40,6 +40,7 @@ export function CarteCommande({ d, libelle, montrerMontant, montrerPrep, index =
         </h3>
         <div className="cc__badges">
           <span className="cc__machine" data-machine={d.machine}>
+            <MachineIcone machine={d.machine} taille={14} />
             {MACHINE_LABELS[d.machine]}
           </span>
           {montrerPrep && d.preparateur_nom && (
