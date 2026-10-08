@@ -32,7 +32,9 @@ import {
   copierAvecEmpreinte,
   enParallele,
   IndexDisque,
+  lierAvecEmpreinte,
   listerRecursif,
+  peripherique,
   resoudre,
   SuiviCopies,
 } from './fichiers';
@@ -86,6 +88,8 @@ export interface ImportOptions {
   log?: (message: string) => void;
   /** Copies de fichiers simultanées (défaut 4). */
   copiesSimultanees?: number;
+  /** Liens durs vers les fichiers d'origine au lieu de copies (même disque : aucune place en plus). */
+  liens?: boolean;
 }
 
 export interface ImportResult {
@@ -140,7 +144,7 @@ interface Ctx {
   src: SourceLegacy;
   rapport: Rapport;
   log: (m: string) => void;
-  opts: Required<Pick<ImportOptions, 'dryRun' | 'storageDir' | 'copiesSimultanees'>>;
+  opts: Required<Pick<ImportOptions, 'dryRun' | 'storageDir' | 'copiesSimultanees' | 'liens'>>;
   index: IndexDisque;
   suivi: SuiviCopies;
   maintenant: string;
@@ -256,7 +260,7 @@ export async function runImport(options: ImportOptions): Promise<ImportResult> {
       src,
       rapport,
       log,
-      opts: { dryRun, storageDir, copiesSimultanees: options.copiesSimultanees ?? 4 },
+      opts: { dryRun, storageDir, copiesSimultanees: options.copiesSimultanees ?? 4, liens: options.liens ?? false },
       index,
       suivi,
       maintenant: new Date().toISOString(),
@@ -1427,8 +1431,13 @@ async function importerFichiers(ctx: Ctx) {
     }
   }
 
-  // Espace disque
-  const besoin = aCopier.reduce((s, f) => s + f.taille, 0);
+  // Espace disque (en mode liens, seuls les fichiers d'un autre disque prennent de la place)
+  const disqueCible = ctx.opts.liens ? await peripherique(ctx.opts.storageDir) : null;
+  let besoin = 0;
+  for (const f of aCopier) {
+    const memeDisque = disqueCible !== null && (await fs.promises.stat(f.src).then((s) => s.dev === disqueCible, () => false));
+    if (!memeDisque) besoin += f.taille;
+  }
   const libre = await espaceLibre(ctx.opts.storageDir);
   fr.espace_libre_cible = libre;
   if (libre !== null && besoin > libre * 0.98) {
@@ -1439,9 +1448,9 @@ async function importerFichiers(ctx: Ctx) {
   if (ctx.opts.dryRun) {
     fr.simulation_a_copier = aCopier.length;
     fr.simulation_octets_a_copier = besoin;
-    ctx.log(`  ${aCopier.length} fichier(s) seraient copiés (${octets(besoin)}) ; simulation : aucune copie.`);
+    ctx.log(`  ${aCopier.length} fichier(s) seraient ${ctx.opts.liens ? 'liés' : 'copiés'} (${octets(besoin)} de place en plus) ; simulation : aucune copie.`);
   } else {
-    ctx.log(`  Copie de ${aCopier.length} fichier(s) (${octets(besoin)}) vers ${ctx.opts.storageDir}…`);
+    ctx.log(`  ${ctx.opts.liens ? 'Liens durs' : 'Copie'} de ${aCopier.length} fichier(s) (${octets(besoin)} de place en plus) vers ${ctx.opts.storageDir}…`);
   }
 
   let faits = 0;
@@ -1459,7 +1468,7 @@ async function importerFichiers(ctx: Ctx) {
         await ctx.suivi.preparerRepertoire(path.dirname(dest));
         ctx.suivi.ajouter(dest);
         try {
-          const c = await copierAvecEmpreinte(f.src, dest);
+          const c = ctx.opts.liens ? await lierAvecEmpreinte(f.src, dest) : await copierAvecEmpreinte(f.src, dest);
           taille = c.taille;
           sha256 = c.sha256;
         } catch (err) {

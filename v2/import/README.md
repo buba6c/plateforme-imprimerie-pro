@@ -134,6 +134,7 @@ L’ancienne application peut être redémarrée à tout moment (`pm2 start impr
 | `--remplacer` | | Efface les données v2 existantes avant l’import |
 | `--fuseau ZONE` | | Fuseau des dates de l’ancienne base (défaut : celui de son serveur, normalement `Africa/Dakar` ou UTC) |
 | `--copies N` | | Copies de fichiers simultanées (défaut 4) |
+| `--liens` | | Liens durs vers les fichiers d’origine au lieu de copies : sur le même disque, aucune place en plus (les originaux ne sont ni déplacés ni modifiés). Utile quand le disque ne peut pas contenir une seconde copie des uploads. |
 | | `DATABASE_URL` | Base v2 (cible) |
 | | `STORAGE_DIR` | Stockage des fichiers v2 |
 

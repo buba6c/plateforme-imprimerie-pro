@@ -371,6 +371,32 @@ describe("import de l'ancienne plateforme", () => {
     expect(await empreinteLegacy()).toEqual(legacyAvant);
   });
 
+  it('avec --liens, même résultat par liens durs vers les originaux, laissés intacts', async () => {
+    const avant = await projection();
+    const r = await runImport({ ...base(), remplacer: true, liens: true, rapport: null });
+    expect(r.code, r.message).toBe(0);
+    expect(await projection()).toEqual(avant);
+    const inodes = new Set<string>();
+    const parcourir = (d: string) => {
+      for (const e of fs.readdirSync(d, { withFileTypes: true })) {
+        const p = path.join(d, e.name);
+        if (e.isDirectory()) parcourir(p);
+        else inodes.add(`${fs.statSync(p).dev}:${fs.statSync(p).ino}`);
+      }
+    };
+    RACINES.forEach(parcourir);
+    // Sur un autre disque que les uploads, le lien est impossible : copie normale.
+    const memeDisque = fs.statSync(tmp).dev === fs.statSync(RACINES[0]!).dev;
+    const rows = (await cible.query(`SELECT chemin FROM fichiers`)).rows;
+    expect(rows.length).toBe(11);
+    for (const f of rows) {
+      const st = fs.statSync(path.join(storageDir, f.chemin));
+      expect(inodes.has(`${st.dev}:${st.ino}`), f.chemin).toBe(memeDisque);
+    }
+    expect(Object.assign({}, ...RACINES.map((racine) => inventaire(racine)))).toEqual(uploadsAvant);
+    expect(await empreinteLegacy()).toEqual(legacyAvant);
+  });
+
   it("tout ou rien : une erreur en cours d'import annule tout, y compris l'effacement de --remplacer", async () => {
     const avant = await projection();
     const bloque = path.join(tmp, 'stockage-impossible');

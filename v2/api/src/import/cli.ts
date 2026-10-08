@@ -18,6 +18,8 @@ Options :
   --remplacer            Efface les données métier déjà présentes dans la base v2 avant l'import.
   --fuseau ZONE          Fuseau des dates de l'ancienne base (défaut : celui de son serveur).
   --copies N             Copies de fichiers simultanées (défaut 4).
+  --liens                Liens durs vers les fichiers d'origine au lieu de copies (même disque :
+                         aucune place en plus ; les originaux ne sont ni déplacés ni modifiés).
   --aide                 Affiche cette aide.
 
 Variables d'environnement : DATABASE_URL (base v2), STORAGE_DIR (stockage v2),
@@ -32,11 +34,12 @@ interface Args {
   rapport?: string;
   fuseau?: string;
   copies?: number;
+  liens: boolean;
   aide: boolean;
 }
 
 function lireArgs(argv: string[]): Args {
-  const a: Args = { dryRun: false, remplacer: false, uploads: [], aide: false };
+  const a: Args = { dryRun: false, remplacer: false, uploads: [], liens: false, aide: false };
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i]!;
     const [nom, valeurInline] = arg.includes('=') ? [arg.slice(0, arg.indexOf('=')), arg.slice(arg.indexOf('=') + 1)] : [arg, undefined];
@@ -71,6 +74,9 @@ function lireArgs(argv: string[]): Args {
       case '--copies':
         a.copies = Number(valeur());
         if (!Number.isInteger(a.copies) || a.copies < 1 || a.copies > 32) throw new Error('--copies attend un entier entre 1 et 32.');
+        break;
+      case '--liens':
+        a.liens = true;
         break;
       case '--aide':
       case '--help':
@@ -110,6 +116,7 @@ async function main(): Promise<number> {
     rapport: args.rapport,
     fuseau: args.fuseau ?? null,
     copiesSimultanees: args.copies,
+    liens: args.liens,
   });
   if (r.code === 0) console.log(r.message);
   else console.error(r.message);

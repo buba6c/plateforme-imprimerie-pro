@@ -22,6 +22,10 @@ set -euo pipefail
 RACINE="$(cd "$(dirname "$0")/../.." && pwd)"
 V2="$RACINE/v2"
 DOMAINE="${DOMAINE:-}"
+
+# Node dédié à v2 si présent (/opt/node22) : l'ancienne application garde le Node du système.
+NODE_V2="${EVOCOM_NODE:-/opt/node22/bin/node}"
+if [ -x "$NODE_V2" ]; then export PATH="$(dirname "$NODE_V2"):$PATH"; fi
 PORT_WEB="${PORT_WEB:-}"
 PORT_API="${PORT_API:-4000}"
 if [ -z "$DOMAINE" ] && [ -z "$PORT_WEB" ]; then

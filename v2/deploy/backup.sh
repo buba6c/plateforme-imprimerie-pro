@@ -30,11 +30,10 @@ pg_dump --format=custom --no-owner --file="$DUMP" "$DATABASE_URL"
 pg_restore --list "$DUMP" > /dev/null   # vérifie que le fichier est lisible
 
 DERNIER="$(ls -1d "$DEST"/fichiers/20* 2>/dev/null | tail -n 1 || true)"
-if [ -n "$DERNIER" ]; then
-  rsync -a --delete --link-dest="$DERNIER" "$STORAGE_DIR/" "$DEST/fichiers/$DATE/"
-else
-  rsync -a "$STORAGE_DIR/" "$DEST/fichiers/$DATE/"
-fi
+# Liens physiques vers l'instantané précédent ET vers le stockage lui-même : même le premier instantané
+# ne recopie pas les fichiers (sinon une copie complète des uploads importés peut remplir le disque).
+# Un fichier supprimé dans l'application reste récupérable dans les instantanés pendant BACKUP_JOURS jours.
+rsync -a --delete ${DERNIER:+--link-dest="$DERNIER"} --link-dest="$(cd "$STORAGE_DIR" && pwd)" "$STORAGE_DIR/" "$DEST/fichiers/$DATE/"
 
 find "$DEST/base" -name 'evocom-*.dump' -mtime +"$JOURS" -delete
 find "$DEST/fichiers" -mindepth 1 -maxdepth 1 -type d -mtime +"$JOURS" -exec rm -rf {} +

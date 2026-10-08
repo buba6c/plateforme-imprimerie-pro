@@ -228,6 +228,50 @@ export async function copierAvecEmpreinte(src: string, dest: string): Promise<{ 
   return { taille, sha256: hash.digest('hex') };
 }
 
+/**
+ * Lien dur vers le fichier d'origine : aucune place en plus sur le disque, le fichier source n'est ni
+ * déplacé ni modifié (supprimer l'un des deux noms laisse l'autre intact). Taille + SHA-256 lus sur le
+ * contenu lié. Si le lien est impossible (autre disque, système de fichiers sans liens), copie normale.
+ */
+export async function lierAvecEmpreinte(src: string, dest: string): Promise<{ taille: number; sha256: string; lie: boolean }> {
+  try {
+    await fs.promises.link(src, dest);
+  } catch (err) {
+    const e = err as NodeJS.ErrnoException;
+    if (e.code === 'EXDEV' || e.code === 'EPERM' || e.code === 'EMLINK' || e.code === 'ENOTSUP') {
+      return { ...(await copierAvecEmpreinte(src, dest)), lie: false };
+    }
+    // Comme pour la copie : e.path = src signale un fichier source introuvable, sinon l'erreur vient de la destination.
+    const sourceLisible = await fs.promises.access(src, fs.constants.R_OK).then(
+      () => true,
+      () => false,
+    );
+    if (sourceLisible) e.path = dest;
+    throw e;
+  }
+  const hash = crypto.createHash('sha256');
+  let taille = 0;
+  for await (const chunk of fs.createReadStream(dest, { highWaterMark: 1024 * 1024 })) {
+    hash.update(chunk as Buffer);
+    taille += (chunk as Buffer).length;
+  }
+  return { taille, sha256: hash.digest('hex'), lie: true };
+}
+
+/** Périphérique (disque) qui porte `dir`, ou celui de son premier parent existant. */
+export async function peripherique(dir: string): Promise<number | null> {
+  let d = path.resolve(dir);
+  while (!fs.existsSync(d)) {
+    const parent = path.dirname(d);
+    if (parent === d) return null;
+    d = parent;
+  }
+  return fs.promises.stat(d).then(
+    (s) => s.dev,
+    () => null,
+  );
+}
+
 /** Garde la trace des fichiers copiés pour pouvoir tout retirer si l'import est annulé. */
 export class SuiviCopies {
   private fichiers: string[] = [];

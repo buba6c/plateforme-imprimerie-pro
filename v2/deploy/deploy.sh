@@ -5,6 +5,10 @@ set -euo pipefail
 
 RACINE="$(cd "$(dirname "$0")/../.." && pwd)"
 V2="$RACINE/v2"
+
+# Node dédié à v2 si présent (/opt/node22) : l'ancienne application garde le Node du système.
+NODE_V2="${EVOCOM_NODE:-/opt/node22/bin/node}"
+if [ -x "$NODE_V2" ]; then export PATH="$(dirname "$NODE_V2"):$PATH"; fi
 BRANCHE="${1:-$(git -C "$RACINE" rev-parse --abbrev-ref HEAD)}"
 
 echo "Récupération de la branche $BRANCHE"
