@@ -11,6 +11,20 @@ import './styles/tokens.css';
 import './styles/evocom.css';
 import './styles/app.css';
 
+// Après une mise à jour, un onglet resté ouvert peut réclamer un morceau de l'ancienne version qui
+// n'existe plus : on recharge la page une fois (au plus une fois par minute) pour prendre la nouvelle.
+window.addEventListener('vite:preloadError', (e) => {
+  try {
+    const dernier = Number(sessionStorage.getItem('evocom-rechargement') ?? 0);
+    if (Date.now() - dernier < 60_000) return;
+    sessionStorage.setItem('evocom-rechargement', String(Date.now()));
+  } catch {
+    /* stockage indisponible : on recharge quand même */
+  }
+  e.preventDefault();
+  window.location.reload();
+});
+
 // Démonstration hors ligne (build:demo) : API simulée installée avant tout appel, routeur par
 // hachage (page servie à une seule adresse) et bandeau de démonstration. Absent du build normal.
 async function demarrer() {

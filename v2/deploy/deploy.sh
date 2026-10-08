@@ -25,7 +25,15 @@ echo "Installation et compilation"
 cd "$V2"
 npm ci --no-audit --no-fund
 npm -w api run build
+# Les onglets ouverts avant la mise à jour réclament encore les fichiers de l'ancienne version :
+# on les garde 7 jours à côté des nouveaux (noms uniques, aucun conflit possible).
+ANCIENS="$(mktemp -d)"
+[ -d "$V2/web/dist/assets" ] && cp -a "$V2/web/dist/assets/." "$ANCIENS/" || true
 npm -w web run build
+cp -an "$ANCIENS/." "$V2/web/dist/assets/" 2>/dev/null || true
+rm -rf "$ANCIENS"
+find "$V2/web/dist/assets" -type f -mtime +7 -delete 2>/dev/null || true
+chmod -R u=rwX,go=rX "$V2/web/dist"
 
 echo "Migrations de la base"
 (cd "$V2/api" && node --env-file=.env dist/migrate.js)
