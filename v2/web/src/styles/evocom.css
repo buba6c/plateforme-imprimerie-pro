@@ -4,7 +4,7 @@
    espacements et ombres viennent des variables de tokens.css. */
 
 /* ---------- Dégradés Evocom ----------
-   brand : le dégradé exact de la marque (#007bff → #00c6ff), pour le décor et les surfaces de marque,
+   brand : le dégradé exact de la marque (cyan #33b5e5 → rose #e91e8c, logo et site evocom-sn.com), pour le décor et les surfaces de marque,
            avec du texte on-brand ; action : la même teinte assombrie, qui porte du texte on-accent. */
 :root {
   --brand-gradient: linear-gradient(135deg, var(--brand-start) 0%, var(--brand-end) 100%);
@@ -282,7 +282,8 @@
   display: grid; place-items: center; background: var(--brand-gradient); color: var(--on-brand);
   font-size: 15px; font-weight: 800; letter-spacing: -0.04em; box-shadow: inset 0 0 0 1px color-mix(in srgb, #ffffff 35%, transparent);
 }
-.ev-sidebar .ev-brand { color: var(--nav-text); }
+.ev-brand__logo { width: 30px; height: 30px; flex: none; margin-right: 4px; }
+.ev-sidebar .ev-brand { color: var(--nav-text); font-family: var(--font-display); letter-spacing: -0.01em; }
 .ev-sidebar .ev-brand span { color: var(--nav-muted); }
 .ev-nav { display: grid; gap: 2px; }
 .ev-nav-section { padding: var(--space-4) var(--space-2) var(--space-1); font-size: 11px; line-height: 16px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: var(--nav-muted); }

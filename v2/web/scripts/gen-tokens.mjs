@@ -18,6 +18,7 @@ const light = [
   ...mode(t.size.tokens, 'light'),
   `--font-sans: ${t.type.families.sans};`,
   `--font-mono: ${t.type.families.mono};`,
+  ...(t.type.families.display ? [`--font-display: ${t.type.families.display};`] : []),
   'color-scheme: light;',
 ];
 const dark = [...themed('dark'), 'color-scheme: dark;'];

@@ -13,8 +13,8 @@ const AIDES: Record<Palette, string> = {
 };
 
 function Apercu({ palette, couleurs }: { palette: Palette | null; couleurs: { debut: string; fin: string } | null }) {
-  const debut = palette === 'perso' && couleurs ? couleurs.debut : '#007bff';
-  const fin = palette === 'perso' && couleurs ? couleurs.fin : '#00c6ff';
+  const debut = palette === 'perso' && couleurs ? couleurs.debut : '#33b5e5';
+  const fin = palette === 'perso' && couleurs ? couleurs.fin : '#e91e8c';
   const menu = palette === 'sobre' ? 'var(--surface)' : `linear-gradient(180deg, ${debut}, ${fin})`;
   return (
     <span className="palette-apercu" aria-hidden="true">

@@ -54,7 +54,7 @@ export function AppShell() {
       {open && <div className="drawer-backdrop" onClick={() => setOpen(false)} aria-hidden="true" />}
       <aside className="ev-sidebar" data-open={open} aria-label="Navigation principale">
         <a className="ev-brand" href="/" onClick={(e) => { e.preventDefault(); navigate('/'); }}>
-          <span className="ev-brand__mark" aria-hidden="true">e</span>
+          <img className="ev-brand__logo" src="/marque/evocom-oiseau.webp" alt="" width={30} height={30} />
           Evocom <span>Print</span>
         </a>
         <nav className="ev-nav">

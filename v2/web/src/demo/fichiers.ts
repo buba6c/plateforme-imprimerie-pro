@@ -50,7 +50,7 @@ function imageSvg(m: MetaFichier): string {
   const { l, h, legende } = proportions(m);
   const t = Math.round(Math.min(l, h) / 14);
   return `<svg xmlns="http://www.w3.org/2000/svg" width="${l}" height="${h}" viewBox="0 0 ${l} ${h}">
-<defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#007bff"/><stop offset="1" stop-color="#00c6ff"/></linearGradient>
+<defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#33b5e5"/><stop offset="1" stop-color="#e91e8c"/></linearGradient>
 <pattern id="p" width="40" height="40" patternUnits="userSpaceOnUse"><path d="M0 40L40 0" stroke="#ffffff" stroke-opacity=".12" stroke-width="2"/></pattern></defs>
 <rect width="${l}" height="${h}" fill="url(#g)"/><rect width="${l}" height="${h}" fill="url(#p)"/>
 <rect x="${t}" y="${t}" width="${l - 2 * t}" height="${h - 2 * t}" fill="none" stroke="#ffffff" stroke-opacity=".7" stroke-width="3" stroke-dasharray="14 10"/>

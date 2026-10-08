@@ -5,7 +5,7 @@ import { definirApparence, getApparence, rafraichirApparence, type Apparence, ty
 import { Alert, Button, Card, useToast } from '../../ui';
 import { PaletteCartes } from './PaletteCartes';
 
-const EVOCOM = { debut: '#007bff', fin: '#00c6ff' };
+const EVOCOM = { debut: '#33b5e5', fin: '#e91e8c' };
 const HEX = /^#[0-9a-f]{6}$/i;
 
 function ChampCouleur({ label, value, onChange }: { label: string; value: string; onChange: (v: string) => void }) {
