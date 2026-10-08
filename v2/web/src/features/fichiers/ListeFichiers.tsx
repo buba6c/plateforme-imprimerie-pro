@@ -2,7 +2,7 @@
 // « à réimprimer », suppression tant que le dossier est modifiable.
 
 import { ApercuPdf } from './ApercuPdf';
-import { VignettePdf } from '../fichiers-admin/VignettePdf';
+import { MiniatureServeur } from './MiniatureServeur';
 import { useEffect, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { Download, Eye, ExternalLink, RotateCcw, Trash2 } from 'lucide-react';
@@ -81,13 +81,7 @@ export function ListeFichiers({ dossierId, fichiers, peutMarquer, peutSupprimer 
           return (
             <li key={f.id} className="fi-carte" data-reimprimer={f.a_reimprimer || undefined} style={{ '--i': i } as React.CSSProperties}>
               <button type="button" className="fi-carte__vignette" onClick={() => (type ? setApercu(f) : window.open(fichierUrl(f.id, true)))} aria-label={type ? `Voir ${f.nom_original}` : `Télécharger ${f.nom_original}`}>
-                {type === 'image' ? (
-                  <img src={fichierUrl(f.id)} alt="" loading="lazy" />
-                ) : type === 'pdf' ? (
-                  <VignettePdf id={f.id} taille={f.taille} nom={f.nom_original} repli={tuile} />
-                ) : (
-                  tuile
-                )}
+                {type ? <MiniatureServeur id={f.id} taille={f.taille} nom={f.nom_original} mime={f.mime} repli={tuile} /> : tuile}
                 <span className="fi-carte__type">{ext}</span>
                 {type && (
                   <span className="fi-carte__voile" aria-hidden="true">
@@ -212,7 +206,7 @@ export function ApercuFichier({ fichier, onClose }: { fichier: Fichier; onClose:
         {type === 'image' ? (
           <img src={url} alt={`Aperçu de ${fichier.nom_original}`} />
         ) : type === 'pdf' ? (
-          <ApercuPdf id={fichier.id} nom={fichier.nom_original} />
+          <ApercuPdf id={fichier.id} nom={fichier.nom_original} taille={fichier.taille} />
         ) : (
           <p className="ev-muted">Aperçu indisponible pour ce type de fichier : téléchargez-le pour l'ouvrir.</p>
         )}

@@ -75,3 +75,9 @@ export function fichierUrl(id: number, telecharger = false): string {
   if (import.meta.env.MODE === 'demo') return (globalThis as unknown as { __evocomDemo: { fichierUrl(id: number): string } }).__evocomDemo.fichierUrl(id);
   return `/api/fichiers/${id}/contenu${telecharger ? '?telecharger=1' : ''}`;
 }
+
+/** Miniature ou page en image fabriquée par le serveur (null en démonstration hors ligne). */
+export function apercuUrl(id: number, largeur = 480, page = 1): string | null {
+  if (import.meta.env.MODE === 'demo') return null;
+  return `/api/fichiers/${id}/apercu?largeur=${largeur}&page=${page}`;
+}

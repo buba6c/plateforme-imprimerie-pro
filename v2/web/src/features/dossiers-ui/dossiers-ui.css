@@ -60,9 +60,9 @@
 }
 
 /* ---------- Liste ---------- */
-.dl-toolbar { display: grid; gap: var(--space-3); }
-.dl-filtres { display: flex; flex-wrap: wrap; gap: var(--space-2); align-items: center; }
-.dl-filtres .ev-search { flex: 1 1 260px; max-width: 420px; }
+.dl-toolbar { display: grid; gap: var(--space-4); }
+.dl-filtres { display: flex; flex-wrap: wrap; gap: var(--space-3); align-items: center; }
+.dl-filtres .ev-search { flex: 1 1 280px; max-width: 460px; margin-right: var(--space-3); }
 .dl-filtres .ev-search .ev-input { height: var(--control-sm); font-size: 13px; }
 .dl-filtres .ev-select { width: auto; height: var(--control-sm); font-size: 13px; min-width: 150px; }
 .dl-toggle[aria-pressed="true"] { background: var(--accent-soft); border-color: var(--accent); color: var(--accent-ink); }
@@ -251,7 +251,7 @@
 }
 .cc__actions .ev-btn-group { flex-wrap: wrap; }
 .cc__ouvrir { margin-left: auto; }
-.dl-vue { display: inline-flex; }
+.dl-vue { display: inline-flex; margin-left: auto; }
 @media (prefers-reduced-motion: reduce) { .cc { transition: none; } .cc:hover { transform: none; } }
 
 /* Le formulaire prend la couleur de la machine choisie : rose pour Roland, bleu pour Xerox. */

@@ -11,8 +11,8 @@
 .pay-mode[data-taille="sm"] { height: 20px; padding: 0 8px 0 6px; font-size: 12px; }
 .pay-mode__point { width: 8px; height: 8px; border-radius: var(--radius-full); background: var(--pm-point); flex: none; }
 .pay-mode[data-mode="especes"] { --pm-bg: var(--success-soft); --pm-ink: var(--success-ink); --pm-point: var(--success-ink); }
-.pay-mode[data-mode="wave"] { --pm-bg: var(--info-soft); --pm-ink: var(--info-ink); --pm-point: var(--info-ink); }
-.pay-mode[data-mode="orange_money"] { --pm-bg: var(--warning-soft); --pm-ink: var(--warning-ink); --pm-point: var(--warning-ink); }
+.pay-mode[data-mode="wave"] { --pm-bg: var(--xerox-soft); --pm-ink: var(--xerox-ink); --pm-point: var(--brand-start); }
+.pay-mode[data-mode="orange_money"] { --pm-bg: var(--s-en-livraison-bg); --pm-ink: var(--s-en-livraison-ink); --pm-point: var(--s-en-livraison); }
 .pay-mode[data-mode="virement"], .pay-mode[data-mode="cheque"], .pay-mode[data-mode="carte"] { --pm-point: var(--text-muted); box-shadow: inset 0 0 0 1px var(--line); }
 
 /* ---------- Cartes-résumé ---------- */
@@ -38,14 +38,18 @@ button.pay-kpi:focus-visible { box-shadow: var(--focus-ring); }
 .pay-kpi[aria-pressed="true"] { border-color: var(--accent); outline: 3px solid color-mix(in srgb, var(--accent) 18%, transparent); }
 .pay-kpi__libelle { display: flex; align-items: center; gap: var(--space-2); font-size: 13px; font-weight: 600; color: var(--text-muted); }
 .pay-kpi__libelle svg { width: 16px; height: 16px; }
-.pay-kpi__valeur { font-family: var(--font-mono); font-variant-numeric: tabular-nums; font-size: 26px; line-height: 32px; font-weight: 700; letter-spacing: -0.01em; color: var(--ink); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pay-kpi__valeur { font-family: var(--font-display); font-variant-numeric: tabular-nums; font-size: 30px; line-height: 36px; font-weight: 700; letter-spacing: -0.02em; color: var(--ink); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .pay-kpi__valeur small { font-size: 13px; font-weight: 500; color: var(--text-muted); margin-left: 4px; }
 .pay-kpi__meta { font-size: 13px; color: var(--text-muted); }
-.pay-kpi[data-ton] { overflow: hidden; }
+.pay-kpi[data-ton] { overflow: hidden; background: linear-gradient(var(--pay-kpi-fond), var(--pay-kpi-fond)) top left / 100% 100% no-repeat, var(--surface); border-color: color-mix(in srgb, var(--pay-kpi-ton) 28%, var(--line)); }
+.pay-kpi[data-ton] .pay-kpi__valeur { color: var(--pay-kpi-ton); }
+.pay-kpi[data-ton] .pay-kpi__libelle svg { width: 30px; height: 30px; padding: 7px; border-radius: 9px; background: var(--pay-kpi-ton); color: #ffffff; box-shadow: 0 2px 4px #0f162933; }
+.pay-kpi:not([data-ton]) { background: linear-gradient(var(--accent-soft), var(--accent-soft)) top left / 100% 100% no-repeat, var(--surface); }
+.pay-kpi:not([data-ton]) .pay-kpi__libelle svg { width: 30px; height: 30px; padding: 7px; border-radius: 9px; background: var(--accent); color: var(--on-accent); }
 .pay-kpi[data-ton]::before { content: ""; position: absolute; left: 0; right: 0; top: 0; height: 4px; background: var(--pay-kpi-ton); }
-.pay-kpi[data-ton="attente"] { --pay-kpi-ton: var(--warning-ink); }
-.pay-kpi[data-ton="valide"] { --pay-kpi-ton: var(--success-ink); }
-.pay-kpi[data-ton="refuse"] { --pay-kpi-ton: var(--danger-ink); }
+.pay-kpi[data-ton="attente"] { --pay-kpi-ton: var(--warning-ink); --pay-kpi-fond: var(--warning-soft); }
+.pay-kpi[data-ton="valide"] { --pay-kpi-ton: var(--success-ink); --pay-kpi-fond: var(--success-soft); }
+.pay-kpi[data-ton="refuse"] { --pay-kpi-ton: var(--danger-ink); --pay-kpi-fond: var(--danger-soft); }
 .pay-kpi[data-ton="attente"] .pay-kpi__libelle { color: var(--warning-ink); }
 .pay-kpi[data-ton="valide"] .pay-kpi__libelle { color: var(--success-ink); }
 .pay-kpi[data-ton="refuse"] .pay-kpi__libelle { color: var(--danger-ink); }
@@ -109,6 +113,11 @@ button.pay-kpi:focus-visible { box-shadow: var(--focus-ring); }
   cursor: pointer; transition: border-color .15s ease-out, background-color .25s ease-out, box-shadow .15s ease-out;
 }
 .pay-carte:hover { border-color: color-mix(in srgb, var(--accent) 35%, var(--line)); box-shadow: var(--shadow-card); }
+.pay-carte { --pc-ton: var(--warning-ink); --pc-fond: var(--warning-soft); overflow: hidden; }
+.pay-carte[data-statut="valide"] { --pc-ton: var(--success-ink); --pc-fond: var(--success-soft); }
+.pay-carte[data-statut="refuse"] { --pc-ton: var(--danger-ink); --pc-fond: var(--danger-soft); }
+.pay-carte::before { content: ""; position: absolute; inset: 0 0 auto; height: 5px; background: var(--pc-ton); }
+.pay-carte .ev-pay, .pay-carte .ev-badge { background: var(--pc-fond); color: var(--pc-ton); }
 .pay-carte[data-sans-case] { grid-template-columns: minmax(150px, 1.1fr) minmax(170px, 1.3fr) minmax(170px, 1.3fr) auto; grid-template-areas: "montant dossier qui actions"; }
 .pay-carte[data-selection] { border-color: var(--accent); background: color-mix(in srgb, var(--accent-soft) 55%, var(--surface)); }
 .pay-carte__case { grid-area: case; }
@@ -117,7 +126,7 @@ button.pay-kpi:focus-visible { box-shadow: var(--focus-ring); }
 .pay-carte__qui { grid-area: qui; display: grid; gap: 2px; min-width: 0; font-size: 13px; color: var(--text-muted); }
 .pay-carte__actions { grid-area: actions; display: flex; gap: var(--space-2); justify-content: flex-end; align-items: center; flex-wrap: wrap; }
 
-.pay-montant { font-family: var(--font-mono); font-variant-numeric: tabular-nums; font-size: 22px; line-height: 26px; font-weight: 700; letter-spacing: -0.01em; color: var(--ink); white-space: nowrap; }
+.pay-montant { font-family: var(--font-display); font-variant-numeric: tabular-nums; font-size: 24px; line-height: 28px; font-weight: 700; letter-spacing: -0.02em; color: var(--ink); white-space: nowrap; }
 .pay-montant small { font-size: 12px; font-weight: 600; color: var(--text-muted); margin-left: 3px; }
 .pay-carte[data-statut="refuse"] .pay-montant { color: var(--text-muted); text-decoration: line-through; text-decoration-thickness: 2px; }
 .pay-ref { font-size: 12.5px; color: var(--text-muted); overflow-wrap: anywhere; }

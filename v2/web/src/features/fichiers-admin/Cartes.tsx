@@ -5,7 +5,8 @@ import { File, LayoutGrid, List as ListeIcone } from 'lucide-react';
 import { MACHINE_LABELS, formatTaille, type Machine } from '@evocom/shared';
 import { fichierUrl } from '../../lib/api';
 import { extension } from '../fichiers/ListeFichiers';
-import { VIGNETTE_PDF_MAX, VignettePdf } from './VignettePdf';
+import { VIGNETTE_PDF_MAX } from './VignettePdf';
+import { MiniatureServeur } from '../fichiers/MiniatureServeur';
 import type { Categorie, FichierGlobal } from './types';
 
 // ---------------------------------------------------------------------------
@@ -33,7 +34,7 @@ export function Vignette({ f, contenu }: { f: FichierGlobal; contenu: boolean })
   const [imageKo, setImageKo] = useState(false);
   const icone = <IconeType categorie={f.categorie} nom={f.nom_original} />;
   if (!contenu) return icone;
-  if (f.mime === 'application/pdf') return <VignettePdf id={f.id} taille={f.taille} nom={f.nom_original} repli={icone} />;
+  if (f.categorie === 'pdf' || f.categorie === 'image') return <MiniatureServeur id={f.id} taille={f.taille} nom={f.nom_original} mime={f.mime} repli={icone} />;
   if (f.mime && IMAGES_AFFICHABLES.includes(f.mime) && f.taille <= VIGNETTE_PDF_MAX && !imageKo) {
     return <img className="fa-vignette-image" src={fichierUrl(f.id)} alt={`Aperçu de ${f.nom_original}`} loading="lazy" decoding="async" onError={() => setImageKo(true)} />;
   }

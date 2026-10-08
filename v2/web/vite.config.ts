@@ -18,6 +18,10 @@ export default defineConfig({
     chunkSizeWarningLimit: 700,
     rollupOptions: {
       output: {
+        // Les modules .mjs (moteur PDF) sortent en .js : extension reconnue par tous les serveurs web,
+        // et nouvelle adresse qui contourne une ancienne réponse mal typée gardée en cache.
+        assetFileNames: (info: { name?: string; names?: string[] }) =>
+          (info.names?.[0] ?? info.name ?? '').endsWith('.mjs') ? 'assets/[name]-[hash].js' : 'assets/[name]-[hash][extname]',
         manualChunks(id: string) {
           if (!id.includes('node_modules')) return undefined;
           if (/[\\/](react|react-dom|react-router|react-router-dom|scheduler)[\\/]/.test(id)) return 'react';

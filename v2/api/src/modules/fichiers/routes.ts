@@ -13,7 +13,8 @@ import { z } from 'zod';
 import type { Config } from '../../config';
 import { getPool, one, query, tx } from '../../db/pool';
 import { COOKIE_NAME, me, requireAuth, userFromToken } from '../../lib/auth';
-import { forbidden, notFound } from '../../lib/errors';
+import { forbidden, HttpError, notFound } from '../../lib/errors';
+import { apercu, ApercuIndisponible, genreApercu, pagesPdf, popplerPresent } from './apercu';
 import { intParam } from '../../lib/http';
 import { getParametres } from '../../lib/params';
 import { signalDossier } from '../../realtime';
@@ -182,6 +183,37 @@ export function fichiersRouter(config: Config) {
     res.setHeader('Content-Security-Policy', "default-src 'none'; img-src 'self'; style-src 'unsafe-inline'; sandbox");
     res.setHeader('Cache-Control', 'private, max-age=300');
     res.sendFile(abs, { headers: { 'Content-Type': mime }, acceptRanges: true });
+  });
+
+  // Miniature ou page en image (WebP), fabriquée par le serveur : ?page=1&largeur=480.
+  router.get('/:id/apercu', async (req, res) => {
+    const { f } = await fichierAccessible(me(req), intParam(req));
+    const genre = genreApercu(f);
+    if (!genre) throw new HttpError(415, 'Pas d’aperçu pour ce type de fichier : téléchargez-le.', undefined, 'apercu_type');
+    const abs = path.resolve(config.storageDir, f.chemin);
+    if (!abs.startsWith(path.resolve(config.storageDir) + path.sep) || !fs.existsSync(abs)) {
+      throw notFound('Le fichier est enregistré mais introuvable sur le disque. Prévenez l\'administrateur.');
+    }
+    const page = Math.min(Math.max(Number(req.query.page) || 1, 1), 5000);
+    const largeur = Math.min(Math.max(Math.round(Number(req.query.largeur) || 480), 80), 2000);
+    try {
+      const image = await apercu(config.storageDir, abs, genre, page, largeur);
+      res.setHeader('Cache-Control', 'private, max-age=86400');
+      res.setHeader('X-Content-Type-Options', 'nosniff');
+      res.sendFile(image, { headers: { 'Content-Type': 'image/webp' } });
+    } catch (e) {
+      if (e instanceof ApercuIndisponible) throw new HttpError(501, 'Les miniatures PDF ne sont pas disponibles sur ce serveur.', undefined, 'apercu_indisponible');
+      throw new HttpError(422, (e as Error).message, undefined, 'apercu_impossible');
+    }
+  });
+
+  // Nombre de pages d'un PDF, pour feuilleter les pages en image quand le navigateur n'y arrive pas.
+  router.get('/:id/infos-apercu', async (req, res) => {
+    const { f } = await fichierAccessible(me(req), intParam(req));
+    const genre = genreApercu(f);
+    const abs = path.resolve(config.storageDir, f.chemin);
+    const pages = genre === 'pdf' && abs.startsWith(path.resolve(config.storageDir) + path.sep) ? await pagesPdf(abs) : genre ? 1 : null;
+    res.json({ genre, pages, serveur: genre === 'image' || (genre === 'pdf' && (await popplerPresent())) });
   });
 
   router.patch('/:id', async (req, res) => {

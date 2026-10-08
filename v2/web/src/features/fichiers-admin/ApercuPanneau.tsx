@@ -6,7 +6,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { Download, ExternalLink, FolderOpen, X } from 'lucide-react';
 import { formatDateHeure, formatTaille } from '@evocom/shared';
-import { fichierUrl } from '../../lib/api';
+import { fichierUrl, apercuUrl } from '../../lib/api';
 import { Button, IconButton, MachineChip, StatusBadge } from '../../ui';
 import { extension } from '../fichiers/ListeFichiers';
 import { ApercuPdf } from '../fichiers/ApercuPdf';
@@ -36,7 +36,7 @@ function Zone({ fichier }: { fichier: FichierGlobal }) {
   if (mode === 'image' && !imageKo) {
     return (
       <div className="fa-apercu__zone">
-        <img src={fichierUrl(fichier.id)} alt={`Aperçu de ${fichier.nom_original}`} onError={() => setImageKo(true)} />
+        <img src={apercuUrl(fichier.id, 1200) ?? fichierUrl(fichier.id)} alt={`Aperçu de ${fichier.nom_original}`} onError={(e) => { const img = e.currentTarget; if (img.src !== fichierUrl(fichier.id) && !img.src.endsWith(fichierUrl(fichier.id))) img.src = fichierUrl(fichier.id); else setImageKo(true); }} />
       </div>
     );
   }
@@ -56,7 +56,7 @@ function Zone({ fichier }: { fichier: FichierGlobal }) {
     }
     return (
       <div className="fa-apercu__zone fa-apercu__zone--pdf">
-        <ApercuPdf id={fichier.id} nom={fichier.nom_original} hauteur="60vh" />
+        <ApercuPdf id={fichier.id} nom={fichier.nom_original} taille={fichier.taille} hauteur="60vh" />
       </div>
     );
   }
