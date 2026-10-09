@@ -16,6 +16,7 @@ import { parametresRouter } from './parametres/routes';
 import { bonDeTravailRouter } from './pdf/routes';
 import { statsRouter } from './stats/routes';
 import { iaRouter } from './ia/routes';
+import { modelesRouter } from './modeles/routes';
 import { fichiersAdminRouter } from './fichiers-admin/routes';
 import { livraisonsRouter } from './livraisons/routes';
 import { systemeRouter } from './systeme/routes';
@@ -38,6 +39,7 @@ export function registerModules(app: Express, config: Config) {
   app.use('/api/dossiers', dossierFactureRouter);
   app.use('/api/dossiers', bonDeTravailRouter);
   app.use('/api/ia', iaRouter);
+  app.use('/api/modeles', modelesRouter);
   app.use('/api/gestion-fichiers', fichiersAdminRouter(config));
   app.use('/api/livraisons', livraisonsRouter);
   app.use('/api/systeme', systemeRouter);

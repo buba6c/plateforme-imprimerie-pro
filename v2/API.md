@@ -308,3 +308,13 @@ Précisions et ajouts par rapport au tableau ci-dessus (les champs listés dans 
 - **`/corbeille`** : ajoute `machine`, `montant`, `deleted_by`, `motif` (dernier motif de suppression) et `nb_paiements` ; 500 éléments au plus.
 - **Exports CSV** : sans `from`/`to`, tout l'historique. Dossiers : par date de création (supprimés exclus) ; paiements : par date d'encaissement ; factures : par date d'émission. Booléens « Oui »/« Non », taux de TVA avec virgule décimale ; une cellule commençant par `=`, `@`, `+` ou `-` (hors numéro de téléphone) est préfixée d'une apostrophe pour neutraliser les formules.
 - **`/sante`** : `base:{ok, latence_ms}` (ou `{ok:false, erreur}`), `stockage:{chemin, libre_octets, total_octets}`, `derniere_sauvegarde` ajoute `fichier`, `migrations:{a_jour, en_attente:[...]}`.
+
+## Modèles de dossier
+
+| Méthode | Route | Rôles | Réponse |
+|---|---|---|---|
+| GET | /modeles | admin, preparateur | mes modèles + ceux partagés : `[{id, nom, machine, specs, description, consignes, mode_remise, partage, cree_par_nom, mien, usages, created_at, updated_at}]`, les plus utilisés d'abord |
+| POST | /modeles `{nom, machine, specs, description?, consignes?, mode_remise?, partage}` | admin, preparateur | 201 ; 400 si les spécifications sont incomplètes ou vides |
+| PATCH | /modeles/:id | auteur ou admin | modèle |
+| DELETE | /modeles/:id | auteur ou admin | 204 (suppression logique) |
+| POST | /modeles/:id/utiliser | auteur, ou tous si partagé | 204 : compte une utilisation |

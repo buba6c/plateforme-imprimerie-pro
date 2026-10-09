@@ -29,6 +29,7 @@ import { PrixPanel, usePrix } from '../../features/specs/PrixPanel';
 import { SpecsEditor } from '../../features/specs/SpecsEditor';
 import { FichiersEtBat, RemiseClient, UrgenceChoix, type ModeRemise } from '../../features/specs/Commande';
 import { SuggestionIA } from '../../features/ia/SuggestionIA';
+import { EnregistrerModele, ModelesDossier } from '../../features/modeles/ModelesDossier';
 import { useLibelles, useParamsPrix, useTarifs } from '../../features/specs/useTarifs';
 import { Alert, Button, Card, Checkbox, EmptyState, LoadingRows, MachineChip, PageHeader, Segmented, SelectField, TextareaField, TextField, useToast, MachineIcone } from '../../ui';
 import '../../features/dossiers-ui/dossiers-ui.css';
@@ -329,6 +330,23 @@ export default function NouveauDossier() {
             machineImposee={machineModifiable ? undefined : f.machine}
             onAppliquer={(machine, specs) => setF((x) => ({ ...x, machine, specs }))}
           />
+          {!edition && (
+            <Card title="Partir d’un modèle" className="nd-section nd-modeles" actions={<span className="ev-muted" style={{ fontSize: 13 }}>Vos configurations habituelles, en un clic</span>}>
+              <ModelesDossier
+                machineImposee={machineModifiable ? undefined : f.machine}
+                onAppliquer={(m) =>
+                  setF((x) => ({
+                    ...x,
+                    machine: m.machine,
+                    specs: specsVersDraft(m.machine, m.specs),
+                    description: m.description ?? x.description,
+                    consignes: m.consignes ?? x.consignes,
+                    mode_remise: m.mode_remise ?? x.mode_remise,
+                  }))
+                }
+              />
+            </Card>
+          )}
           <Card title={<><span className="nd-section__num">1</span>Machine</>} className="nd-section">
             {machineModifiable ? (
               <div className="nd-machine">
@@ -499,6 +517,10 @@ export default function NouveauDossier() {
           <span className="ev-num">{totalAffiche === null ? 'À définir' : formatFCFA(totalAffiche)}</span>
         </div>
         <div className="du-barre__actions">
+          <EnregistrerModele
+            disabled={!conversion.specs}
+            contenu={() => ({ machine: f.machine, specs: conversion.specs, description: f.description, consignes: f.consignes, mode_remise: f.mode_remise })}
+          />
           <Button onClick={() => navigate(edition ? `/dossiers/${id}` : '/dossiers')}>Annuler</Button>
           <Button type="submit" form="form-dossier" variant="primary" busy={envoi} icon={<Save />}>
             {edition ? 'Enregistrer les modifications' : 'Créer le dossier'}
