@@ -29,6 +29,34 @@ jusqu'à la bascule (voir `deploy/GUIDE_MISE_EN_LIGNE.md`).
   fichiers de la corbeille par l'administrateur (mot de passe, mot SUPPRIMER), dont la ligne reste en base comme trace.
 - Les fichiers ne sont jamais servis en accès libre : chaque lecture vérifie les droits sur le dossier.
 
+## Facturation
+
+Une facture s'émet depuis la fiche d'un dossier (« Créer la facture », montant défini) ou directement, sans dossier,
+dans Factures > Nouvelle facture (client de l'annuaire ou saisi, lignes libres, remise, échéance). Les deux suivent la
+même numérotation FAC sans trou, le même PDF et la même règle : une facture émise ne se modifie plus, elle s'annule.
+La liste Factures montre toutes les factures sans filtre de période. Liaison VosFactures.fr (Paramètres > Facturation) :
+sous-domaine du compte, clé API chiffrée (jamais réaffichée), envoi manuel depuis chaque facture ou automatique à
+l'émission, annulation propagée ; `VOSFACTURES_URL` remplace l'adresse réelle pour les essais. Contrat : `API.md`,
+section « Facturation ».
+
+## WhatsApp client
+
+Administration > WhatsApp client (`/whatsapp`, administrateur) : un message automatique part au client depuis le numéro
+WhatsApp **dédié** de l'imprimerie quand sa commande est imprimée (livraison ou retrait), quand la livraison est
+programmée et quand elle est livrée ou remise. Installation : `npm install` dans `v2/` (bibliothèque
+`@whiskeysockets/baileys`, chargée à la demande ; sans elle l'API tourne normalement et l'écran l'explique), puis
+`npm run migrate` (migration `011_whatsapp`). Mise en service : prendre une carte SIM réservée à l'imprimerie, installer
+WhatsApp dessus, activer les envois dans l'onglet Réglages, cliquer sur Connecter et scanner le code QR avec ce téléphone
+(WhatsApp > Appareils connectés > Connecter un appareil). Les identifiants de session sont dans
+`STORAGE_DIR/whatsapp/auth` (droits 700, à sauvegarder avec le stockage) ; la connexion reprend seule après un
+redémarrage. Risques, à dire au propriétaire : cette liaison fonctionne comme WhatsApp Web, sans accord officiel ;
+WhatsApp peut bloquer un numéro qui envoie trop ou en masse. D'où les garde-fous, tous côté serveur : un message par
+commande et par événement, heures d'envoi (08:00–20:00), 20 messages par heure et 120 par jour au plus, pause aléatoire
+entre deux envois, trois tentatives puis échec motivé, jamais de lien raccourci, et un numéro personnel ne doit jamais
+être utilisé. STOP : un client qui répond « STOP » ou « ARRET » est exclu définitivement (liste STOP de l'écran, accusé
+envoyé) ; l'administrateur ne le retire qu'à la demande du client. Le journal des messages, les réponses reçues et
+l'envoi d'un message de test sont dans le même écran. Contrat : `API.md`, section « WhatsApp client ».
+
 ## Développer
 
 Prérequis : Node 22, PostgreSQL 16.

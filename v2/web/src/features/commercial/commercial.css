@@ -130,3 +130,21 @@
   .cm-kpis .ev-kpi__value { font-size: 20px; line-height: 26px; overflow-wrap: anywhere; }
   .cm-kpis .ev-kpi__value small { font-size: 12px; margin-left: 2px; }
 }
+
+/* ---------- Factures : colonne VosFactures, formulaire de facture directe ---------- */
+.cm-vf { display: grid; gap: 2px; min-width: 0; max-width: 220px; }
+.cm-vf .ev-link { display: inline-flex; align-items: center; gap: 4px; }
+.cm-lignes-edit { display: grid; gap: var(--space-3); }
+.cm-ligne-edit {
+  display: grid; gap: var(--space-3); align-items: start; grid-template-columns: minmax(0, 1fr) auto;
+  padding: var(--space-3); border: 1px solid var(--line); border-radius: var(--radius-md); background: var(--surface);
+}
+.cm-ligne-edit__chiffres { grid-column: 1 / -1; display: grid; gap: var(--space-3); grid-template-columns: repeat(auto-fit, minmax(min(100%, 130px), 1fr)); align-items: start; }
+.cm-ligne-edit__total { display: grid; gap: 4px; justify-items: end; }
+.cm-ligne-edit__total .ev-num { font-size: 15px; font-weight: 600; color: var(--ink); white-space: nowrap; line-height: var(--control, 40px); }
+.cm-ligne-edit__suppr { padding-top: 22px; }
+.cm-ligne-edit .ev-field--detail { grid-column: 1 / -1; }
+.cm-vf-col, .cm-statut-col { white-space: nowrap; }
+.cm-resume-totaux { position: sticky; top: calc(var(--topbar) + var(--space-4)); }
+.cm-vide-actions { display: flex; flex-wrap: wrap; gap: var(--space-2); justify-content: center; }
+.cm-vf-cle { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--space-3); padding: var(--space-3) var(--space-4); border: 1px solid var(--line); border-radius: var(--radius-md); background: var(--surface-sunken); }

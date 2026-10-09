@@ -14,6 +14,7 @@ import { dossiersRouter } from './modules/dossiers/routes';
 import { fichiersRouter, mountUploads } from './modules/fichiers/routes';
 import { tarifsRouter } from './modules/tarifs/routes';
 import { registerModules } from './modules';
+import { whatsappParametresRouter, whatsappRouter } from './modules/whatsapp';
 
 export function createApp(config: Config, log: Logger): Express {
   const app = express();
@@ -66,6 +67,9 @@ export function createApp(config: Config, log: Logger): Express {
   app.use('/api/fichiers', fichiersRouter(config));
   app.use('/api/tarifs', tarifsRouter);
   registerModules(app, config);
+  // WhatsApp client (administrateur) : état, file, journal ; réglages sous /api/parametres/whatsapp.
+  app.use('/api/whatsapp', whatsappRouter);
+  app.use('/api/parametres', whatsappParametresRouter);
   app.use('/api', (_req, _res, next) => next(notFound('Adresse d\'API inconnue.')));
 
   // Interface web compilée (optionnel : Nginx peut la servir directement).

@@ -8,8 +8,11 @@ import type {
   ClientDetail,
   ClientInput,
   ClientRecherche,
+  ConfigVosFactures,
+  ConfigVosFacturesInput,
   DevisDetail,
   FactureDetail,
+  FactureDirecteInput,
   ListeDevisReponse,
   ListeFacturesReponse,
   ParametresPublics,
@@ -93,6 +96,8 @@ export interface FiltresFactures {
   from?: string;
   to?: string;
   statut?: 'emise' | 'annulee';
+  vosfactures?: 'envoyee' | 'non_envoyee' | 'erreur';
+  origine?: 'dossier' | 'directe';
   client_id?: number;
   dossier_id?: number;
   page?: number;
@@ -125,6 +130,67 @@ export function useAnnulerFacture(id: number) {
       qc.invalidateQueries({ queryKey: ['factures'] });
       qc.invalidateQueries({ queryKey: ['dossier'] });
     },
+  });
+}
+
+/** Facture directe, sans dossier (POST /factures). */
+export function useCreerFactureDirecte() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (input: FactureDirecteInput) => api.post<FactureDetail>('/factures', input),
+    onSuccess: (f) => {
+      qc.setQueryData(['factures', f.id], f);
+      qc.invalidateQueries({ queryKey: ['factures'] });
+      qc.invalidateQueries({ queryKey: ['clients'] });
+      qc.invalidateQueries({ queryKey: ['stats'] });
+    },
+  });
+}
+
+/** Envoi (ou nouvel essai) d'une facture vers VosFactures (POST /factures/:id/vosfactures). */
+export function useEnvoyerVosFactures(id: number) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => api.post<FactureDetail>(`/factures/${id}/vosfactures`),
+    onSettled: () => {
+      // Même en échec, le journal d'envoi de la facture a changé.
+      qc.invalidateQueries({ queryKey: ['factures'] });
+    },
+  });
+}
+
+/** Nouvel essai d'annulation côté VosFactures (POST /factures/:id/vosfactures/annuler). */
+export function useAnnulerVosFactures(id: number) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => api.post<FactureDetail>(`/factures/${id}/vosfactures/annuler`),
+    onSettled: () => {
+      qc.invalidateQueries({ queryKey: ['factures'] });
+    },
+  });
+}
+
+export const CLE_CONFIG_VOSFACTURES = ['factures', 'vosfactures', 'config'] as const;
+
+export function useConfigVosFactures() {
+  return useQuery({ queryKey: CLE_CONFIG_VOSFACTURES, queryFn: () => api.get<ConfigVosFactures>('/factures/vosfactures/config') });
+}
+
+export function useEnregistrerConfigVosFactures() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (input: ConfigVosFacturesInput) => api.put<ConfigVosFactures>('/factures/vosfactures/config', input),
+    onSuccess: (c) => {
+      qc.setQueryData(CLE_CONFIG_VOSFACTURES, c);
+      qc.invalidateQueries({ queryKey: ['factures', 'liste'] });
+    },
+  });
+}
+
+export function useTesterVosFactures() {
+  return useMutation({
+    mutationFn: (input: { sous_domaine?: string; cle?: string }) =>
+      api.post<{ ok: true; sous_domaine: string; nb_factures_visibles: number; duree_ms: number }>('/factures/vosfactures/test', input),
   });
 }
 

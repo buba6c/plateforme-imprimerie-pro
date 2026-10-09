@@ -10,6 +10,7 @@ import { STATUT_LABELS, type ActionId, type Machine, type Role, type Statut } fr
 import { getPool, type Db } from '../../db/pool';
 import { getParametres } from '../../lib/params';
 import { notifier, type Destinataires, type NotificationInput } from '../../realtime';
+import { evenementWhatsApp, planifierWhatsApp } from '../whatsapp/file';
 
 /** Types émis par ces règles en plus de ceux de lib/params.ts (TYPES_NOTIFICATION). */
 export const TYPES_NOTIFICATION_REGLES = ['statut_force', 'report_livraison', 'livraison_programmee', 'livraison_annulee'] as const;
@@ -158,6 +159,10 @@ export async function notifierTransitionDossier(
       // des listes par le temps réel suffit.
       break;
   }
+  // Message WhatsApp au client (module whatsapp) : marquer_imprime (prête, livraison ou retrait),
+  // programmer_livraison, confirmer_livraison et remettre_client. Après le COMMIT, jamais bloquant.
+  const evenement = evenementWhatsApp(action, d);
+  if (evenement) await planifierWhatsApp(evenement, d.id, db);
 }
 
 /**

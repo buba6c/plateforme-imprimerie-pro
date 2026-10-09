@@ -17,6 +17,7 @@ const EditeurDevis = lazy(() => import('./pages/commercial/EditeurDevis'));
 const FicheDevis = lazy(() => import('./pages/commercial/FicheDevis'));
 const ListeFactures = lazy(() => import('./pages/commercial/ListeFactures'));
 const FicheFacture = lazy(() => import('./pages/commercial/FicheFacture'));
+const NouvelleFacture = lazy(() => import('./pages/commercial/NouvelleFacture'));
 const ListeClients = lazy(() => import('./pages/commercial/ListeClients'));
 const FicheClient = lazy(() => import('./pages/commercial/FicheClient'));
 const Paiements = lazy(() => import('./pages/admin/Paiements'));
@@ -32,6 +33,7 @@ const Profil = lazy(() => import('./pages/compte/Profil'));
 const Fichiers = lazy(() => import('./pages/admin/Fichiers'));
 const Permissions = lazy(() => import('./pages/admin/Permissions'));
 const AssistantIA = lazy(() => import('./pages/admin/AssistantIA'));
+const WhatsApp = lazy(() => import('./pages/admin/WhatsApp'));
 const Planning = lazy(() => import('./pages/livraisons/Planning'));
 const HistoriqueLivraisons = lazy(() => import('./pages/livraisons/Historique'));
 const NotFound = lazy(() => import('./pages/NotFound'));
@@ -74,6 +76,7 @@ export default function App() {
         <Route path="devis/:id" element={<Lazy><R roles={BUREAU}><FicheDevis /></R></Lazy>} />
         <Route path="devis/:id/modifier" element={<Lazy><R roles={BUREAU}><EditeurDevis /></R></Lazy>} />
         <Route path="factures" element={<Lazy><R roles={BUREAU}><ListeFactures /></R></Lazy>} />
+        <Route path="factures/nouvelle" element={<Lazy><R roles={BUREAU}><NouvelleFacture /></R></Lazy>} />
         <Route path="factures/:id" element={<Lazy><R roles={BUREAU}><FicheFacture /></R></Lazy>} />
         <Route path="clients" element={<Lazy><R roles={BUREAU}><ListeClients /></R></Lazy>} />
         <Route path="clients/:id" element={<Lazy><R roles={BUREAU}><FicheClient /></R></Lazy>} />
@@ -89,6 +92,7 @@ export default function App() {
         <Route path="fichiers" element={<Lazy><R roles={BUREAU}><Fichiers /></R></Lazy>} />
         <Route path="admin/permissions" element={<Lazy><R roles={ADMIN}><Permissions /></R></Lazy>} />
         <Route path="admin/assistant-ia" element={<Lazy><R roles={ADMIN}><AssistantIA /></R></Lazy>} />
+        <Route path="whatsapp" element={<Lazy><R roles={ADMIN}><WhatsApp /></R></Lazy>} />
         <Route path="livraisons/planning" element={<Lazy><R roles={['livreur', 'admin']}><Planning /></R></Lazy>} />
         <Route path="livraisons/historique" element={<Lazy><R roles={['livreur', 'admin']}><HistoriqueLivraisons /></R></Lazy>} />
         <Route path="profil" element={<Lazy><Profil /></Lazy>} />

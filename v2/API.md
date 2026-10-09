@@ -210,6 +210,80 @@ compteurs remis à zéro ; autres sessions fermées ; fichiers physiques déplac
 (remis en place si la transaction échoue). Conservés : utilisateurs, préférences, tarifs, paramètres (dont l'apparence),
 configuration de l'assistant IA, journal, sauvegardes.
 
+## Facturation : factures directes et liaison VosFactures
+
+Migration `010_factures.sql` : `factures.dossier_id` devient facultatif (facture directe), colonnes `client_email`,
+`remise`, `notes`, `conditions_paiement`, `date_echeance` ; table `factures_vosfactures` (journal d'envoi, une ligne par
+facture) ; table `vosfactures_config` (une ligne, clé chiffrée). Toutes les requêtes joignent `dossiers` en LEFT JOIN :
+une facture directe a `dossier_id`, `dossier_numero`, `deja_paye`, `reste` et `situation_paiement` à `null` et
+`origine: "directe"` (sinon `"dossier"`).
+
+| Méthode | Route | Rôles | Rôle |
+|---|---|---|---|
+| GET | /factures?q&from&to&statut&vosfactures&origine&client_id&dossier_id&page&limit | admin, preparateur | **toutes les factures par défaut** (aucun filtre de période implicite) ; `q` cherche numéro, client, dossier et numéro VosFactures ; `vosfactures` = `envoyee` \| `non_envoyee` \| `erreur` ; `origine` = `dossier` \| `directe` ; réponse `{items,total,somme_ttc,compteurs:{emise,annulee},page,limit,vosfactures_actif}` ; chaque élément porte `vosfactures` (journal ci-dessous ou `null`) |
+| POST | /factures `{client_id?, client_nom, client_telephone?, client_email?, client_adresse?, date_emission?, date_echeance?, lignes:[{designation, detail?, quantite, unite, prix_unitaire}], remise?, notes?, conditions_paiement?}` | admin, preparateur | facture directe (201, format de `GET /factures/:id`) : client de l'annuaire (`client_id`, fusions suivies) ou retrouvé/créé par son nom ; 1 à 50 lignes, quantité > 0 (2 décimales), prix unitaire entier ≥ 0, unité libre (20 caractères) ; numéro FAC pris dans `compteurs` (même suite que les factures de dossier) ; 400 avec `champs` (`lignes.0.quantite`, `remise`, `date_echeance`…) ; total à 0 : 400 ; journal `facture_emise` (`directe: true`) |
+| GET | /factures/vosfactures/config | admin | `{sous_domaine, cle_configuree, cle_fin, cle_lisible, envoi_auto, actif, vendeur, vendeur_effectif, updated_at, updated_by_nom}` ; la clé n'est jamais renvoyée |
+| PUT | /factures/vosfactures/config `{sous_domaine?, cle?: string\|null, envoi_auto?, vendeur?:{nom,adresse,nif,email,telephone}}` | admin | `cle: null` efface la clé (et désactive l'envoi automatique) ; 409 si `envoi_auto` sans sous-domaine et clé ; clé chiffrée AES-256-GCM (même mécanisme que la clé OpenAI, `IA_CLE_CHIFFREMENT` sinon `JWT_SECRET`) ; journal `vosfactures_config_modifiee` sans la clé |
+| POST | /factures/vosfactures/test `{sous_domaine?, cle?}` | admin | `GET https://<sous_domaine>.vosfactures.fr/invoices.json?page=1&per_page=1` avec les valeurs fournies, sinon celles enregistrées ; `{ok, sous_domaine, nb_factures_visibles, duree_ms}` ; erreurs ci-dessous |
+| POST | /factures/:id/vosfactures | admin, preparateur | envoi (ou nouvel essai) vers VosFactures : `POST /invoices.json` ; fiche à jour ; 409 si annulée, déjà envoyée ou envoi en cours ; 502/504 (`code` ci-dessous) avec l'erreur notée dans le journal |
+| POST | /factures/:id/vosfactures/annuler | admin | nouvel essai d'annulation côté VosFactures quand celle faite à l'annulation a échoué ; 409 si non annulée, jamais envoyée ou déjà annulée là-bas |
+| GET | /factures/:id/vosfactures.pdf | admin, preparateur | PDF édité par VosFactures (`/invoices/:id.pdf`), relayé par le serveur : la clé API ne sort jamais vers le navigateur ; `?telecharger=1` |
+
+Journal d'envoi `vosfactures` : `{id, numero, url, envoye_at, envoye_par_nom, erreur, erreur_at, tentatives, annulee_at, annulation_erreur}` (`id` = identifiant VosFactures, `null` tant qu'aucun envoi n'a abouti ; `url` = lien de consultation `view_url`).
+
+Facture envoyée à VosFactures (`invoice`) : `kind: "vat"`, `issue_date` = `sell_date` = date d'émission, `payment_to` = échéance (sinon émission + 30 jours), `seller_*` depuis le vendeur de la configuration complété par Paramètres > Entreprise, `buyer_name/buyer_email/buyer_phone/buyer_street`, `currency: "XOF"`, `lang: "fr"`, `description` et `internal_note` = « Réf. Evocom FAC-… · Dossier CMD-… », `positions[{name, quantity, quantity_unit, total_price_gross, tax}]` : chaque ligne Evocom (hors taxes quand la TVA s'applique) est envoyée en TTC, `tax` = taux ou `"disabled"`, la dernière position absorbe l'écart d'arrondi pour que la somme soit exactement `total_ttc` ; remise et arrondi sont des positions négatives. Numéro VosFactures attribué par VosFactures (le numéro Evocom reste la référence interne).
+
+Annulation : `POST /factures/:id/annuler` annule ensuite la facture côté VosFactures si elle y a été envoyée (`POST /invoices/cancel.json` avec `cancel_invoice_id` et `cancel_reason` = motif), ce qui la laisse visible et barrée là-bas. Un échec est noté (`annulation_erreur`) sans empêcher l'annulation locale ; journal `facture_annulee_vosfactures` / `facture_annulation_vosfactures_echouee`.
+
+Envoi automatique (`envoi_auto`) : chaque facture émise (dossier ou directe) est envoyée juste après l'émission, dans la réponse 201 (`vosfactures` renseigné) ; un échec n'empêche pas l'émission et reste réessayable.
+
+Erreurs VosFactures (`code`) : `vosfactures_cle_refusee` (401/403 distant), `vosfactures_compte_inconnu` (sous-domaine inconnu ou invalide), `vosfactures_injoignable` (réseau, 5xx), `vosfactures_delai` (504 après 20 s), `vosfactures_donnees_refusees` (422, détail du champ en clair), `vosfactures_reponse_invalide`, `vosfactures_cle_illisible` (409, secret de chiffrement changé). Variables : `VOSFACTURES_URL` remplace `https://<sous_domaine>.vosfactures.fr` (serveur simulé des tests) ; le jeton est envoyé dans le corps (POST) ou en paramètre `api_token` (GET), jamais écrit dans les journaux.
+
+## WhatsApp client
+
+Message automatique au client, envoyé depuis le numéro WhatsApp dédié de l'imprimerie (connexion « appareil lié », comme
+WhatsApp Web, par `@whiskeysockets/baileys`). Module `api/src/modules/whatsapp`, migration `011_whatsapp.sql`
+(`whatsapp_messages`, `whatsapp_optout`, `whatsapp_entrants`). Administrateur seulement ; toutes les actions sont
+journalisées (`whatsapp_connexion`, `whatsapp_deconnexion`, `whatsapp_test`, `whatsapp_reessai`, `whatsapp_annulation`,
+`whatsapp_optout_retire`, `whatsapp_parametres_modifies`). Aucune réponse ne contient les identifiants de la session
+(dossier `STORAGE_DIR/whatsapp/auth`, droits 700).
+
+| Méthode | Route | Rôles | Rôle |
+|---|---|---|---|
+| GET | /whatsapp/statut | admin | `{actif, etat: deconnecte\|qr\|connexion\|connecte, numero, qr (data URL PNG si en attente de scan), depuis, disponible, erreur, enregistre, file:{en_attente, envoyes_aujourdhui, echecs}}` |
+| POST | /whatsapp/connecter | admin | ouvre la connexion (code QR si l'appareil n'est pas lié) ; renvoie le statut |
+| POST | /whatsapp/deconnecter | admin | ferme la session, déconnecte l'appareil côté WhatsApp et efface les identifiants ; statut |
+| POST | /whatsapp/test `{telephone}` | admin | met un message de test en file (mêmes règles) ; 201 message ; 422 si numéro invalide, module désactivé ou numéro en liste STOP |
+| GET | /whatsapp/messages?statut&q&page&limit | admin | `{items:[{id,dossier_id,numero,client_nom,evenement,evenement_label,telephone,texte,statut,motif,tentatives,planifie_at,envoye_at,created_at}], total, page, limit, compteurs:{statut:n}}` ; `q` cherche dans le téléphone, le numéro et le nom du client |
+| POST | /whatsapp/messages/:id/reessayer | admin | remet en attente un message `echec`, `annule` ou `ignore` (tentatives à 0) ; 409 si déjà envoyé/en attente, numéro en STOP ou module désactivé ; 422 numéro invalide |
+| POST | /whatsapp/messages/:id/annuler | admin | annule un message `en_attente` (motif « Annulé par … ») ; 409 sinon |
+| GET | /whatsapp/optout | admin | `[{telephone, motif, created_at}]` |
+| DELETE | /whatsapp/optout/:telephone | admin | retire un numéro de la liste STOP (204 ; 404 s'il n'y est pas) |
+| GET | /whatsapp/entrants?page | admin | `{items:[{id,telephone,texte,recu_at}], total, page, limit}` : réponses reçues (texte seul, 500 caractères) |
+| GET | /parametres/whatsapp | admin | section `whatsapp` : `{actif, modeles:{pret_livraison,pret_retrait,en_livraison,livre}, heures:{debut,fin}, limites:{par_heure,par_jour}, delai:{min_s,max_s}, signature}` + `defauts`, `variables`, `evenements` (libellés), `apercu` (modèles rendus avec un exemple) |
+| PUT | /parametres/whatsapp | admin | fusion partielle ; 400 `champs` si heure mal formée, fin ≤ début, délai max < min, lien raccourci dans un modèle, modèle < 10 ou > 700 caractères, limites hors bornes (1..60/h, 1..500/j, délais 5..600/5..900 s) |
+
+Cette section n'apparaît pas dans `GET /parametres` ni dans l'export de configuration : elle est servie uniquement par
+`/parametres/whatsapp`.
+
+Événements (un seul message par dossier et par événement, contrainte `UNIQUE (dossier_id, evenement)`), déclenchés
+après le COMMIT des transitions du circuit (`notifications/regles.ts`) : `marquer_imprime` → `pret_livraison` ou
+`pret_retrait` selon `mode_remise` ; `programmer_livraison` → `en_livraison` ; `confirmer_livraison` et `remettre_client`
+→ `livre`. Variables des modèles : `{client}`, `{numero}`, `{travail}` (première ligne des spécifications), `{montant}`,
+`{adresse}` (adresse de l'entreprise), `{entreprise}`, `{date}` (livraison prévue, fuseau des paramètres) ; la signature
+est ajoutée sur une dernière ligne.
+
+Règles d'envoi, toutes appliquées par le serveur : numéros normalisés (Sénégal `+221 7X XXX XX XX`, accepte espaces,
+tirets, `00221` ; sinon international avec `+`), numéro invalide ou absent → `ignore` avec motif ; module désactivé →
+`ignore` ; numéro en liste STOP → `ignore` ; heures d'envoi (défaut 08:00–20:00, le message attend) ; limites par heure
+(défaut 20) et par jour (défaut 120) ; délai aléatoire entre deux envois (défaut 25–90 s) ; au plus 3 tentatives puis
+`echec` avec le motif (nouvelle tentative 2 min × n plus tard). La file est traitée dans le processus toutes les 15 s,
+un message par passage, seulement quand la connexion est ouverte. Un message entrant « STOP », « ARRET » ou « ARRÊT »
+inscrit le numéro en liste STOP, annule ses messages en attente et envoie l'accusé « Vous ne recevrez plus de messages
+de {entreprise}. ». Reconnexion automatique avec attente progressive (30 s puis doublée, 10 min au plus) ; un code QR
+jamais scanné ne provoque aucune reconnexion ; un appareil déconnecté depuis le téléphone efface les identifiants. Si la
+bibliothèque manque ou refuse de démarrer, `disponible` est faux et l'API fonctionne sans WhatsApp.
+
 ## Écarts
 
 Précisions et ajouts par rapport au tableau ci-dessus (les champs listés dans le contrat sont tous présents ; rien n'a été retiré).
@@ -225,7 +299,7 @@ Précisions et ajouts par rapport au tableau ci-dessus (les champs listés dans 
 - **`GET /caisse`** : objet `{ par_encaisseur: [{user_id,nom,role,a_valider:{n,somme},valide_aujourdhui:{n,somme},refuse_aujourdhui:{n,somme}}], par_mode: [{mode,libelle,a_valider,valide_aujourdhui,refuse_aujourdhui}], totaux:{a_valider,valide_aujourdhui,refuse_aujourdhui} }`. « Aujourd'hui » = jour civil dans le fuseau des paramètres ; `refuse_aujourdhui` compte les refus prononcés aujourd'hui (`valide_at` du refus).
 - **`/devis`** : chaque devis porte `statut_label`, `date_validite` (AAAA-MM-JJ), `expire`, `created_by_nom`, `dossier_numero`, et dans la fiche `transitions[]`, `peut_modifier`, `peut_supprimer`, `peut_convertir`. Un préparateur ne voit que ses devis (404 sinon). Circuit : brouillon → envoye → accepte | refuse ; en plus, accepte → refuse (le client se rétracte) et refuse → envoye (nouvelle proposition). `PATCH` ne recalcule le prix que si `machine` ou `specs` sont fournis. `detail_prix` contient aussi `tva_applicable`, `tva_taux`, `prix_saisis_ht` (règle appliquée au chiffrage).
 - **`POST /devis/:id/convertir`** : 201 `{dossier_id, numero}`. Corps facultatif `{urgent?, date_promise?, consignes?, adresse_livraison?, mode_paiement_prevu?}` repris sur le dossier. Le `detail_prix` du dossier est celui du devis (prix convenus). Deuxième conversion : 409 avec `details.dossier_id`.
-- **`/factures`** : `somme_ttc` ne compte que les factures émises (pas les annulées) parmi les résultats filtrés ; filtres supplémentaires `client_id`, `dossier_id`, `statut` en liste. `from`/`to` portent sur `date_emission`. `GET /factures/:id` ajoute `dossier_numero`, `deja_paye`, `en_attente_validation`, `reste`, `situation_paiement`, `created_by_nom`, `annulee_par_nom`. Lignes : `{designation, detail, quantite, unite, prix_unitaire, total}` ; quand la TVA s'applique elles sont exprimées hors taxes et leur somme vaut `total_ht` (une ligne « Remise », « Arrondi » ou « Ajustement au prix convenu » rend l'écart explicite). Un dossier sans montant ou à 0 : 409. Émission et annulation sont journalisées.
+- **`/factures`** : `somme_ttc` ne compte que les factures émises (pas les annulées) parmi les résultats filtrés ; filtres supplémentaires `client_id`, `dossier_id`, `statut` en liste. `from`/`to` portent sur `date_emission`. `GET /factures/:id` ajoute `dossier_numero`, `deja_paye`, `en_attente_validation`, `reste`, `situation_paiement`, `created_by_nom`, `annulee_par_nom`. `GET /factures/:id` ajoute aussi `origine`, `client_email`, `remise`, `notes`, `conditions_paiement`, `date_echeance`, `vosfactures`, `vosfactures_actif` (voir « Facturation »). Lignes : `{designation, detail, quantite, unite, prix_unitaire, total}` ; quand la TVA s'applique elles sont exprimées hors taxes et leur somme vaut `total_ht` (une ligne « Remise », « Arrondi » ou « Ajustement au prix convenu » rend l'écart explicite). Un dossier sans montant ou à 0 : 409. Émission et annulation sont journalisées.
 - **PDF** (`/devis/:id/pdf`, `/factures/:id/pdf`, `/dossiers/:id/bon-de-travail.pdf`) : affichés dans le navigateur ; `?telecharger=1` force le téléchargement. Le QR code du bon de travail pointe vers `${APP_URL}/dossiers/:id` (chemin relatif imprimé en clair si `APP_URL` n'est pas défini).
 - **`/stats/apercu`** : `periode` vaut `mois` par défaut ; réponse enrichie de `du`, `au` (jours civils), `fuseau`, `encaisse.nb`, `reste_a_encaisser.nb_dossiers`. `production.par_statut` = `{statut: n}` (tous les statuts, photographie actuelle) et `production.par_machine` = `{roland:{statut:n}, xerox:{statut:n}}`. Définitions détaillées en tête de `api/src/modules/stats/routes.ts` (dossiers supprimés et leurs paiements exclus partout).
 - **`/stats/evolution`** : `periode` = premier jour de la période (AAAA-MM-JJ) ; par défaut 30 jours (`jour`), 12 semaines (`semaine`) ou 12 mois (`mois`) jusqu'à aujourd'hui ; 400 au-delà de 400/260/120 points.

@@ -1,6 +1,6 @@
 import { useCallback, useMemo, useState, type ComponentType, type ReactNode } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { AlertTriangle, ArrowLeft, Bell, Building2, ChevronRight, FileText, FolderUp, Hash, Palette, Percent, ArrowLeftRight, ShieldCheck } from 'lucide-react';
+import { AlertTriangle, ArrowLeft, Bell, Building2, ChevronRight, FileText, FolderUp, Hash, Palette, Percent, ArrowLeftRight, ReceiptText, ShieldCheck } from 'lucide-react';
 import { messageErreur } from '../../lib/api';
 import { Alert, Button, LoadingRows, PageHeader } from '../../ui';
 import { useParametresAdmin } from '../../features/parametres/api';
@@ -10,6 +10,7 @@ import { SectionPrix } from '../../features/parametres/sections/Prix';
 import { SectionSecurite } from '../../features/parametres/sections/Securite';
 import { SectionFichiers } from '../../features/parametres/sections/Fichiers';
 import { SectionDocuments } from '../../features/parametres/sections/Documents';
+import { SectionFacturation } from '../../features/parametres/sections/Facturation';
 import { SectionNotifications } from '../../features/parametres/sections/Notifications';
 import { SectionNumerotation } from '../../features/parametres/sections/Numerotation';
 import { SectionExportImport } from '../../features/parametres/sections/ExportImport';
@@ -18,7 +19,7 @@ import { ApparenceEntreprise } from '../../features/apparence/ApparenceEntrepris
 import '../../features/admin/admin.css';
 import '../../features/parametres/parametres.css';
 
-type Id = 'entreprise' | 'prix' | 'couleurs' | 'securite' | 'fichiers' | 'documents' | 'notifications' | 'numerotation' | 'export' | 'danger';
+type Id = 'entreprise' | 'prix' | 'couleurs' | 'securite' | 'fichiers' | 'documents' | 'facturation' | 'notifications' | 'numerotation' | 'export' | 'danger';
 
 interface Section {
   id: Id;
@@ -37,6 +38,7 @@ const SECTIONS: Section[] = [
   { id: 'securite', titre: 'Sécurité', description: 'Sessions, blocage, mots de passe', icone: ShieldCheck, rendu: (p) => <SectionSecurite {...p} /> },
   { id: 'fichiers', titre: 'Fichiers', description: 'Taille maximale, types acceptés', icone: FolderUp, rendu: (p) => <SectionFichiers {...p} /> },
   { id: 'documents', titre: 'Documents', description: 'Validité des devis, mentions, conditions', icone: FileText, rendu: (p) => <SectionDocuments {...p} /> },
+  { id: 'facturation', titre: 'Facturation', description: 'Liaison VosFactures.fr, envoi automatique', icone: ReceiptText, rendu: (p) => <SectionFacturation onModifie={p.onModifie} /> },
   { id: 'notifications', titre: 'Notifications', description: 'Types de notification envoyés', icone: Bell, rendu: (p) => <SectionNotifications {...p} /> },
   { id: 'numerotation', titre: 'Numérotation', description: 'Prochains numéros CMD, DEV, FAC', icone: Hash, rendu: (p) => <SectionNumerotation onModifie={p.onModifie} /> },
   { id: 'export', titre: 'Export et import', description: 'Copier les réglages et la grille tarifaire', icone: ArrowLeftRight, rendu: () => <SectionExportImport /> },

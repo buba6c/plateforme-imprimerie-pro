@@ -1,8 +1,9 @@
 // Éléments communs des écrans commerciaux : badges de statut, lignes et totaux d'un document.
 import type { ReactNode } from 'react';
+import { ExternalLink } from 'lucide-react';
 import { formatFCFA, STATUT_DEVIS_LABELS, type StatutDevis, type StatutFacture } from '@evocom/shared';
 import { formatQuantite, uniteCourte, uniteTarif } from './format';
-import type { LigneDocument } from './types';
+import type { JournalVosFactures, LigneDocument } from './types';
 
 /**
  * Statut d'un devis, avec les styles de badge existants :
@@ -33,16 +34,68 @@ export function DevisStatutBadge({ statut }: { statut: StatutDevis }) {
 
 export const STATUT_FACTURE_LABELS: Record<StatutFacture, string> = { emise: 'Émise', annulee: 'Annulée' };
 
-export function FactureStatutBadge({ statut }: { statut: StatutFacture }) {
-  return statut === 'annulee' ? (
-    <span className="ev-badge ev-status ev-pay" data-pay="refuse">
-      Annulée
-    </span>
-  ) : (
+/**
+ * Statut d'une facture : émise (vert sobre), annulée (rouge), envoyée à VosFactures (bleu « livré »)
+ * ou envoi en erreur (orange « à revoir »), selon le journal d'envoi.
+ */
+export function FactureStatutBadge({ statut, vosfactures }: { statut: StatutFacture; vosfactures?: JournalVosFactures | null }) {
+  if (statut === 'annulee') {
+    return (
+      <span className="ev-badge ev-status ev-pay" data-pay="refuse">
+        Annulée
+      </span>
+    );
+  }
+  if (vosfactures?.id) {
+    return (
+      <span className="ev-badge ev-status" data-statut="livre">
+        Envoyée à VosFactures
+      </span>
+    );
+  }
+  if (vosfactures?.erreur) {
+    return (
+      <span className="ev-badge ev-status" data-statut="a_revoir" title={vosfactures.erreur}>
+        Envoi VosFactures à refaire
+      </span>
+    );
+  }
+  return (
     <span className="ev-badge ev-status" data-statut="termine">
       Émise
     </span>
   );
+}
+
+/** Colonne « VosFactures » d'une liste : numéro distant et lien, erreur, ou tiret. */
+export function VosFacturesCellule({ j, actif }: { j: JournalVosFactures | null | undefined; actif: boolean }) {
+  if (j?.id) {
+    return (
+      <span className="cm-vf">
+        {j.url ? (
+          <a className="ev-link ev-ref" href={j.url} target="_blank" rel="noopener noreferrer" onClick={(e) => e.stopPropagation()}>
+            {j.numero ?? `n° ${j.id}`}
+            <ExternalLink size={12} aria-hidden="true" />
+          </a>
+        ) : (
+          <span className="ev-ref">{j.numero ?? `n° ${j.id}`}</span>
+        )}
+        {j.annulee_at && <span className="ev-cell-sub">Annulée là-bas aussi</span>}
+        {!j.annulee_at && j.annulation_erreur && <span className="ev-cell-sub cm-danger">Annulation à refaire</span>}
+      </span>
+    );
+  }
+  if (j?.erreur) {
+    return (
+      <span className="cm-vf">
+        <span className="cm-danger">Envoi échoué</span>
+        <span className="ev-cell-sub truncate" title={j.erreur}>
+          {j.erreur}
+        </span>
+      </span>
+    );
+  }
+  return <span className="ev-muted">{actif ? 'Non envoyée' : '—'}</span>;
 }
 
 /** Tableau des lignes d'un devis ou d'une facture. Sur téléphone, quantité et prix passent sous la désignation. */

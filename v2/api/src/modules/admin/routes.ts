@@ -187,9 +187,9 @@ exportsRouter.get('/factures.csv', async (req, res) => {
   if (from) c.add('f.date_emission >= ?::date', from);
   if (to) c.add('f.date_emission <= ?::date', to);
   const rows = await query(
-    `SELECT f.numero, to_char(f.date_emission, 'DD/MM/YYYY') AS emise_le, d.numero AS dossier, f.client_nom,
+    `SELECT f.numero, to_char(f.date_emission, 'DD/MM/YYYY') AS emise_le, coalesce(d.numero, 'Facture directe') AS dossier, f.client_nom,
             f.total_ht, f.tva_taux, f.tva, f.total_ttc, f.statut, ${DH('f.annulee_at', tz)} AS annulee_le, f.motif_annulation
-     FROM factures f JOIN dossiers d ON d.id = f.dossier_id
+     FROM factures f LEFT JOIN dossiers d ON d.id = f.dossier_id
      ${c.where}
      ORDER BY f.date_emission, f.numero`,
     c.args,

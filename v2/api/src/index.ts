@@ -7,6 +7,7 @@ import { pendingMigrations } from './db/migrate';
 import { initAuth } from './lib/auth';
 import { createApp } from './app';
 import { closeRealtime, initRealtime } from './realtime';
+import { arreterWhatsApp, demarrerWhatsApp } from './modules/whatsapp';
 
 const log = pino({ level: process.env.LOG_LEVEL ?? 'info', base: undefined });
 
@@ -38,9 +39,12 @@ async function main() {
   server.requestTimeout = 0; // les envois de gros fichiers peuvent durer
   initRealtime(server, { corsOrigin: config.env === 'development' ? config.appUrl : undefined });
   server.listen(config.port, config.host, () => log.info(`Evocom Print API sur http://${config.host}:${config.port}`));
+  // WhatsApp client : reprend la connexion si l'appareil est déjà lié ; jamais bloquant.
+  await demarrerWhatsApp(config, log);
 
   const stop = async (signal: string) => {
     log.info(`${signal} reçu, arrêt propre`);
+    await arreterWhatsApp();
     closeRealtime();
     server.close();
     await closePool();

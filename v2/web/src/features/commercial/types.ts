@@ -58,14 +58,35 @@ export interface LigneDocument {
   total: number;
 }
 
+/** Journal d'envoi d'une facture vers VosFactures (null tant qu'aucun envoi n'a été tenté). */
+export interface JournalVosFactures {
+  /** Identifiant distant ; null tant que l'envoi n'a pas abouti. */
+  id: number | null;
+  numero: string | null;
+  url: string | null;
+  envoye_at: string | null;
+  envoye_par_nom: string | null;
+  erreur: string | null;
+  erreur_at: string | null;
+  tentatives: number;
+  annulee_at: string | null;
+  annulation_erreur: string | null;
+}
+
+export type OrigineFacture = 'dossier' | 'directe';
+
 export interface FactureResume {
   id: number;
   numero: string;
   statut: StatutFacture;
   /** AAAA-MM-JJ */
   date_emission: string;
-  dossier_id: number;
+  /** AAAA-MM-JJ, facultative */
+  date_echeance?: string | null;
+  /** Null pour une facture directe (sans dossier). */
+  dossier_id: number | null;
   dossier_numero?: string | null;
+  origine?: OrigineFacture;
   client_id: number | null;
   client_nom: string;
   total_ht: number;
@@ -76,28 +97,89 @@ export interface FactureResume {
   motif_annulation: string | null;
   created_at: string;
   created_by_nom: string | null;
-  /** Présents sur la fiche ; absents de la liste (non fournis par GET /factures). */
-  situation_paiement?: SituationPaiement;
-  deja_paye?: number;
-  reste?: number;
+  /** Null quand aucun paiement n'est suivi (facture directe). */
+  situation_paiement?: SituationPaiement | null;
+  deja_paye?: number | null;
+  reste?: number | null;
+  vosfactures?: JournalVosFactures | null;
 }
 
 export interface FactureDetail extends FactureResume {
   client_telephone: string | null;
+  client_email: string | null;
   client_adresse: string | null;
   lignes: (LigneDocument | LignePrix)[];
+  remise?: number;
+  notes: string | null;
+  conditions_paiement: string | null;
   annulee_par_nom: string | null;
   en_attente_validation: number;
   /** Montant actuel du dossier (peut différer du total facturé s'il a été modifié depuis). */
   dossier_montant: number | null;
+  /** La liaison VosFactures est configurée (sous-domaine et clé). */
+  vosfactures_actif?: boolean;
+}
+
+/** Corps de POST /factures (facture directe). */
+export interface LigneFactureInput {
+  designation: string;
+  detail?: string | null;
+  quantite: number;
+  unite: string;
+  prix_unitaire: number;
+}
+
+export interface FactureDirecteInput {
+  client_id?: number | null;
+  client_nom: string;
+  client_telephone?: string | null;
+  client_email?: string | null;
+  client_adresse?: string | null;
+  date_emission?: string;
+  date_echeance?: string | null;
+  lignes: LigneFactureInput[];
+  remise?: number;
+  notes?: string | null;
+  conditions_paiement?: string | null;
+}
+
+/** Réglages de la liaison VosFactures (GET/PUT /factures/vosfactures/config, administrateur). */
+export interface VendeurVosFactures {
+  nom: string;
+  adresse: string;
+  nif: string;
+  email: string;
+  telephone: string;
+}
+
+export interface ConfigVosFactures {
+  sous_domaine: string;
+  cle_configuree: boolean;
+  cle_fin: string | null;
+  cle_lisible: boolean | null;
+  envoi_auto: boolean;
+  actif: boolean;
+  vendeur: VendeurVosFactures;
+  vendeur_effectif: VendeurVosFactures;
+  updated_at: string | null;
+  updated_by_nom: string | null;
+}
+
+export interface ConfigVosFacturesInput {
+  sous_domaine?: string;
+  cle?: string | null;
+  envoi_auto?: boolean;
+  vendeur?: Partial<VendeurVosFactures>;
 }
 
 export interface ListeFacturesReponse {
   items: FactureResume[];
   total: number;
   somme_ttc?: number;
+  compteurs?: { emise: number; annulee: number };
   page?: number;
   limit?: number;
+  vosfactures_actif?: boolean;
 }
 
 export interface ClientResume {

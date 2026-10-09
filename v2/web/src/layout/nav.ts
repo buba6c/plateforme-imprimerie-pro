@@ -22,6 +22,7 @@ import {
   ShieldCheck,
   Sparkles,
   CalendarDays,
+  MessageCircle,
 } from 'lucide-react';
 import type { Role } from '@evocom/shared';
 
@@ -61,6 +62,7 @@ export function navigationPour(role: Role): NavSection[] {
           { to: '/admin/tarifs', label: 'Tarifs', icon: Tags },
           { to: '/admin/parametres', label: 'Paramètres', icon: Settings2 },
           { to: '/admin/assistant-ia', label: 'Assistant IA', icon: Sparkles },
+          { to: '/whatsapp', label: 'WhatsApp client', icon: MessageCircle },
           { to: '/admin/journal', label: 'Journal', icon: ScrollText },
           { to: '/admin/corbeille', label: 'Corbeille', icon: Trash2 },
           { to: '/admin/sante', label: 'Sauvegardes et état', icon: HardDrive },

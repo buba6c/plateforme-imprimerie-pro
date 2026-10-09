@@ -174,17 +174,26 @@ export interface FacturePdf {
   objet: string | null;
   statut: string;
   date_emission: string;
-  dossier_numero: string;
+  /** AAAA-MM-JJ ; absente pour une facture sans échéance précisée. */
+  date_echeance?: string | null;
+  /** Null pour une facture directe (sans dossier). */
+  dossier_numero: string | null;
   client_nom: string;
   client_telephone: string | null;
+  client_email?: string | null;
   client_adresse: string | null;
   lignes: LigneDocument[];
   total_ht: number;
   tva_taux: number;
   tva: number;
   total_ttc: number;
-  deja_paye: number;
-  reste: number;
+  /** Null quand aucun paiement n'est suivi (facture directe) : le bloc « Déjà réglé » n'est pas imprimé. */
+  deja_paye: number | null;
+  reste: number | null;
+  /** Remarques propres à la facture (facture directe). */
+  notes?: string | null;
+  /** Conditions de paiement propres à la facture ; sinon celles de Paramètres > Documents. */
+  conditions_paiement?: string | null;
   annulee_at: string | Date | null;
   motif_annulation: string | null;
 }
@@ -192,12 +201,14 @@ export interface FacturePdf {
 export async function pdfFacture(f: FacturePdf, params: Parametres): Promise<Buffer> {
   const tz = params.fuseau;
   const doc = nouveauDocument({ titre: `Facture ${f.numero}`, auteur: params.entreprise.nom });
-  let y = enTete(doc, params.entreprise, 'FACTURE', [
+  const enTeteLignes: [string, string][] = [
     ['Numéro', f.numero],
     ["Date d'émission", jourFr(f.date_emission, tz)],
-    ['Dossier', f.dossier_numero],
-  ]);
-  const yClient = blocInfos(doc, y, 'Facturé à', f.client_nom, [f.client_adresse, f.client_telephone && `Tél. ${f.client_telephone}`], {
+  ];
+  if (f.date_echeance) enTeteLignes.push(['À régler avant le', jourFr(f.date_echeance, tz)]);
+  if (f.dossier_numero) enTeteLignes.push(['Dossier', f.dossier_numero]);
+  let y = enTete(doc, params.entreprise, 'FACTURE', enTeteLignes);
+  const yClient = blocInfos(doc, y, 'Facturé à', f.client_nom, [f.client_adresse, f.client_telephone && `Tél. ${f.client_telephone}`, f.client_email ?? null], {
     x: doc.page.margins.left + largeurUtile(doc) * 0.5,
     width: largeurUtile(doc) * 0.5,
   });
@@ -208,7 +219,11 @@ export async function pdfFacture(f: FacturePdf, params: Parametres): Promise<Buf
     .fontSize(10.5)
     .fillColor(COULEURS.texte)
     .text(t(f.machine ? `Impression ${MACHINE_LABELS[f.machine]}` : "Travaux d'impression"), doc.page.margins.left, y + 22, { width: lg });
-  doc.font(POLICE).fontSize(9).fillColor(COULEURS.discret).text(t(`Dossier ${f.dossier_numero}`), { width: lg });
+  doc
+    .font(POLICE)
+    .fontSize(9)
+    .fillColor(COULEURS.discret)
+    .text(t(f.dossier_numero ? `Dossier ${f.dossier_numero}` : 'Facture établie directement, sans dossier de production'), { width: lg });
   if (f.objet) doc.text(t(f.objet.length > 160 ? `${f.objet.slice(0, 157)}...` : f.objet), { width: lg });
   y = Math.max(yClient, doc.y) + 16;
 
@@ -232,19 +247,21 @@ export async function pdfFacture(f: FacturePdf, params: Parametres): Promise<Buf
     rows.push({ label: 'Total', valeur: formatFCFA(f.total_ttc), fort: true });
   }
   y = totaux(doc, y + 6, rows);
-  if (f.statut !== 'annulee') {
+  if (f.statut !== 'annulee' && f.deja_paye !== null && f.reste !== null) {
     y = totaux(doc, y + 2, [
       { label: 'Déjà réglé', valeur: formatFCFA(f.deja_paye) },
       { label: 'Reste à payer', valeur: formatFCFA(f.reste) },
     ]);
   }
+  if (f.notes) y = paragraphe(doc, y + 8, 'Remarques', f.notes);
   y = paragraphe(
     doc,
     y + 8,
     'Mentions',
-    `Montants en francs CFA (FCFA)${f.tva_taux > 0 ? '' : ', TVA non applicable'}. Facture établie pour le dossier ${f.dossier_numero}.`,
+    `Montants en francs CFA (FCFA)${f.tva_taux > 0 ? '' : ', TVA non applicable'}. ${f.dossier_numero ? `Facture établie pour le dossier ${f.dossier_numero}.` : 'Facture établie directement.'}`,
   );
-  if (params.documents.conditions_paiement) paragraphe(doc, y + 6, 'Conditions de paiement', params.documents.conditions_paiement);
+  const conditions = f.conditions_paiement || params.documents.conditions_paiement;
+  if (conditions) paragraphe(doc, y + 6, 'Conditions de paiement', conditions);
 
   if (f.statut === 'annulee') filigrane(doc, 'ANNULÉE');
   piedsDePage(doc, params.entreprise.pied_facture, `Facture ${f.numero}`);
