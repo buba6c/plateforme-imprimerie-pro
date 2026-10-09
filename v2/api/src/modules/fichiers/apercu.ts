@@ -86,7 +86,7 @@ export async function apercu(stockage: string, abs: string, genre: GenreApercu, 
         if (!(await popplerPresent())) throw new ApercuIndisponible('Poppler (pdftoppm) absent du serveur.');
         // -scale-to : largeur cible ; une seule page lue, même dans un PDF de plusieurs centaines de Mo.
         await exec('pdftoppm', ['-f', String(page), '-l', String(page), '-scale-to-x', String(largeur), '-scale-to-y', '-1', '-png', '-singlefile', '-aa', 'yes', '-aaVector', 'yes', abs, temp], {
-          timeout: 45000,
+          timeout: 120000,
           maxBuffer: 1024 * 1024,
         });
         await sharp(`${temp}.png`).flatten({ background: '#ffffff' }).webp({ quality: 82 }).toFile(sortie);
@@ -106,7 +106,8 @@ export async function apercu(stockage: string, abs: string, genre: GenreApercu, 
         popplerDispo = false;
         throw new ApercuIndisponible('Poppler (pdftoppm) absent du serveur.');
       }
-      throw new Error(`Aperçu impossible : ${String(err.stderr ?? err.message).split('\n')[0]}`);
+      const detail = (err as { killed?: boolean }).killed ? 'temps de conversion dépassé (2 min)' : String(err.stderr || err.message || 'erreur inconnue').split('\n')[0];
+      throw new Error(`Aperçu impossible : ${detail}`);
     } finally {
       await fs.promises.rm(`${temp}.png`, { force: true }).catch(() => {});
     }
