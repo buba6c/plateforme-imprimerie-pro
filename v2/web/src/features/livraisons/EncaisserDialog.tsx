@@ -1,10 +1,11 @@
 import { useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { Banknote } from 'lucide-react';
-import { formatFCFA, MODE_PAIEMENT_LABELS, MODES_AVEC_REFERENCE, MODES_PAIEMENT, parseMontant, type ModePaiement } from '@evocom/shared';
+import { formatFCFA, MODES_AVEC_REFERENCE, parseMontant, type ModePaiement } from '@evocom/shared';
 import { api, messageErreur } from '../../lib/api';
 import type { DossierResume } from '../../lib/types';
-import { Alert, Button, Dialog, SelectField, TextField, useToast } from '../../ui';
+import { Alert, Button, Dialog, TextField, useToast } from '../../ui';
+import { ModeChoix } from '../paiements/ModePastille';
 import { resteAEncaisser } from './hooks';
 
 /**
@@ -62,7 +63,7 @@ export function EncaisserDialog({
       {reste !== null && <Alert tone="info">Reste à encaisser : {formatFCFA(reste)}</Alert>}
       <div className="ev-form-grid">
         <TextField label="Montant encaissé" required mono addon="FCFA" inputMode="numeric" value={montant} onChange={(e) => setMontant(e.target.value)} error={montant ? erreur : null} data-autofocus />
-        <SelectField label="Mode de paiement" required value={mode} onChange={(e) => setMode(e.target.value as ModePaiement)} options={MODES_PAIEMENT.map((v) => ({ value: v, label: MODE_PAIEMENT_LABELS[v] }))} />
+        <ModeChoix value={mode} onChange={setMode} name="mode-paiement-encaisser" />
         {refRequise && <TextField label="Référence de la transaction" required mono value={reference} onChange={(e) => setReference(e.target.value)} placeholder="Ex. numéro Wave" />}
       </div>
     </Dialog>

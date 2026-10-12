@@ -1,9 +1,10 @@
-// Carte d'une livraison pour le livreur (téléphone d'abord) : qui, où, quand, combien,
-// appeler, itinéraire, puis l'action principale en gros bouton.
+// Carte d'une livraison pour le livreur (téléphone d'abord) : l'état en bandeau (prêt au départ,
+// programmée, en retard), qui, où, quand, combien reste à encaisser, appeler, itinéraire, puis
+// l'action principale en gros bouton.
 
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
-import { CalendarClock, Clock, MapPin, Navigation, Phone, Undo2 } from 'lucide-react';
+import { AlarmClock, Banknote, CalendarClock, Clock, MapPin, Navigation, PackageCheck, Phone, Truck, Undo2 } from 'lucide-react';
 import { formatDate, formatFCFA, type ActionId } from '@evocom/shared';
 import { messageErreur } from '../../lib/api';
 import type { DossierResume } from '../../lib/types';
@@ -14,38 +15,47 @@ import { ecartJours, libelleRendezVous } from './dates';
 import { lienItineraire, lienTelephone, resteAEncaisser } from './hooks';
 import { ReporterDialog } from './ReporterDialog';
 
+type Etat = 'a_programmer' | 'tournee' | 'retard';
+
 /** Ne garde, parmi les actions renvoyées par le serveur, que celles demandées. */
 function avec(d: DossierResume, ids: ActionId[]): DossierResume {
   return { ...d, actions: d.actions.filter((a) => ids.includes(a)) };
 }
 
-function Echeance({ d }: { d: DossierResume }) {
-  if (d.statut === 'en_livraison' && d.livraison_prevue_at) {
-    const e = ecartJours(d.livraison_prevue_at);
-    const depasse = new Date(d.livraison_prevue_at).getTime() < Date.now();
+function etatDe(d: DossierResume): Etat {
+  if (d.statut !== 'en_livraison') return 'a_programmer';
+  return d.livraison_prevue_at && new Date(d.livraison_prevue_at).getTime() < Date.now() ? 'retard' : 'tournee';
+}
+
+function Bandeau({ d, etat }: { d: DossierResume; etat: Etat }) {
+  if (etat === 'a_programmer') {
     return (
-      <p className="lv-card__quand" data-tone={depasse ? 'retard' : undefined}>
-        <Clock aria-hidden="true" />
-        <span>
-          {libelleRendezVous(d.livraison_prevue_at)}
-          {depasse && <strong>{e < 0 ? ' · en retard' : ' · heure dépassée'}</strong>}
-        </span>
-      </p>
+      <>
+        <PackageCheck aria-hidden="true" />
+        <span>Prêt au départ</span>
+        {d.date_promise && (
+          <span className="lv-card__bande-meta" data-tone={ecartJours(d.date_promise) < 0 ? 'retard' : undefined}>
+            promis le {formatDate(d.date_promise)}
+          </span>
+        )}
+      </>
     );
   }
-  if (d.date_promise) {
-    const depasse = ecartJours(d.date_promise) < 0;
+  if (etat === 'retard') {
     return (
-      <p className="lv-card__quand" data-tone={depasse ? 'retard' : undefined}>
-        <CalendarClock aria-hidden="true" />
-        <span>
-          Promis pour le {formatDate(d.date_promise)}
-          {depasse && <strong> · date dépassée</strong>}
-        </span>
-      </p>
+      <>
+        <AlarmClock aria-hidden="true" />
+        <span>En retard</span>
+        {d.livraison_prevue_at && <span className="lv-card__bande-meta">{libelleRendezVous(d.livraison_prevue_at)}</span>}
+      </>
     );
   }
-  return null;
+  return (
+    <>
+      <Truck aria-hidden="true" />
+      <span>{d.livraison_prevue_at ? libelleRendezVous(d.livraison_prevue_at) : 'Programmée'}</span>
+    </>
+  );
 }
 
 function Montant({ d }: { d: DossierResume }) {
@@ -53,30 +63,55 @@ function Montant({ d }: { d: DossierResume }) {
   const attente = d.en_attente_validation ?? 0;
   if (reste === null) {
     return (
-      <div className="lv-card__montant">
-        <span className="lv-card__montant-label">À encaisser</span>
-        <span className="ev-muted">Montant à définir</span>
+      <div className="lv-card__tuile" data-tone="neutre">
+        <span className="lv-card__tuile-libelle">À encaisser</span>
+        <span className="lv-card__tuile-valeur lv-card__tuile-valeur--texte">Montant à définir</span>
       </div>
     );
   }
   if (reste === 0) {
     return (
-      <div className="lv-card__montant">
-        <span className="lv-card__montant-label">À encaisser</span>
-        <span className="row">
-          <span className="ev-num lv-montant lv-montant--nul">0 FCFA</span>
+      <div className="lv-card__tuile" data-tone="neutre">
+        <span className="lv-card__tuile-libelle">À encaisser</span>
+        <span className="lv-card__tuile-valeur lv-card__tuile-valeur--texte">
+          Rien
           {d.situation_paiement && <PaymentBadge situation={d.situation_paiement} enAttente={attente} />}
         </span>
       </div>
     );
   }
   return (
-    <div className="lv-card__montant">
-      <span className="lv-card__montant-label">
-        À encaisser
-        {attente > 0 && <small>{formatFCFA(attente)} déjà remis, en attente de validation</small>}
+    <div className="lv-card__tuile" data-tone="argent">
+      <span className="lv-card__tuile-libelle">
+        <Banknote aria-hidden="true" />À encaisser
       </span>
-      <span className="ev-num lv-montant">{formatFCFA(reste)}</span>
+      <span className="lv-card__tuile-valeur ev-num">{formatFCFA(reste)}</span>
+      {attente > 0 && <small>{formatFCFA(attente)} déjà remis, à valider</small>}
+    </div>
+  );
+}
+
+function Quand({ d, etat }: { d: DossierResume; etat: Etat }) {
+  if (etat === 'a_programmer') {
+    const depasse = d.date_promise ? ecartJours(d.date_promise) < 0 : false;
+    return (
+      <div className="lv-card__tuile" data-tone={depasse ? 'retard' : 'neutre'}>
+        <span className="lv-card__tuile-libelle">
+          <CalendarClock aria-hidden="true" />Promis
+        </span>
+        <span className="lv-card__tuile-valeur lv-card__tuile-valeur--texte">{d.date_promise ? formatDate(d.date_promise) : 'Sans date'}</span>
+        {depasse && <small>date dépassée</small>}
+      </div>
+    );
+  }
+  const e = d.livraison_prevue_at ? ecartJours(d.livraison_prevue_at) : null;
+  return (
+    <div className="lv-card__tuile" data-tone={etat === 'retard' ? 'retard' : 'quand'}>
+      <span className="lv-card__tuile-libelle">
+        <Clock aria-hidden="true" />Passage
+      </span>
+      <span className="lv-card__tuile-valeur lv-card__tuile-valeur--texte">{d.livraison_prevue_at ? libelleRendezVous(d.livraison_prevue_at) : 'Heure à fixer'}</span>
+      {etat === 'retard' && <small>{e !== null && e < 0 ? `${-e} jour${-e > 1 ? 's' : ''} de retard` : 'heure dépassée'}</small>}
     </div>
   );
 }
@@ -86,78 +121,84 @@ export function CarteLivraison({ d, montrerLivreur }: { d: DossierResume; montre
   const [reporter, setReporter] = useState(false);
   const [retirer, setRetirer] = useState(false);
   const retrait = useAction(d.id);
+  const etat = etatDe(d);
   const enTournee = d.statut === 'en_livraison';
   const adresse = d.adresse_livraison?.trim() || null;
   const tel = d.client_telephone?.trim() || null;
   const peutLivrer = d.actions.includes('confirmer_livraison');
 
   return (
-    <article className="ev-job lv-card" data-urgent={d.urgent} aria-label={`${d.client_nom}, dossier ${d.numero}`}>
-      <div className="lv-card__top">
-        <Link to={`/dossiers/${d.id}`} className="lv-card__ref" aria-label={`Ouvrir le dossier ${d.numero}`}>
-          <Ref>{d.numero}</Ref>
-        </Link>
+    <article className="ev-job lv-card" data-etat={etat} data-urgent={d.urgent || undefined} aria-label={`${d.client_nom}, dossier ${d.numero}`}>
+      <div className="lv-card__bande">
+        <Bandeau d={d} etat={etat} />
         {d.urgent && <UrgentTag />}
-        {montrerLivreur && enTournee && <span className="lv-card__livreur">{d.livreur_nom ?? 'Sans livreur'}</span>}
       </div>
 
-      <div className="lv-card__qui">
-        <Link to={`/dossiers/${d.id}`} className="lv-card__client">
-          {d.client_nom}
-        </Link>
+      <div className="lv-card__corps">
+        <div className="lv-card__tete">
+          <Link to={`/dossiers/${d.id}`} className="lv-card__client">
+            {d.client_nom}
+          </Link>
+          <Link to={`/dossiers/${d.id}`} className="lv-card__ref" aria-label={`Ouvrir le dossier ${d.numero}`}>
+            <Ref>{d.numero}</Ref>
+          </Link>
+        </div>
+        {montrerLivreur && enTournee && <span className="lv-card__livreur">{d.livreur_nom ?? 'Sans livreur désigné'}</span>}
         <p className="lv-card__adresse" data-vide={!adresse}>
           <MapPin aria-hidden="true" />
           <span>{adresse ?? 'Adresse à confirmer avec le client'}</span>
         </p>
         {d.notes_livraison && <p className="lv-card__notes">{d.notes_livraison}</p>}
-      </div>
 
-      <Echeance d={d} />
-      <Montant d={d} />
+        <div className="lv-card__tuiles">
+          <Quand d={d} etat={etat} />
+          <Montant d={d} />
+        </div>
 
-      <div className="lv-card__contact" data-seul={!(tel && adresse)}>
-        {tel ? (
-          <a className="ev-btn ev-btn--lg" href={lienTelephone(tel)} aria-label={`Appeler ${d.client_nom} au ${tel}`}>
-            <Phone aria-hidden="true" />
-            <span className="ev-mono">{tel}</span>
-          </a>
-        ) : (
-          <span className="lv-card__sans-tel">Numéro non renseigné</span>
-        )}
-        {adresse && (
-          <a className="ev-btn ev-btn--lg" href={lienItineraire(adresse)} target="_blank" rel="noopener noreferrer" aria-label={`Itinéraire vers ${adresse} (ouvre Google Maps)`}>
-            <Navigation aria-hidden="true" />
-            Itinéraire
-          </a>
-        )}
-      </div>
-
-      {peutLivrer && (
-        <div className="lv-card__actions">
-          {enTournee ? (
-            <>
-              <DossierActions dossier={avec(d, ['confirmer_livraison'])} size="lg" block />
-              <div className="lv-card__secondaires">
-                <Button icon={<CalendarClock />} onClick={() => setReporter(true)}>
-                  Reporter
-                </Button>
-                {d.actions.includes('retirer_tournee') && (
-                  <Button variant="ghost" icon={<Undo2 />} onClick={() => setRetirer(true)}>
-                    Retirer de la tournée
-                  </Button>
-                )}
-              </div>
-            </>
+        <div className="lv-card__contact" data-seul={!(tel && adresse)}>
+          {tel ? (
+            <a className="ev-btn ev-btn--lg lv-card__bouton" href={lienTelephone(tel)} aria-label={`Appeler ${d.client_nom} au ${tel}`}>
+              <Phone aria-hidden="true" />
+              <span className="ev-mono">{tel}</span>
+            </a>
           ) : (
-            <>
-              <DossierActions dossier={avec(d, ['programmer_livraison'])} size="lg" block />
-              <div className="lv-secondaire">
-                <DossierActions dossier={avec(d, ['confirmer_livraison'])} block />
-              </div>
-            </>
+            <span className="lv-card__sans-tel">Numéro non renseigné</span>
+          )}
+          {adresse && (
+            <a className="ev-btn ev-btn--lg lv-card__bouton" href={lienItineraire(adresse)} target="_blank" rel="noopener noreferrer" aria-label={`Itinéraire vers ${adresse} (ouvre Google Maps)`}>
+              <Navigation aria-hidden="true" />
+              Itinéraire
+            </a>
           )}
         </div>
-      )}
+
+        {peutLivrer && (
+          <div className="lv-card__actions">
+            {enTournee ? (
+              <>
+                <DossierActions dossier={avec(d, ['confirmer_livraison'])} size="lg" block />
+                <div className="lv-card__secondaires">
+                  <Button icon={<CalendarClock />} onClick={() => setReporter(true)}>
+                    Reporter
+                  </Button>
+                  {d.actions.includes('retirer_tournee') && (
+                    <Button variant="ghost" icon={<Undo2 />} onClick={() => setRetirer(true)}>
+                      Retirer de la tournée
+                    </Button>
+                  )}
+                </div>
+              </>
+            ) : (
+              <>
+                <DossierActions dossier={avec(d, ['programmer_livraison'])} size="lg" block />
+                <div className="lv-secondaire">
+                  <DossierActions dossier={avec(d, ['confirmer_livraison'])} block />
+                </div>
+              </>
+            )}
+          </div>
+        )}
+      </div>
 
       {reporter && <ReporterDialog dossier={d} onClose={() => setReporter(false)} />}
       <ConfirmDialog

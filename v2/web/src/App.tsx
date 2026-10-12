@@ -12,7 +12,6 @@ const FicheDossier = lazy(() => import('./pages/dossiers/FicheDossier'));
 const FileImpression = lazy(() => import('./pages/atelier/FileImpression'));
 const ALivrer = lazy(() => import('./pages/livraisons/ALivrer'));
 const Livrees = lazy(() => import('./pages/livraisons/Livrees'));
-const Encaissements = lazy(() => import('./pages/livraisons/Encaissements'));
 const ListeDevis = lazy(() => import('./pages/commercial/ListeDevis'));
 const EditeurDevis = lazy(() => import('./pages/commercial/EditeurDevis'));
 const FicheDevis = lazy(() => import('./pages/commercial/FicheDevis'));
@@ -72,7 +71,6 @@ export default function App() {
         <Route path="atelier" element={<Lazy><R roles={[...IMPRIMEURS, 'admin']}><FileImpression /></R></Lazy>} />
         <Route path="livraisons" element={<Lazy><R roles={['livreur', 'admin']}><ALivrer /></R></Lazy>} />
         <Route path="livraisons/livrees" element={<Lazy><R roles={['livreur', 'admin']}><Livrees /></R></Lazy>} />
-        <Route path="encaissements" element={<Lazy><R roles={['livreur', 'preparateur']}><Encaissements /></R></Lazy>} />
         <Route path="devis" element={<Lazy><R roles={ADMIN}><ListeDevis /></R></Lazy>} />
         <Route path="devis/nouveau" element={<Lazy><R roles={ADMIN}><EditeurDevis /></R></Lazy>} />
         <Route path="devis/:id" element={<Lazy><R roles={ADMIN}><FicheDevis /></R></Lazy>} />

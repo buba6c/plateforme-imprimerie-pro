@@ -93,7 +93,6 @@ export function navigationPour(role: Role): NavSection[] {
           { to: '/livraisons/planning', label: 'Planning', icon: CalendarDays, mobile: true },
           { to: '/livraisons/livrees', label: 'Livrées', icon: PackageCheck, mobile: true },
           { to: '/livraisons/historique', label: 'Historique', icon: History },
-          { to: '/encaissements', label: 'Encaissements', icon: Banknote, mobile: true },
         ] },
       ];
   }

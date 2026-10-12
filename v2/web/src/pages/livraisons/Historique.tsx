@@ -214,19 +214,24 @@ export default function Historique() {
         <>
           <Resume
             label="Totaux de la période"
-            items={[
-              { label: 'Livraisons', value: t.nb_livraisons, meta: PERIODES.find((p) => p.value === periode)?.label.toLowerCase() },
-              { label: 'Encaissé', montant: t.encaisse, meta: t.valide ? `dont ${formatFCFA(t.valide)} validés` : 'refus exclus' },
-              {
-                label: 'En attente de validation',
-                montant: t.en_attente_validation,
-                meta: t.refuse ? `${formatFCFA(t.refuse)} refusés, non comptés` : 'par l’administrateur',
-                tone: t.refuse || t.en_attente_validation ? 'alert' : undefined,
-                large: true,
-              },
-            ]}
+            items={
+              admin
+                ? [
+                    { label: 'Livraisons', value: t.nb_livraisons, meta: PERIODES.find((p) => p.value === periode)?.label.toLowerCase() },
+                    { label: 'Encaissé', montant: t.encaisse, meta: t.valide ? `dont ${formatFCFA(t.valide)} validés` : 'refus exclus' },
+                    {
+                      label: 'En attente de validation',
+                      montant: t.en_attente_validation,
+                      meta: t.refuse ? `${formatFCFA(t.refuse)} refusés, non comptés` : 'par l’administrateur',
+                      tone: t.refuse || t.en_attente_validation ? 'alert' : undefined,
+                      large: true,
+                    },
+                  ]
+                : // Le livreur ne voit pas de totaux d'argent : seulement ses livraisons, et sur chacune ce qu'il a noté.
+                  [{ label: 'Livraisons', value: t.nb_livraisons, meta: PERIODES.find((p) => p.value === periode)?.label.toLowerCase(), large: true }]
+            }
           />
-          {t.par_mode.length > 0 && (
+          {admin && t.par_mode.length > 0 && (
             <Card title="Encaissé par mode de paiement" flush>
               <dl className="lp-modes">
                 {t.par_mode.map((m) => (

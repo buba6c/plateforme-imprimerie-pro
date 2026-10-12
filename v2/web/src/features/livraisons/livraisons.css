@@ -42,31 +42,49 @@
 .lv-note { font-size: 13px; color: var(--text-muted); margin: 0; }
 
 /* ---------- Carte de livraison ---------- */
-.lv-card { gap: var(--space-3); padding: var(--space-4); }
-.lv-card__top { display: flex; align-items: center; gap: var(--space-2); flex-wrap: wrap; min-height: 22px; }
-.lv-card__ref { color: var(--text-muted); text-decoration: none; }
+.lv-card { gap: 0; padding: 0; overflow: hidden; }
+.lv-card__bande {
+  display: flex; align-items: center; gap: 8px; padding: 8px 14px; font-size: 13px; font-weight: 700; letter-spacing: 0.02em;
+  background: var(--accent-soft); color: var(--accent-ink);
+}
+.lv-card__bande svg { width: 16px; height: 16px; flex: none; }
+.lv-card__bande > span:first-of-type { text-transform: uppercase; letter-spacing: 0.06em; font-size: 12px; }
+.lv-card__bande-meta { font-weight: 500; text-transform: none; letter-spacing: 0; opacity: 0.85; }
+.lv-card__bande-meta[data-tone="retard"] { color: var(--danger-ink); opacity: 1; font-weight: 600; }
+.lv-card__bande .ev-urgent, .lv-card__bande [class*="urgent"] { margin-left: auto; }
+.lv-card[data-etat="a_programmer"] .lv-card__bande { background: var(--warning-soft); color: var(--warning-ink); }
+.lv-card[data-etat="tournee"] .lv-card__bande { background: var(--accent-soft); color: var(--accent-ink); }
+.lv-card[data-etat="retard"] .lv-card__bande { background: var(--danger-soft); color: var(--danger-ink); }
+.lv-card[data-urgent] { box-shadow: inset 0 0 0 2px var(--danger); }
+.lv-card__corps { display: grid; gap: var(--space-3); padding: var(--space-4); }
+.lv-card__tete { display: flex; align-items: baseline; justify-content: space-between; gap: var(--space-3); min-width: 0; }
+.lv-card__ref { color: var(--text-muted); text-decoration: none; flex: none; }
 .lv-card__ref:hover { color: var(--accent-ink); text-decoration: underline; }
-.lv-card__livreur { margin-left: auto; font-size: 13px; color: var(--text-muted); }
-.lv-card__qui { display: grid; gap: 4px; min-width: 0; }
-.lv-card__client { font-size: 18px; line-height: 24px; font-weight: 600; color: var(--text); text-decoration: none; overflow-wrap: anywhere; }
+.lv-card__livreur { font-size: 13px; color: var(--text-muted); }
+.lv-card__client { font-size: 19px; line-height: 24px; font-weight: 700; color: var(--text); text-decoration: none; overflow-wrap: anywhere; min-width: 0; }
 .lv-card__client:hover { color: var(--accent-ink); text-decoration: underline; text-underline-offset: 2px; }
-.lv-card__adresse, .lv-card__quand { display: flex; align-items: flex-start; gap: var(--space-2); margin: 0; font-size: 15px; line-height: 22px; color: var(--text); overflow-wrap: anywhere; }
-.lv-card__adresse svg, .lv-card__quand svg { width: 18px; height: 18px; flex: none; margin-top: 2px; color: var(--text-muted); }
+.lv-card__adresse { display: flex; align-items: flex-start; gap: var(--space-2); margin: 0; font-size: 15px; line-height: 22px; color: var(--text); overflow-wrap: anywhere; }
+.lv-card__adresse svg { width: 18px; height: 18px; flex: none; margin-top: 2px; color: var(--text-muted); }
 .lv-card__adresse[data-vide="true"] { color: var(--warning-ink); }
 .lv-card__adresse[data-vide="true"] svg { color: currentColor; }
-.lv-card__quand { font-weight: 500; }
-.lv-card__quand[data-tone="retard"] { color: var(--warning-ink); }
-.lv-card__quand[data-tone="retard"] svg { color: currentColor; }
-.lv-card__quand strong { font-weight: 600; }
-.lv-card__notes { margin: 2px 0 0; padding: var(--space-2) var(--space-3); border-radius: var(--radius-md); background: var(--surface-sunken); font-size: 14px; color: var(--text); overflow-wrap: anywhere; }
-.lv-card__montant {
-  display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); flex-wrap: wrap;
-  padding: var(--space-3) var(--space-4); border-radius: var(--radius-md); background: var(--surface-sunken);
+.lv-card__notes { margin: 0; padding: var(--space-2) var(--space-3); border-radius: var(--radius-md); background: var(--surface-sunken); font-size: 14px; color: var(--text); overflow-wrap: anywhere; }
+
+.lv-card__tuiles { display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-2); }
+.lv-card__tuile {
+  --t-bg: var(--surface-sunken); --t-ink: var(--text-muted);
+  display: grid; gap: 2px; align-content: start; min-width: 0; padding: 10px 12px; border-radius: var(--radius-md);
+  background: var(--t-bg); border: 1px solid color-mix(in srgb, var(--t-ink) 18%, transparent);
 }
-.lv-card__montant-label { display: grid; gap: 2px; font-size: 14px; font-weight: 500; color: var(--text-muted); }
-.lv-card__montant-label small { font-size: 12px; font-weight: 400; }
-.lv-montant { font-size: 22px; line-height: 28px; color: var(--ink); white-space: nowrap; }
-.lv-montant--nul { color: var(--text-muted); font-size: 18px; }
+.lv-card__tuile[data-tone="argent"] { --t-bg: var(--success-soft); --t-ink: var(--success-ink); }
+.lv-card__tuile[data-tone="quand"] { --t-bg: var(--accent-soft); --t-ink: var(--accent-ink); }
+.lv-card__tuile[data-tone="retard"] { --t-bg: var(--danger-soft); --t-ink: var(--danger-ink); }
+.lv-card__tuile-libelle { display: flex; align-items: center; gap: 5px; font-size: 11px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: var(--t-ink); }
+.lv-card__tuile-libelle svg { width: 14px; height: 14px; }
+.lv-card__tuile-valeur { font-size: 22px; line-height: 28px; font-weight: 700; color: var(--t-ink); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.lv-card__tuile[data-tone="neutre"] .lv-card__tuile-valeur { color: var(--text); }
+.lv-card__tuile-valeur--texte { font-size: 15px; line-height: 22px; font-weight: 600; white-space: normal; display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.lv-card__tuile small { font-size: 12px; color: var(--t-ink); opacity: 0.9; }
+
 .lv-card__contact { display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-2); }
 .lv-card__contact[data-seul="true"] { grid-template-columns: 1fr; }
 .lv-card__contact .ev-btn { width: 100%; padding: 0 var(--space-3); }

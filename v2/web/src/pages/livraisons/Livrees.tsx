@@ -84,7 +84,7 @@ export default function Livrees() {
             label="Résumé des livraisons"
             items={[
               { label: 'Livrées', value: total, meta: `sur les ${periode}` },
-              { label: 'En attente de validation', montant: aValider, meta: 'encaissé, à valider' },
+              ...(admin ? [{ label: 'En attente de validation', montant: aValider, meta: 'encaissé, à valider' }] : []),
               { label: 'Reste à encaisser', montant: reste, meta: reste > 0 ? 'auprès des clients livrés' : 'rien à encaisser', tone: reste > 0 ? 'alert' : undefined, large: true },
             ]}
           />
