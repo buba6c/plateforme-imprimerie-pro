@@ -3,7 +3,8 @@
 // miroir des bords (bandes retournées), étirement, ou blanc. Traits de coupe, zone finie, pli du livret
 // et numéros s'affichent ou se masquent à la demande.
 import { useState } from 'react';
-import { apercuPage, type Face, type MethodeFondsPerdus, type PageVirtuelle, type Plan } from './types';
+import { useApercuPage } from './rendu';
+import type { Face, MethodeFondsPerdus, PageVirtuelle, Plan } from './types';
 
 export interface AffichageSchema {
   fonds: boolean;
@@ -24,9 +25,25 @@ function Image({ href, x, y, w, h, clip, sx = 1, sy = 1, onError }: { href: stri
 
 function Visuel({ pg, x, y, w, h, fp, methode, sourceAvecFonds, i, afficherFonds }: { pg: PageVirtuelle; x: number; y: number; w: number; h: number; fp: number; methode: MethodeFondsPerdus; sourceAvecFonds: boolean; i: number; afficherFonds: boolean }) {
   const [ko, setKo] = useState(false);
-  if (ko) return null;
-  const href = apercuPage(pg, 360);
+  const rendu = useApercuPage({ fichier_id: pg.libre ? undefined : pg.fichier_id, libre: pg.libre, page: pg.page_source, genre: pg.genre }, 360);
   const id = `p${i}-${pg.numero}`;
+  if (rendu.etat === 'chargement') {
+    return (
+      <g className="imp-schema__charge">
+        <rect x={x} y={y} width={w} height={h} />
+        <text x={x + w / 2} y={y + h / 2} textAnchor="middle" dominantBaseline="central" fontSize={Math.max(8, Math.min(13, w / 8))}>Chargement…</text>
+      </g>
+    );
+  }
+  if (ko || rendu.etat === 'erreur' || !rendu.url) {
+    return (
+      <g className="imp-schema__charge" data-erreur>
+        <rect x={x} y={y} width={w} height={h} />
+        <text x={x + w / 2} y={y + h / 2} textAnchor="middle" dominantBaseline="central" fontSize={Math.max(8, Math.min(12, w / 9))}>Aperçu indisponible</text>
+      </g>
+    );
+  }
+  const href = rendu.url;
   const bx = x - fp, by = y - fp, bw = w + 2 * fp, bh = h + 2 * fp;
   const fonds = afficherFonds && fp > 0;
   const zones = (

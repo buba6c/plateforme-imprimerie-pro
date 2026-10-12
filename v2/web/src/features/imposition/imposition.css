@@ -330,3 +330,11 @@
 .rapport__ia-tete { display: flex; align-items: center; gap: 8px; font-weight: 700; }
 .rapport__ia-tete svg { width: 16px; height: 16px; color: var(--accent); }
 .rapport__ia ul { margin: 0; padding-left: 18px; }
+
+/* Chargement des aperçus */
+.imp-schema__charge rect { fill: #f1f5f9; stroke: #cbd5e1; stroke-width: 0.6; }
+.imp-schema__charge text { fill: #64748b; font-family: var(--font-sans, sans-serif); }
+.imp-schema__charge:not([data-erreur]) rect { animation: imp-pulse 1.2s ease-in-out infinite; }
+@keyframes imp-pulse { 50% { fill: #e2e8f0; } }
+.pc__tourne { width: 18px; height: 18px; color: var(--accent); animation: gen-tour 0.9s linear infinite; }
+@media (prefers-reduced-motion: reduce) { .imp-schema__charge rect, .pc__tourne { animation: none; } }

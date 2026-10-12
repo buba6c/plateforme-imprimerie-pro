@@ -8,7 +8,7 @@
 
 import { useEffect, useMemo, useRef, useState, type ChangeEvent, type DragEvent } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
-import { ArrowDown, ArrowLeft, ArrowRight, ArrowUp, Bookmark, Check, ChevronLeft, ChevronRight, Download, FileCheck2, FolderOpen, LayoutGrid, Minus, Plus, RotateCcw, Sparkles, Trash2, Upload, Wand2, X } from 'lucide-react';
+import { ArrowDown, ArrowLeft, ArrowRight, ArrowUp, Bookmark, Check, LoaderCircle, ChevronLeft, ChevronRight, Download, FileCheck2, FolderOpen, LayoutGrid, Minus, Plus, RotateCcw, Sparkles, Trash2, Upload, Wand2, X } from 'lucide-react';
 import { formatTaille } from '@evocom/shared';
 import { useUser } from '../../auth/AuthContext';
 import { useDossier } from '../../features/dossiers/hooks';
@@ -21,6 +21,7 @@ import { OptionCartes } from '../../features/imposition/OptionCartes';
 import { PictoFondsPerdus, PictoMode, PictoOperation, PictoOrientation, PictoTraits } from '../../features/imposition/Pictos';
 import { SchemaFeuille, type AffichageSchema } from '../../features/imposition/SchemaFeuille';
 import { reglagesPour, resumeAuto } from '../../features/imposition/auto';
+import { useApercuPage } from '../../features/imposition/rendu';
 import { FOURNISSEUR_LABELS_IA, METHODE_LABELS, MODE_LABELS, OPERATION_LABELS, type Feuille, type ModeleImposition, type Operation, type ParamsImposition, type Piece, type PieceAnalysee, type Plan, type PropositionImposition, type ReponseAnalyse, type ResultatGeneration, type RolePiece } from '../../features/imposition/types';
 import '../../features/imposition/imposition.css';
 import { apercuUrl, fichierUrl, messageErreur } from '../../lib/api';
@@ -45,11 +46,13 @@ function Nombre({ label, value, onChange, min = 0, max = 2000, step = 0.5, addon
 // ---------------------------------------------------------------------------
 // Panneau des pièces
 
-function MiniPiece({ p, analyse }: { p: Piece; analyse?: PieceAnalysee }) {
-  const [ko, setKo] = useState(false);
-  const src = p.libre ? `/api/imposition/libre/${p.libre}/apercu?page=1&largeur=160` : apercuUrl(p.fichier_id!, 160);
-  void analyse;
-  return <span className="pc__mini">{src && !ko ? <img src={src} alt="" onError={() => setKo(true)} /> : <span className="ev-file__type">{extension(p.nom)}</span>}</span>;
+function MiniPiece({ p }: { p: Piece; analyse?: PieceAnalysee }) {
+  const rendu = useApercuPage({ fichier_id: p.libre ? undefined : p.fichier_id, libre: p.libre, page: 1, genre: p.genre }, 200);
+  return (
+    <span className="pc__mini" data-etat={rendu.etat}>
+      {rendu.etat === 'pret' && rendu.url ? <img src={rendu.url} alt="" /> : rendu.etat === 'chargement' ? <LoaderCircle className="pc__tourne" aria-label="Chargement de l’aperçu" /> : <span className="ev-file__type">{extension(p.nom)}</span>}
+    </span>
+  );
 }
 
 function ChipsPiece({ a }: { a: PieceAnalysee }) {
@@ -571,6 +574,19 @@ export default function Imposition() {
   const [pieces, setPieces] = useState<Piece[]>([]);
   const [params, setParams] = useState<ParamsImposition | null>(null);
   const [zoom, setZoom] = useState(1);
+  // Zoom à la molette (Ctrl ou Cmd) : écouteur non passif, sinon le navigateur zoome toute la page.
+  const scene = useRef<HTMLDivElement | null>(null);
+  useEffect(() => {
+    const el = scene.current;
+    if (!el) return;
+    const onWheel = (e: WheelEvent) => {
+      if (!(e.ctrlKey || e.metaKey)) return;
+      e.preventDefault();
+      setZoom((z) => Math.min(4, Math.max(0.4, Math.round((z - Math.sign(e.deltaY) * 0.1) * 10) / 10)));
+    };
+    el.addEventListener('wheel', onWheel, { passive: false });
+    return () => el.removeEventListener('wheel', onWheel);
+  });
   const [face, setFace] = useState<'recto' | 'verso'>('recto');
   const [feuilleVue, setFeuilleVue] = useState(0);
   const [resultat, setResultat] = useState<ResultatGeneration | null>(null);
@@ -679,6 +695,24 @@ export default function Imposition() {
       <PageHeader title="Imposition" subtitle="Préparer les fichiers d’impression : cartes, flyers, tickets, livrets, fonds perdus, assemblage recto-verso." />
       <Etapes courant={ecran} max={max} onAller={setEcran} />
 
+      {ecran === 1 && avancer && pieces.length > 0 && (
+        <div className="gen" role="status" aria-live="polite">
+          <div className="gen__carte">
+            <span className="gen__titre">Préparation de l’imposition…</span>
+            <ol className="gen__etapes">
+              <li data-etat="fait"><span className="gen__puce" aria-hidden="true"><Check width={12} height={12} /></span>Fichier{pieces.length > 1 ? 's' : ''} envoyé{pieces.length > 1 ? 's' : ''}</li>
+              <li data-etat={analyse.data && !analyse.isPlaceholderData ? 'fait' : 'en_cours'}><span className="gen__puce" aria-hidden="true">{analyse.data && !analyse.isPlaceholderData ? <Check width={12} height={12} /> : null}</span>Analyse : format, pages, fonds perdus, bords</li>
+              <li data-etat={params ? 'en_cours' : 'a_venir'}><span className="gen__puce" aria-hidden="true" />Réglages automatiques et ouverture</li>
+            </ol>
+            {analyse.isError && (
+              <>
+                <Alert tone="error">{messageErreur(analyse.error)}</Alert>
+                <Button onClick={() => setAvancer(false)}>Revenir aux fichiers</Button>
+              </>
+            )}
+          </div>
+        </div>
+      )}
       {ecran === 1 && (
         <EcranFichiers pieces={pieces} setPieces={setPieces} analyses={analyse.data?.pieces ?? []} dossierId={dossierId} setDossierId={setDossierId} enAnalyse={analyse.isFetching} onPret={() => setAvancer(true)}
           onSuivant={() => (params ? setEcran(2) : toast.info('Analyse en cours', 'Patientez un instant, puis continuez.'))}
@@ -756,7 +790,7 @@ export default function Imposition() {
                         </label>
                       ))}
                     </div>
-                    <div className="ws__scene" onWheel={(e) => { if (e.ctrlKey || e.metaKey) { e.preventDefault(); setZoom((z) => Math.min(4, Math.max(0.4, Math.round((z - Math.sign(e.deltaY) * 0.1) * 10) / 10))); } }}>
+                    <div className="ws__scene" ref={scene}>
                       <div className="ws__scene-int">
                         <SchemaFeuille plan={planData} face={faceVue} pages={pages} methode={params.methode_fonds_perdus} sourceAvecFonds={sourceAvecFonds} affichage={affichage} largeur={Math.round((planData.feuille.largeur > planData.feuille.hauteur ? 640 : 460) * zoom)} />
                       </div>
