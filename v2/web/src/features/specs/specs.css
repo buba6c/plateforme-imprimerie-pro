@@ -23,7 +23,8 @@
 .sp-grid { display: grid; gap: var(--space-3) var(--space-3); align-items: start; }
 .sp-grid--roland { grid-template-columns: minmax(0, 2.6fr) repeat(2, minmax(0, .9fr)) 72px minmax(0, 1fr); }
 .sp-grid--xerox { grid-template-columns: minmax(0, 2.4fr) repeat(2, minmax(0, 1fr)) auto; }
-.sp-rv { padding-top: 28px; white-space: nowrap; }
+.sp-rv { padding-top: 24px; white-space: nowrap; }
+.sp-rv .ev-segmented { width: 100%; }
 @container (max-width: 620px) {
   .sp-grid--roland { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .sp-grid--roland .sp-col-support { grid-column: 1 / -1; }

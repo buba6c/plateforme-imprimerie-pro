@@ -260,6 +260,18 @@
 .nd-layout .ev-card { border-top: 4px solid var(--nd-trait); transition: border-color 260ms ease-out; }
 .nd-layout .ev-card__head { background: color-mix(in srgb, var(--nd-teinte) 75%, var(--surface)); transition: background-color 260ms ease-out; }
 .nd-layout .nd-section__num { color: var(--nd-encre); font-weight: 700; }
+/* Chaque sujet du formulaire a sa couleur ; la machine (1 et 4) garde la sienne. */
+.nd-layout .ev-card.nd-section--client { --nd-trait: var(--sa-faconnage-ink, #0f6b63); --nd-teinte: var(--sa-faconnage-soft, #d9f3f0); --nd-encre: var(--sa-faconnage-ink, #0f6b63); }
+.nd-layout .ev-card.nd-section--travail { --nd-trait: var(--warning-ink); --nd-teinte: var(--warning-soft); --nd-encre: var(--warning-ink); }
+.nd-layout .ev-card.nd-section--remise { --nd-trait: var(--info-ink); --nd-teinte: var(--info-soft); --nd-encre: var(--info-ink); }
+.nd-layout .ev-card.nd-section--fichiers { --nd-trait: var(--success-ink); --nd-teinte: var(--success-soft); --nd-encre: var(--success-ink); }
+.nd-layout .ev-card.nd-section--prix { --nd-trait: var(--sa-finition-ink, #5b21b6); --nd-teinte: var(--sa-finition-soft, #ede9fe); --nd-encre: var(--sa-finition-ink, #5b21b6); }
+.nd-depot { display: grid; gap: var(--space-3); }
+.nd-depot__liste { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+.nd-depot__item { display: flex; align-items: center; gap: 10px; padding: 8px 12px; border: 1px solid var(--line); border-radius: var(--radius-md); background: var(--surface-sunken); font-size: 14px; }
+.nd-depot__item .ev-file__type { flex: none; }
+.nd-depot__nom { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.nd-depot__taille { color: var(--text-muted); font-size: 12px; white-space: nowrap; }
 .nd-machine .ev-segmented input:checked + span { background: var(--nd-plein); color: var(--nd-sur-plein); box-shadow: 0 2px 6px -2px color-mix(in srgb, var(--nd-plein) 60%, transparent); }
 .nd-machine .ev-segmented input:checked + span * { color: inherit; }
 

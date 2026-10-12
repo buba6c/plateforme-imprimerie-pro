@@ -153,6 +153,17 @@
 }
 .ev-segmented span small { font-size: 12px; font-weight: 400; }
 .ev-segmented input:checked + span { background: var(--surface); color: var(--ink); box-shadow: var(--shadow-card); outline: 1px solid var(--line); }
+/* Options colorées : la couleur dit le sens du choix (délai, recto-verso, fichiers…). */
+.ev-segmented label[data-tone] span { --seg-soft: var(--surface); --seg-ink: var(--ink); }
+.ev-segmented label[data-tone="ok"] span { --seg-soft: var(--success-soft); --seg-ink: var(--success-ink); }
+.ev-segmented label[data-tone="attention"] span { --seg-soft: var(--warning-soft); --seg-ink: var(--warning-ink); }
+.ev-segmented label[data-tone="alerte"] span { --seg-soft: var(--danger-soft); --seg-ink: var(--danger-ink); }
+.ev-segmented label[data-tone="info"] span { --seg-soft: var(--info-soft); --seg-ink: var(--info-ink); }
+.ev-segmented label[data-tone="violet"] span { --seg-soft: var(--sa-finition-soft, #ede9fe); --seg-ink: var(--sa-finition-ink, #5b21b6); }
+.ev-segmented label[data-tone="teal"] span { --seg-soft: var(--sa-faconnage-soft, #d9f3f0); --seg-ink: var(--sa-faconnage-ink, #0f6b63); }
+.ev-segmented label[data-tone] input:checked + span { background: var(--seg-soft); color: var(--seg-ink); outline: 1.5px solid var(--seg-ink); font-weight: 700; }
+.ev-segmented label[data-tone] input:checked + span small { color: var(--seg-ink); opacity: 0.85; }
+.ev-segmented label[data-tone]:hover input:not(:checked) + span { background: color-mix(in srgb, var(--seg-soft) 60%, var(--surface)); }
 
 /* ---------- Badges ---------- */
 .ev-badge {

@@ -14,6 +14,7 @@ import { useAction } from '../dossiers/hooks';
 import { ecartJours, libelleRendezVous } from './dates';
 import { lienItineraire, lienTelephone, resteAEncaisser } from './hooks';
 import { ReporterDialog } from './ReporterDialog';
+import { FixerMontantDialog } from './FixerMontantDialog';
 
 type Etat = 'a_programmer' | 'tournee' | 'retard';
 
@@ -58,14 +59,21 @@ function Bandeau({ d, etat }: { d: DossierResume; etat: Etat }) {
   );
 }
 
-function Montant({ d }: { d: DossierResume }) {
+function Montant({ d, onFixer }: { d: DossierResume; onFixer?: () => void }) {
   const reste = resteAEncaisser(d);
   const attente = d.en_attente_validation ?? 0;
   if (reste === null) {
     return (
-      <div className="lv-card__tuile" data-tone="neutre">
-        <span className="lv-card__tuile-libelle">À encaisser</span>
+      <div className="lv-card__tuile" data-tone="retard">
+        <span className="lv-card__tuile-libelle">
+          <Banknote aria-hidden="true" />À encaisser
+        </span>
         <span className="lv-card__tuile-valeur lv-card__tuile-valeur--texte">Montant à définir</span>
+        {onFixer && (
+          <button type="button" className="ev-btn ev-btn--sm" style={{ marginTop: 4 }} onClick={onFixer}>
+            Fixer le montant
+          </button>
+        )}
       </div>
     );
   }
@@ -120,6 +128,7 @@ export function CarteLivraison({ d, montrerLivreur }: { d: DossierResume; montre
   const toast = useToast();
   const [reporter, setReporter] = useState(false);
   const [retirer, setRetirer] = useState(false);
+  const [fixer, setFixer] = useState(false);
   const retrait = useAction(d.id);
   const etat = etatDe(d);
   const enTournee = d.statut === 'en_livraison';
@@ -152,7 +161,7 @@ export function CarteLivraison({ d, montrerLivreur }: { d: DossierResume; montre
 
         <div className="lv-card__tuiles">
           <Quand d={d} etat={etat} />
-          <Montant d={d} />
+          <Montant d={d} onFixer={() => setFixer(true)} />
         </div>
 
         <div className="lv-card__contact" data-seul={!(tel && adresse)}>
@@ -201,6 +210,7 @@ export function CarteLivraison({ d, montrerLivreur }: { d: DossierResume; montre
       </div>
 
       {reporter && <ReporterDialog dossier={d} onClose={() => setReporter(false)} />}
+      {fixer && <FixerMontantDialog dossier={d} onClose={() => setFixer(false)} />}
       <ConfirmDialog
         open={retirer}
         onClose={() => setRetirer(false)}

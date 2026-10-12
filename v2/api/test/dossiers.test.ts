@@ -85,14 +85,14 @@ describe('dossiers et circuit', () => {
     xeroxId = x.body.id;
   });
 
-  it('prix incalculable : refusé tant que le montant n’est pas saisi à la main, par le préparateur comme par l’administrateur', async () => {
+  it('prix incalculable : le dossier part « montant à définir », ou avec le montant saisi à la main', async () => {
     const prep = await agent(comptes.prep);
     const admin = await agent(comptes.admin);
     const spec = { ...bache, specs: { lignes: [{ ...bache.specs.lignes[0], support: 'mesh_m2' }], forfaits: [] } };
     for (const a of [prep, admin]) {
-      const ko = await a.post('/api/dossiers').send(spec);
-      expect(ko.status).toBe(422);
-      expect(ko.body.details.erreurs[0]).toContain('Bâche mesh');
+      const sans = await a.post('/api/dossiers').send(spec);
+      expect(sans.status).toBe(201);
+      expect(sans.body).toMatchObject({ montant: null, montant_source: null });
     }
     // Le préparateur saisit le prix convenu avec le client.
     const ok = await prep.post('/api/dossiers').send({ ...spec, montant: 30000 });
@@ -104,9 +104,10 @@ describe('dossiers et circuit', () => {
   it('support « autre » (hors grille) : libellé libre, prix saisi à la main', async () => {
     const prep = await agent(comptes.prep);
     const ligne = { support: 'autre', support_autre: 'Plaque PVC 5 mm', largeur: 100, hauteur: 50, unite: 'cm', quantite: 2, finitions: [], options: [] };
-    const ko = await prep.post('/api/dossiers').send({ ...bache, client_nom: 'Garage Autre', specs: { lignes: [ligne], forfaits: [] } });
-    expect(ko.status).toBe(422);
-    expect(ko.body.details.erreurs[0]).toContain('« Plaque PVC 5 mm » hors grille');
+    const sans = await prep.post('/api/dossiers').send({ ...bache, client_nom: 'Garage Autre', specs: { lignes: [ligne], forfaits: [] } });
+    expect(sans.status).toBe(201);
+    expect(sans.body.montant).toBeNull();
+    expect((await prep.post('/api/tarifs/estimer').send({ machine: 'roland', specs: { lignes: [ligne], forfaits: [] } })).body.erreurs[0]).toContain('« Plaque PVC 5 mm » hors grille');
     const ok = await prep.post('/api/dossiers').send({ ...bache, client_nom: 'Garage Autre', specs: { lignes: [ligne], forfaits: [] }, montant: 18000 });
     expect(ok.status).toBe(201);
     expect(ok.body).toMatchObject({ montant: 18000, montant_source: 'saisi' });
@@ -285,6 +286,33 @@ describe('corrections d\'intégration', () => {
     expect(types).not.toContain('paiement');
     const fichier = d.body.historique.find((e: any) => e.type === 'fichier');
     if (fichier) expect(fichier.data?.nom).toBeTruthy();
+  });
+
+  it('fixer le montant à la main : le livreur sur un dossier parti sans prix, jamais sur un prix calculé', async () => {
+    const prep = await agent(comptes.prep);
+    const admin = await agent(comptes.admin);
+    const liv = await agent(comptes.livreur);
+    const roland = await agent(comptes.roland);
+    const sansPrix = await prep.post('/api/dossiers').send({ ...bache, client_nom: 'Sans prix', client_telephone: '77 000 00 01', specs: { lignes: [{ ...bache.specs.lignes[0], support: 'mesh_m2' }], forfaits: [] } });
+    expect(sansPrix.body.montant).toBeNull();
+    // Le livreur ne voit pas un dossier en préparation (404), puis le dossier est prêt à livrer.
+    expect((await liv.post(`/api/dossiers/${sansPrix.body.id}/montant`).send({ montant: 20000 })).status).toBe(404);
+    await admin.post(`/api/dossiers/${sansPrix.body.id}/forcer-statut`).send({ statut: 'pret_livraison', commentaire: 'test' }).expect(200);
+    expect((await roland.post(`/api/dossiers/${sansPrix.body.id}/montant`).send({ montant: 20000 })).status).toBe(403);
+    expect((await liv.post(`/api/dossiers/${sansPrix.body.id}/montant`).send({ montant: 'abc' })).status).toBe(400);
+    const fixe = await liv.post(`/api/dossiers/${sansPrix.body.id}/montant`).send({ montant: 20000 });
+    expect(fixe.status, JSON.stringify(fixe.body)).toBe(200);
+    expect(fixe.body).toMatchObject({ montant: 20000, montant_source: 'saisi', solde: 20000 });
+    expect((await admin.get(`/api/dossiers/${sansPrix.body.id}`)).body.historique.some((e: any) => e.type === 'modification' && e.data?.montant?.apres === 20000)).toBe(true);
+    // Un montant saisi peut être corrigé par le livreur ; un prix calculé, non.
+    expect((await liv.post(`/api/dossiers/${sansPrix.body.id}/montant`).send({ montant: 22000 })).status).toBe(200);
+    const calcule = await prep.post('/api/dossiers').send({ ...flyers, client_nom: 'Calculé' });
+    await admin.post(`/api/dossiers/${calcule.body.id}/forcer-statut`).send({ statut: 'pret_livraison', commentaire: 'test' }).expect(200);
+    expect((await liv.post(`/api/dossiers/${calcule.body.id}/montant`).send({ montant: 1 })).status).toBe(403);
+    // Le préparateur fixe le montant de ses dossiers, pas de ceux des autres.
+    expect((await prep.post(`/api/dossiers/${calcule.body.id}/montant`).send({ montant: 60000 })).body.montant).toBe(60000);
+    const autre = await admin.post('/api/dossiers').send({ ...flyers, client_nom: 'Dossier admin' });
+    expect((await prep.post(`/api/dossiers/${autre.body.id}/montant`).send({ montant: 1000 })).status).toBe(404);
   });
 
   it('le résumé lisible des spécifications utilise les libellés', async () => {

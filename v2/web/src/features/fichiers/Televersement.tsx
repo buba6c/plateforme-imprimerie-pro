@@ -9,6 +9,7 @@ import { useRegles } from '../parametres/api';
 import { formatTaille } from '@evocom/shared';
 import { Button, IconButton, useToast } from '../../ui';
 import { extension } from './ListeFichiers';
+import { prendreEnAttente } from './enAttente';
 import './fichiers.css';
 
 type Etat = 'envoi' | 'pause' | 'termine' | 'erreur';
@@ -130,6 +131,16 @@ export function Televersement({ dossierId }: { dossierId: number }) {
         .finally(() => upload.start());
     }
   };
+
+  // Fichiers choisis dans le formulaire de création : ils partent dès l'arrivée sur la fiche.
+  const attenteTraitee = useRef(false);
+  useEffect(() => {
+    if (attenteTraitee.current) return;
+    attenteTraitee.current = true;
+    const attente = prendreEnAttente(dossierId);
+    if (attente.length) ajouter(attente);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dossierId]);
 
   const pause = (id: string) => {
     void uploads.current.get(id)?.abort();

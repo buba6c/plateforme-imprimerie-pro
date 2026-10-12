@@ -5,7 +5,7 @@
 import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
-import { Save } from 'lucide-react';
+import { FileUp, Save, X } from 'lucide-react';
 import {
   dossierCreateSchema,
   formatFCFA,
@@ -31,6 +31,9 @@ import { FichiersEtBat, RemiseClient, UrgenceChoix, type ModeRemise } from '../.
 import { SuggestionIA } from '../../features/ia/SuggestionIA';
 import { appliquerModele, EnregistrerModele, ModelesDossier, useModeles } from '../../features/modeles/ModelesDossier';
 import { useLibelles, useParamsPrix, useTarifs } from '../../features/specs/useTarifs';
+import { deposerEnAttente } from '../../features/fichiers/enAttente';
+import { extension } from '../../features/fichiers/ListeFichiers';
+import { formatTaille } from '@evocom/shared';
 import { Alert, Button, Card, Checkbox, EmptyState, LoadingRows, MachineChip, PageHeader, Segmented, SelectField, TextareaField, TextField, useToast, MachineIcone } from '../../ui';
 import '../../features/dossiers-ui/dossiers-ui.css';
 
@@ -70,7 +73,8 @@ function formulaireVide(): Formulaire {
     description: '',
     consignes: '',
     specs: specsDraftVide('roland'),
-    montantManuel: false,
+    // Le montant se saisit le plus souvent à la main : la case est cochée d'office, préremplie par le calcul.
+    montantManuel: true,
     montant: '',
     urgent: false,
     date_promise: '',
@@ -137,6 +141,10 @@ export default function NouveauDossier() {
 
   const voitPrix = user.role === 'admin' || user.role === 'preparateur';
   const [f, setF] = useState<Formulaire>(formulaireVide);
+  /** Fichiers d'impression choisis dès la création : envoyés par la fiche juste après. */
+  const [fichiers, setFichiers] = useState<File[]>([]);
+  /** Vrai dès que la personne a tapé un montant : le calcul ne le remplace plus. */
+  const montantTouche = useRef(false);
   // Arrivée depuis la page Modèles (?modele=ID) : le modèle est appliqué dès qu'il est chargé.
   const [sp] = useSearchParams();
   const modeles = useModeles();
@@ -178,6 +186,11 @@ export default function NouveauDossier() {
     });
 
   const { conversion, resultat } = usePrix(f.machine, f.specs, tarifs.data, params);
+  useEffect(() => {
+    if (edition || !f.montantManuel || montantTouche.current) return;
+    const calcule = resultat?.ok ? String(resultat.total_ttc) : '';
+    setF((x) => (x.montant === calcule ? x : { ...x, montant: calcule }));
+  }, [edition, f.montantManuel, resultat]);
   const montantSaisi = f.montantManuel ? parseMontant(f.montant) : null;
   const dConvenu = dossier.data as DossierAvecContact | undefined;
   const prixConvenu =
@@ -246,10 +259,6 @@ export default function NouveauDossier() {
       document.querySelector('[aria-invalid="true"]')?.scrollIntoView({ block: 'center', behavior: 'smooth' });
       return;
     }
-    if (!f.montantManuel && resultat && !resultat.ok) {
-      setErreurGenerale({ titre: 'Le prix ne peut pas être calculé. Corrigez les lignes ou saisissez le montant à la main.', lignes: resultat.erreurs });
-      return;
-    }
     const corps = construire(f, conversion.specs);
     setEnvoi(true);
     try {
@@ -286,7 +295,8 @@ export default function NouveauDossier() {
         toast.success('Dossier enregistré', res.numero);
         navigate(`/dossiers/${res.id}`);
       } else {
-        toast.success(`Dossier ${res.numero} créé`, 'Ajoutez maintenant les fichiers d’impression.');
+        deposerEnAttente(res.id, fichiers);
+        toast.success(`Dossier ${res.numero} créé`, fichiers.length ? `${fichiers.length} fichier${fichiers.length > 1 ? 's' : ''} en cours d’envoi.` : 'Ajoutez maintenant les fichiers d’impression.');
         navigate(`/dossiers/${res.id}?nouveau=1`);
       }
     } catch (err) {
@@ -367,7 +377,7 @@ export default function NouveauDossier() {
             )}
           </Card>
 
-          <Card title={<><span className="nd-section__num">2</span>Client</>} className="nd-section">
+          <Card title={<><span className="nd-section__num">2</span>Client</>} className="nd-section nd-section--client">
             <div className="nd-grid nd-grid--3">
               <ClientAutocomplete
                 nom={f.client_nom}
@@ -387,7 +397,7 @@ export default function NouveauDossier() {
             </div>
           </Card>
 
-          <Card title={<><span className="nd-section__num">3</span>Travail</>} className="nd-section">
+          <Card title={<><span className="nd-section__num">3</span>Travail</>} className="nd-section nd-section--travail">
             <div className="stack">
               <TextField label="Description du travail" value={f.description} onChange={(e) => maj('description', e.target.value)} placeholder="Ex. Bâche façade boutique, flyers campagne" error={erreurs.description} maxLength={2000} />
               <TextareaField
@@ -426,7 +436,7 @@ export default function NouveauDossier() {
             )}
           </Card>
 
-          <Card title={<><span className="nd-section__num">5</span>Remise au client et délai</>} className="nd-section">
+          <Card title={<><span className="nd-section__num">5</span>Remise au client et délai</>} className="nd-section nd-section--remise">
             <div className="stack">
               <RemiseClient
                 machine={f.machine}
@@ -455,8 +465,19 @@ export default function NouveauDossier() {
             </div>
           </Card>
 
-          <Card title={<><span className="nd-section__num">6</span>Fichiers et BAT</>} className="nd-section">
-            <FichiersEtBat machine={f.machine} tarifs={tarifs.data} draft={f.specs} onDraft={(specs) => maj('specs', specs)} />
+          <Card title={<><span className="nd-section__num">6</span>Fichiers et BAT</>} className="nd-section nd-section--fichiers">
+            <div className="stack">
+              {edition ? (
+                d && (
+                  <p className="adm-explain" style={{ margin: 0 }}>
+                    Les fichiers d’impression se déposent sur <Link className="ev-link" to={`/dossiers/${d.id}`}>la fiche du dossier</Link>.
+                  </p>
+                )
+              ) : (
+                <DepotFichiers fichiers={fichiers} onChange={setFichiers} />
+              )}
+              <FichiersEtBat machine={f.machine} tarifs={tarifs.data} draft={f.specs} onDraft={(specs) => maj('specs', specs)} />
+            </div>
           </Card>
         </div>
 
@@ -479,7 +500,10 @@ export default function NouveauDossier() {
             <Checkbox
               label="Saisir le montant à la main"
               checked={f.montantManuel}
-              onChange={(v) => setF((x) => ({ ...x, montantManuel: v, montant: v && !x.montant && resultat?.ok ? String(resultat.total_ttc) : x.montant }))}
+              onChange={(v) => {
+                montantTouche.current = false;
+                setF((x) => ({ ...x, montantManuel: v, montant: v && !x.montant && resultat?.ok ? String(resultat.total_ttc) : x.montant }));
+              }}
             />
             {prixConvenu !== null && !f.montantManuel && (
               <div className="stack-sm">
@@ -498,14 +522,16 @@ export default function NouveauDossier() {
             {f.montantManuel && (
               <TextField
                 label="Montant TTC"
-                required
                 mono
                 addon="FCFA"
                 inputMode="numeric"
                 value={f.montant}
-                onChange={(e) => maj('montant', e.target.value)}
+                onChange={(e) => {
+                  montantTouche.current = true;
+                  maj('montant', e.target.value);
+                }}
                 error={erreurs.montant}
-                help="Remplace le prix calculé ; le détail reste enregistré pour information."
+                help={resultat?.ok ? 'Prérempli avec le prix calculé : corrigez-le si le prix convenu est différent.' : 'Le prix ne se calcule pas avec la grille : saisissez le montant convenu, ou laissez vide pour le fixer plus tard.'}
               />
             )}
           </PrixPanel>
@@ -521,7 +547,7 @@ export default function NouveauDossier() {
               <span className="ev-num">{totalAffiche === null ? 'À définir' : formatFCFA(totalAffiche)}</span>
             </>
           ) : (
-            <small>Le prix est fixé par l’administrateur.</small>
+            <small>Le prix est fixé par l’administrateur ou le préparateur.</small>
           )}
         </div>
         <div className="du-barre__actions">
@@ -536,6 +562,70 @@ export default function NouveauDossier() {
         </div>
       </div>
     </>
+  );
+}
+
+/** Dépôt des fichiers d'impression dès la création : glisser-déposer ou sélection, envoyés par la fiche juste après. */
+function DepotFichiers({ fichiers, onChange }: { fichiers: File[]; onChange: (f: File[]) => void }) {
+  const input = useRef<HTMLInputElement>(null);
+  const [survol, setSurvol] = useState(false);
+  const ajouter = (liste: FileList | File[]) => {
+    const nouveaux = Array.from(liste).filter((x) => x.size > 0 && !fichiers.some((y) => y.name === x.name && y.size === x.size));
+    if (nouveaux.length) onChange([...fichiers, ...nouveaux]);
+  };
+  return (
+    <div className="nd-depot">
+      <div
+        className="ev-dropzone fi-dropzone"
+        data-over={survol}
+        onDragOver={(e) => {
+          e.preventDefault();
+          e.dataTransfer.dropEffect = 'copy';
+          if (!survol) setSurvol(true);
+        }}
+        onDragLeave={(e) => {
+          if (!e.currentTarget.contains(e.relatedTarget as Node)) setSurvol(false);
+        }}
+        onDrop={(e) => {
+          e.preventDefault();
+          setSurvol(false);
+          if (e.dataTransfer.files?.length) ajouter(e.dataTransfer.files);
+        }}
+      >
+        <FileUp aria-hidden="true" className="fi-dropzone__icone" />
+        <div>
+          <strong>Déposez ici les fichiers d’impression (PDF…)</strong> <span>ou</span>{' '}
+          <button type="button" className="ev-link fi-dropzone__choisir" onClick={() => input.current?.click()}>
+            choisissez-les sur l’ordinateur
+          </button>
+        </div>
+        <span className="fi-dropzone__aide">Ils partent dès que le dossier est créé ; vous pourrez en ajouter ensuite sur la fiche.</span>
+        <input
+          ref={input}
+          type="file"
+          multiple
+          hidden
+          onChange={(e) => {
+            if (e.target.files?.length) ajouter(e.target.files);
+            e.target.value = '';
+          }}
+        />
+      </div>
+      {fichiers.length > 0 && (
+        <ul className="nd-depot__liste" aria-label="Fichiers à envoyer">
+          {fichiers.map((x) => (
+            <li key={`${x.name}-${x.size}`} className="nd-depot__item">
+              <span className="ev-file__type" aria-hidden="true">{extension(x.name)}</span>
+              <span className="nd-depot__nom">{x.name}</span>
+              <span className="nd-depot__taille">{formatTaille(x.size)}</span>
+              <button type="button" className="ev-icon-btn ev-icon-btn--sm" aria-label={`Retirer ${x.name}`} onClick={() => onChange(fichiers.filter((y) => y !== x))}>
+                <X />
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
   );
 }
 
@@ -577,7 +667,7 @@ function valider(f: Formulaire, erreursSpecs: Record<string, string>) {
       if (!form[k]) form[k] = i.message;
     }
   }
-  if (f.montantManuel && parseMontant(f.montant) === null) form.montant = 'Saisissez un montant entier en FCFA, sans centimes.';
+  if (f.montantManuel && f.montant.trim() !== '' && parseMontant(f.montant) === null) form.montant = 'Saisissez un montant entier en FCFA, sans centimes.';
   if (!f.mode_remise) form.mode_remise = 'Choisissez : à venir chercher sur place, ou à livrer.';
   return { form, specs: erreursSpecs };
 }

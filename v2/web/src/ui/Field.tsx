@@ -130,13 +130,14 @@ export function Segmented<T extends string>({
   name: string;
   value: T;
   onChange: (v: T) => void;
-  options: { value: T; label: string; help?: string; icon?: React.ReactNode }[];
+  /** `tone` colore l'option choisie (ok, attention, alerte, info, violet, teal). */
+  options: { value: T; label: string; help?: string; icon?: React.ReactNode; tone?: string }[];
   label: string;
 }) {
   return (
     <div className="ev-segmented" role="radiogroup" aria-label={label}>
       {options.map((o) => (
-        <label key={o.value}>
+        <label key={o.value} data-tone={o.tone}>
           <input type="radio" name={name} value={o.value} checked={value === o.value} onChange={() => onChange(o.value)} />
           <span data-icone={o.icon ? true : undefined}>
             {o.icon && <span className="ev-segmented__icone">{o.icon}</span>}

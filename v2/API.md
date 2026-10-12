@@ -8,7 +8,7 @@ Montants : entiers en FCFA. Dates : ISO 8601 (`date` = `AAAA-MM-JJ`).
 
 - **Préparateur** : ne voit que **ses propres dossiers et fichiers** (filtre SQL sur `preparateur_id`, 404 ailleurs) ;
   **il fixe et voit le prix du dossier** (`montant`, `montant_source`, `detail_prix` ; grille avec prix via `/tarifs` et
-  `/tarifs/estimer` ; prix incalculable = 422 tant que le montant n'est pas saisi, comme pour l'administrateur) ;
+  `/tarifs/estimer` ; un prix incalculable n'empêche pas la création : le dossier part « montant à définir » et le montant se fixe plus tard, par lui, l'administrateur ou le livreur à la remise) ;
   **jamais les paiements** (`solde`, `deja_paye`, `en_attente_validation`, `situation_paiement` absents, `paiements`
   vide, événements `paiement` retirés de l'historique) ; **n'encaisse pas** (403, y compris `encaissement` joint à
   `remettre_client`) ; **pas d'accès** aux devis, aux factures, aux fiches clients (hors `/clients/recherche`), à la
@@ -37,6 +37,7 @@ Montants : entiers en FCFA. Dates : ISO 8601 (`date` = `AAAA-MM-JJ`).
 | POST | /dossiers | admin, preparateur | fiche complète (201) |
 | GET | /dossiers/:id | tous (filtré) | fiche : champs (dont `resume_specs`, résumé lisible) + `actions[]`, `peut_modifier`, `peut_supprimer`, `peut_deposer_fichiers`, `fichiers[]`, `historique[]`, `paiements[]`, `facture` |
 | PATCH | /dossiers/:id | admin, preparateur propriétaire (en_cours/a_revoir) | fiche |
+| POST | /dossiers/:id/montant `{montant}` | admin ; préparateur propriétaire ; livreur (dossier visible, parti sans prix ou déjà saisi) | montant fixé à la main (`montant_source: saisi`), événement `modification` ; 409 si facture émise ou montant sous le déjà payé |
 | DELETE | /dossiers/:id `{motif?}` | admin ; préparateur propriétaire si en_cours sans paiement | 204 (corbeille) |
 | POST | /dossiers/:id/restaurer | admin | |
 | POST | /dossiers/:id/actions/:action `{commentaire?, livraison?:{date_prevue,adresse?,notes?}, encaissement?:{montant,mode,reference?}}` | selon `ACTIONS` (shared/workflow.ts) | fiche |

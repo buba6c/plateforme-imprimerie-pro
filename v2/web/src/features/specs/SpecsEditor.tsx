@@ -528,7 +528,7 @@ function LigneXerox({ l, supports, finitions, tarif, maj, err }: {
               label="Impression"
               value={(l.couleur || 'couleur') as 'couleur' | 'nb'}
               onChange={changerCouleur}
-              options={(['couleur', 'nb'] as const).map((c) => ({ value: c, label: COULEUR_LABELS[c] }))}
+              options={(['couleur', 'nb'] as const).map((c) => ({ value: c, label: COULEUR_LABELS[c], tone: c === 'couleur' ? 'violet' : 'teal' }))}
             />
           </ChampGroupe>
         )}
@@ -570,7 +570,19 @@ function LigneXerox({ l, supports, finitions, tarif, maj, err }: {
         <ChampTexte label="Pages" required value={l.pages} onChange={(p) => maj({ pages: p })} inputMode="numeric" mono erreur={err('pages')} aide="Faces imprimées d’un exemplaire" />
         <ChampTexte label="Exemplaires" required value={l.quantite} onChange={(quantite) => maj({ quantite })} inputMode="numeric" mono erreur={err('quantite')} />
         <div className="sp-rv">
-          <Checkbox label="Recto-verso" checked={l.recto_verso} onChange={(recto_verso) => maj({ recto_verso, pages: recto_verso && l.pages.trim() === '1' ? '2' : l.pages })} />
+          <Segmented<'recto' | 'recto_verso'>
+            name={`rv-${l.key}`}
+            label="Impression des faces"
+            value={l.recto_verso ? 'recto_verso' : 'recto'}
+            onChange={(v) => {
+              const recto_verso = v === 'recto_verso';
+              maj({ recto_verso, pages: recto_verso && l.pages.trim() === '1' ? '2' : l.pages });
+            }}
+            options={[
+              { value: 'recto', label: 'Recto seul', tone: 'info' },
+              { value: 'recto_verso', label: 'Recto-verso', tone: 'violet' },
+            ]}
+          />
         </div>
       </div>
       <p className="sp-calcul ev-mono" aria-live="polite">

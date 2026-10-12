@@ -79,8 +79,8 @@ export function RemiseClient({ machine, tarifs, draft, onDraft, mode, onMode, ad
             value={mode}
             onChange={(m) => m && changer(m)}
             options={[
-              { value: 'retrait', label: 'À venir chercher sur place', help: 'Le client passe à l’atelier' },
-              { value: 'livraison', label: 'À livrer', help: tLivraison ? `Forfait livraison ${supplement(tLivraison).replace('+', '')}` : 'Le livreur l’apporte' },
+              { value: 'retrait', label: 'À venir chercher sur place', help: 'Le client passe à l’atelier', tone: 'teal' },
+              { value: 'livraison', label: 'À livrer', help: tLivraison ? `Forfait livraison ${supplement(tLivraison).replace('+', '')}` : 'Le livreur l’apporte', tone: 'info' },
             ]}
           />
         </div>
@@ -143,9 +143,9 @@ export function UrgenceChoix({ machine, tarifs, draft, onDraft, onUrgent }: Urge
           value={u}
           onChange={changer}
           options={[
-            { value: 'normal', label: 'Normal', help: 'Sans supplément' },
-            { value: '48h', label: 'Urgent 48 h', help: supplement(tarif(CODES_TARIF.urgence48)) },
-            { value: '24h', label: 'Urgent 24 h', help: supplement(tarif(CODES_TARIF.urgence24)) },
+            { value: 'normal', label: 'Normal', help: 'Sans supplément', tone: 'ok' },
+            { value: '48h', label: 'Urgent 48 h', help: supplement(tarif(CODES_TARIF.urgence48)) || 'passe devant', tone: 'attention' },
+            { value: '24h', label: 'Urgent 24 h', help: supplement(tarif(CODES_TARIF.urgence24)) || 'en tête de file', tone: 'alerte' },
           ]}
         />
       </div>
@@ -179,9 +179,9 @@ export function FichiersEtBat({ machine, tarifs, draft, onDraft }: FichiersProps
             value={f}
             onChange={(v) => onDraft(avecFichiers(draft, v))}
             options={[
-              { value: 'fournis', label: 'Fournis par le client', help: 'Prêts à imprimer' },
-              { value: 'a_creer', label: 'À créer', help: `Conception ${supplement(tConception)}` },
-              { value: 'a_corriger', label: 'À corriger', help: supplement(tarif(CODES_TARIF.correction)) },
+              { value: 'fournis', label: 'Fournis par le client', help: 'Prêts à imprimer', tone: 'ok' },
+              { value: 'a_creer', label: 'À créer', help: `Conception ${supplement(tConception)}`.trim(), tone: 'violet' },
+              { value: 'a_corriger', label: 'À corriger', help: supplement(tarif(CODES_TARIF.correction)) || 'fichier à reprendre', tone: 'attention' },
             ]}
           />
         </div>

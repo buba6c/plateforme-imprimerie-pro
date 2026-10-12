@@ -43,6 +43,12 @@ dossiersRouter.patch('/:id', requireRole('admin', 'preparateur'), async (req, re
   res.json(await svc.detailDossier(me(req), intParam(req)));
 });
 
+/** Montant fixé à la main (dossier parti sans prix, ou prix convenu à la remise). */
+dossiersRouter.post('/:id/montant', requireRole('admin', 'preparateur', 'livreur'), async (req, res) => {
+  await svc.fixerMontant(me(req), intParam(req), req.body?.montant);
+  res.json(await svc.detailDossier(me(req), intParam(req)));
+});
+
 dossiersRouter.delete('/:id', requireRole('admin', 'preparateur'), async (req, res) => {
   const motif = typeof req.body?.motif === 'string' ? req.body.motif.slice(0, 500) : null;
   await svc.supprimerDossier(me(req), intParam(req), motif);

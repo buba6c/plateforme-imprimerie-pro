@@ -363,9 +363,8 @@ export async function creerDossier(user: AuthUser, body: unknown, opts: { devis_
   const specs = specsSchemaFor(input.machine).parse(input.specs ?? { lignes: [], forfaits: [] }) as Specs;
   const created = await tx(async (db) => {
     const prix = await prixPour(input.machine, specs, db);
-    if (prix && !prix.ok && (input.montant === null || input.montant === undefined)) {
-      throw unprocessable('Le prix ne peut pas être calculé. Corrigez les lignes ou saisissez le montant à la main.', { erreurs: prix.erreurs });
-    }
+    // Prix incalculable et rien de saisi : le dossier part « montant à définir » ; le préparateur,
+    // l'administrateur ou le livreur (à la remise) le fixeront.
     let montant: number | null = null;
     let source: string | null = null;
     if (input.montant !== null && input.montant !== undefined) {
@@ -485,7 +484,10 @@ export async function modifierDossier(user: AuthUser, id: number, body: unknown)
           set('montant_source', 'calcul');
         }
       } else if (prix && !prix.ok && !montantSaisi && !revenirAuCalcul && suitLaGrille) {
-        throw unprocessable('Le prix ne peut pas être calculé. Corrigez les lignes ou saisissez le montant à la main.', { erreurs: prix.erreurs });
+        // Plus calculable (support hors grille, tarif sans prix) : « montant à définir », à fixer à la main.
+        if (d.montant !== null) changes.montant = { avant: d.montant, apres: null };
+        set('montant', null);
+        set('detail_prix', null);
       }
     }
     if (input.client_nom !== undefined || input.client_id !== undefined) {
@@ -510,6 +512,33 @@ export async function modifierDossier(user: AuthUser, id: number, body: unknown)
     args.push(id);
     const row = await one<DossierRow>(`UPDATE dossiers SET ${sets.join(', ')} WHERE id = $${args.length} RETURNING *`, args, db);
     if (Object.keys(changes).length) await evenement(db, id, user.id, { type: 'modification', data: changes });
+    return row!;
+  });
+  signalDossier({ ...updated, ancien_statut: updated.statut });
+  return updated;
+}
+
+/**
+ * Fixe à la main le montant d'un dossier (source « saisi ») : administrateur, préparateur sur ses
+ * dossiers, et livreur sur les dossiers de sa tournée partis sans prix ou déjà saisis. Jamais sur un
+ * dossier facturé, jamais sous ce que le client a déjà réglé.
+ */
+export async function fixerMontant(user: AuthUser, id: number, montantBrut: unknown) {
+  const montant = z.number({ invalid_type_error: 'Montant invalide' }).int('Montant entier, sans centimes').nonnegative('Montant invalide').max(1_000_000_000).parse(montantBrut);
+  const updated = await tx(async (db) => {
+    const d = await chargerDossier(user, id, db, true);
+    if (user.role === 'livreur' && d.montant !== null && (d.montant_source ?? 'calcul') !== 'saisi') {
+      throw forbidden("Ce dossier a déjà un prix calculé ou convenu : seul l'administrateur ou le préparateur peut le changer.");
+    }
+    if (user.role === 'preparateur' && d.preparateur_id !== user.id) throw forbidden('Vous ne pouvez modifier que vos dossiers.');
+    if (!['admin', 'preparateur', 'livreur'].includes(user.role)) throw forbidden("Vous ne pouvez pas fixer le montant d'un dossier.");
+    const facture = await one<{ numero: string }>(`SELECT numero FROM factures WHERE dossier_id = $1 AND statut = 'emise'`, [id], db);
+    if (facture) throw conflict(`La facture ${facture.numero} est émise pour ce montant : annulez-la d’abord pour changer le prix.`);
+    const engage = d.deja_paye ?? 0;
+    if (montant < engage) throw conflict(`Le client a déjà réglé ${engage.toLocaleString('fr-FR')} FCFA (paiements validés) : le montant ne peut pas descendre en dessous.`);
+    if (d.montant === montant && d.montant_source === 'saisi') return d;
+    const row = await one<DossierRow>(`UPDATE dossiers SET montant = $2, montant_source = 'saisi', updated_at = now() WHERE id = $1 RETURNING *`, [id, montant], db);
+    await evenement(db, id, user.id, { type: 'modification', data: { montant: { avant: d.montant, apres: montant } } });
     return row!;
   });
   signalDossier({ ...updated, ancien_statut: updated.statut });
