@@ -9,7 +9,7 @@ import { messageErreur } from '../../lib/api';
 import type { Fichier } from '../../lib/types';
 import { Alert, Button, Dialog, Skeleton, useToast } from '../../ui';
 import { reglagesPour, resumeAuto } from './auto';
-import { useAnalyse, useGenerer, usePlan } from './hooks';
+import { useAnalyse, useGenerer, usePlan, useTeleverserLibre } from './hooks';
 import { SchemaFeuille } from './SchemaFeuille';
 import { OPERATION_LABELS, type Operation, type ParamsImposition, type Piece } from './types';
 import './imposition.css';
@@ -22,9 +22,33 @@ const genreDe = (f: Pick<Fichier, 'nom_original' | 'mime'>): 'pdf' | 'image' | n
 };
 export const imposable = (f: Pick<Fichier, 'nom_original' | 'mime'>) => genreDe(f) !== null && !/_(IMPOSITION-\d+POSES|LIVRET|FONDS-PERDUS|ASSEMBLE)\.pdf$/i.test(f.nom_original);
 
-export function ImpositionRapide({ dossierId, fichier, onClose }: { dossierId: number; fichier: Fichier; onClose: () => void }) {
+export interface ResultatRapide {
+  jeton: string;
+  nom: string;
+  taille: number;
+}
+
+/**
+ * Deux usages : un fichier déjà dans un dossier (`fichier` + `dossierId` : le PDF imposé y est ajouté),
+ * ou un fichier choisi dans le formulaire de création (`fichierLocal` : il est envoyé pour l'aperçu, et le
+ * PDF imposé est gardé jusqu'à la création du dossier, puis rangé dedans via `onImpose`).
+ */
+export function ImpositionRapide({ dossierId, fichier, fichierLocal, onClose, onImpose }: { dossierId?: number; fichier?: Fichier; fichierLocal?: File; onClose: () => void; onImpose?: (r: ResultatRapide) => void }) {
   const toast = useToast();
-  const pieces = useMemo<Piece[]>(() => [{ cle: `${fichier.id}:rapide`, fichier_id: fichier.id, role: 'pages', nom: fichier.nom_original, taille: fichier.taille, mime: fichier.mime, genre: genreDe(fichier)! }], [fichier]);
+  const [progression, setProgression] = useState(0);
+  const deposer = useTeleverserLibre((_n, part) => setProgression(part));
+  const [libre, setLibre] = useState<{ jeton: string; nom: string; taille: number; mime: string; genre: 'pdf' | 'image' } | null>(null);
+  useEffect(() => {
+    if (!fichierLocal || libre || deposer.isPending || deposer.isError) return;
+    deposer.mutate(fichierLocal, { onSuccess: (r) => setLibre({ jeton: r.libre, nom: r.nom, taille: r.taille, mime: r.mime, genre: r.genre }) });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [fichierLocal]);
+  const nomAffiche = fichier?.nom_original ?? fichierLocal?.name ?? '';
+  const pieces = useMemo<Piece[]>(() => {
+    if (fichier) return [{ cle: `${fichier.id}:rapide`, fichier_id: fichier.id, role: 'pages', nom: fichier.nom_original, taille: fichier.taille, mime: fichier.mime, genre: genreDe(fichier)! }];
+    if (libre) return [{ cle: `${libre.jeton}:rapide`, libre: libre.jeton, role: 'pages', nom: libre.nom, taille: libre.taille, mime: libre.mime, genre: libre.genre }];
+    return [];
+  }, [fichier, libre]);
   const analyse = useAnalyse(pieces);
   const [params, setParams] = useState<ParamsImposition | null>(null);
   const [face, setFace] = useState<'recto' | 'verso'>('recto');
@@ -46,13 +70,15 @@ export function ImpositionRapide({ dossierId, fichier, onClose }: { dossierId: n
     <Dialog
       open
       onClose={generer.isPending ? () => {} : onClose}
-      title={`Imposer « ${fichier.nom_original} »`}
+      title={`Imposer « ${nomAffiche} »`}
       width={820}
       footer={
         <>
-          <Link className="ev-btn" to={`/imposition?dossier=${dossierId}&fichier=${fichier.id}`}>
-            <Settings2 aria-hidden="true" /> Réglages complets
-          </Link>
+          {fichier && dossierId && (
+            <Link className="ev-btn" to={`/imposition?dossier=${dossierId}&fichier=${fichier.id}`}>
+              <Settings2 aria-hidden="true" /> Réglages complets
+            </Link>
+          )}
           <Button onClick={onClose} disabled={generer.isPending}>Annuler</Button>
           <Button
             variant="primary"
@@ -65,7 +91,10 @@ export function ImpositionRapide({ dossierId, fichier, onClose }: { dossierId: n
                 { pieces, params },
                 {
                   onSuccess: (r) => {
-                    toast.success('PDF imposé ajouté au dossier', r.fichier?.nom);
+                    if (r.libre) {
+                      onImpose?.({ jeton: r.libre.jeton, nom: r.libre.nom, taille: r.libre.taille });
+                      toast.success('PDF imposé prêt', 'Il sera rangé dans le dossier à sa création.');
+                    } else toast.success('PDF imposé ajouté au dossier', r.fichier?.nom);
                     onClose();
                   },
                   onError: (e) => toast.error('Imposition impossible', messageErreur(e)),
@@ -73,12 +102,20 @@ export function ImpositionRapide({ dossierId, fichier, onClose }: { dossierId: n
               )
             }
           >
-            Valider et ajouter au dossier
+            {fichier ? 'Valider et ajouter au dossier' : 'Valider l’imposition'}
           </Button>
         </>
       }
     >
-      {analyse.isError ? (
+      {deposer.isError ? (
+        <Alert tone="error">Envoi impossible : {messageErreur(deposer.error)}</Alert>
+      ) : fichierLocal && !libre ? (
+        <div className="stack">
+          <span className="ev-muted">Envoi du fichier pour l’aperçu… {Math.round(progression * 100)} %</span>
+          <div className="source__barre"><span style={{ width: `${Math.round(progression * 100)}%` }} /></div>
+          <Skeleton h={300} />
+        </div>
+      ) : analyse.isError ? (
         <Alert tone="error">{messageErreur(analyse.error)}</Alert>
       ) : !a || !params ? (
         <div className="stack">
@@ -123,7 +160,7 @@ export function ImpositionRapide({ dossierId, fichier, onClose }: { dossierId: n
               {p && p.operation === 'livret' && <li data-ton="auto"><span className="rapport__puce" aria-hidden="true" />{p.nb_feuilles} feuille{p.nb_feuilles > 1 ? 's' : ''}{p.pages_blanches ? `, ${p.pages_blanches} page(s) blanche(s)` : ''}</li>}
               {p?.avertissements.map((m, i) => <li key={i} data-ton="attention"><span className="rapport__puce" aria-hidden="true" />{m}</li>)}
             </ul>
-            <span className="ev-help">Le fichier d’origine n’est pas modifié : le PDF imposé est ajouté à côté.</span>
+            <span className="ev-help">{fichier ? 'Le fichier d’origine n’est pas modifié : le PDF imposé est ajouté à côté.' : 'Le fichier d’origine et le PDF imposé seront rangés dans le dossier à sa création.'}</span>
           </div>
         </div>
       )}

@@ -5,7 +5,7 @@
 import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
-import { FileUp, Save, X } from 'lucide-react';
+import { FileUp, Save, X, LayoutGrid } from 'lucide-react';
 import {
   dossierCreateSchema,
   formatFCFA,
@@ -34,6 +34,7 @@ import { Predefinis } from '../../features/modeles/Predefinis';
 import { MiniatureLocale } from '../../features/fichiers/MiniatureLocale';
 import { useLibelles, useParamsPrix, useTarifs } from '../../features/specs/useTarifs';
 import { deposerEnAttente } from '../../features/fichiers/enAttente';
+import { ImpositionRapide, imposable, type ResultatRapide } from '../../features/imposition/ImpositionRapide';
 import { formatTaille } from '@evocom/shared';
 import { Alert, Button, Card, Checkbox, EmptyState, LoadingRows, MachineChip, PageHeader, Segmented, SelectField, TextareaField, TextField, useToast, MachineIcone } from '../../ui';
 import '../../features/dossiers-ui/dossiers-ui.css';
@@ -144,6 +145,7 @@ export default function NouveauDossier() {
   const [f, setF] = useState<Formulaire>(formulaireVide);
   /** Fichiers d'impression choisis dès la création : envoyés par la fiche juste après. */
   const [fichiers, setFichiers] = useState<File[]>([]);
+  const [imposes, setImposes] = useState<ResultatRapide[]>([]);
   /** Vrai dès que la personne a tapé un montant : le calcul ne le remplace plus. */
   const montantTouche = useRef(false);
   // Arrivée depuis la page Modèles (?modele=ID) : le modèle est appliqué dès qu'il est chargé.
@@ -301,6 +303,10 @@ export default function NouveauDossier() {
         navigate(`/dossiers/${res.id}`);
       } else {
         deposerEnAttente(res.id, fichiers);
+        // PDF imposés depuis le formulaire : rangés dans le dossier qui vient d'être créé.
+        for (const r of imposes) {
+          await api.post(`/imposition/libre/${r.jeton}/rattacher`, { dossier_id: res.id }).catch((e) => toast.error(`${r.nom} non ajouté`, messageErreur(e)));
+        }
         toast.success(`Dossier ${res.numero} créé`, fichiers.length ? `${fichiers.length} fichier${fichiers.length > 1 ? 's' : ''} en cours d’envoi.` : 'Ajoutez maintenant les fichiers d’impression.');
         navigate(`/dossiers/${res.id}?nouveau=1`);
       }
@@ -488,7 +494,7 @@ export default function NouveauDossier() {
                   </p>
                 )
               ) : (
-                <DepotFichiers fichiers={fichiers} onChange={setFichiers} />
+                <DepotFichiers fichiers={fichiers} onChange={setFichiers} xerox={f.machine === 'xerox'} imposes={imposes} onImposes={setImposes} />
               )}
               <FichiersEtBat machine={f.machine} tarifs={tarifs.data} draft={f.specs} onDraft={(specs) => maj('specs', specs)} />
             </div>
@@ -580,7 +586,8 @@ export default function NouveauDossier() {
 }
 
 /** Dépôt des fichiers d'impression dès la création : glisser-déposer ou sélection, envoyés par la fiche juste après. */
-function DepotFichiers({ fichiers, onChange }: { fichiers: File[]; onChange: (f: File[]) => void }) {
+function DepotFichiers({ fichiers, onChange, xerox, imposes, onImposes }: { fichiers: File[]; onChange: (f: File[]) => void; xerox: boolean; imposes: ResultatRapide[]; onImposes: (r: ResultatRapide[]) => void }) {
+  const [aImposer, setAImposer] = useState<File | null>(null);
   const input = useRef<HTMLInputElement>(null);
   const [survol, setSurvol] = useState(false);
   const ajouter = (liste: FileList | File[]) => {
@@ -632,13 +639,29 @@ function DepotFichiers({ fichiers, onChange }: { fichiers: File[]; onChange: (f:
               <MiniatureLocale file={x} />
               <span className="nd-depot__nom">{x.name}</span>
               <span className="nd-depot__taille">{formatTaille(x.size)}</span>
+              {xerox && imposable({ nom_original: x.name, mime: x.type || null }) && (
+                <button type="button" className="ev-btn ev-btn--sm fi-imposer" onClick={() => setAImposer(x)} title="Imposition automatique avec prévisualisation">
+                  <LayoutGrid aria-hidden="true" /> Imposer
+                </button>
+              )}
               <button type="button" className="ev-icon-btn ev-icon-btn--sm" aria-label={`Retirer ${x.name}`} onClick={() => onChange(fichiers.filter((y) => y !== x))}>
+                <X />
+              </button>
+            </li>
+          ))}
+          {imposes.map((r) => (
+            <li key={r.jeton} className="nd-depot__item nd-depot__item--impose">
+              <span className="nd-depot__badge">Imposé</span>
+              <span className="nd-depot__nom">{r.nom}</span>
+              <span className="nd-depot__taille">{formatTaille(r.taille)}</span>
+              <button type="button" className="ev-icon-btn ev-icon-btn--sm" aria-label={`Retirer ${r.nom}`} onClick={() => onImposes(imposes.filter((y) => y.jeton !== r.jeton))}>
                 <X />
               </button>
             </li>
           ))}
         </ul>
       )}
+      {aImposer && <ImpositionRapide fichierLocal={aImposer} onClose={() => setAImposer(null)} onImpose={(r) => onImposes([...imposes, r])} />}
     </div>
   );
 }
