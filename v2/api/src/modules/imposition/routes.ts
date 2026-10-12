@@ -211,6 +211,41 @@ export function impositionRouter(config: Config) {
     }
   });
 
+  /** Ajoute un fichier libre (le PDF généré sans dossier) à un dossier existant. */
+  router.post('/libre/:jeton/rattacher', async (req, res) => {
+    const jeton = String(req.params.jeton);
+    if (!JETON_RE.test(jeton)) throw notFound('Fichier introuvable.');
+    const user = me(req);
+    const l = await lireLibre(jeton, user);
+    const r = z.object({ dossier_id: z.number({ required_error: 'Choisissez un dossier' }).int().positive() }).safeParse(req.body ?? {});
+    if (!r.success) throw badRequest('Choisissez un dossier.', { champs: zodDetails(r.error) });
+    const d = await chargerDossier(user, r.data.dossier_id);
+    if (!peutDeposer(user, d)) throw new HttpError(403, 'Ce dossier n’accepte plus de nouveaux fichiers (validé, livré ou annulé) : demandez son retour en préparation.');
+    const octets = await fs.promises.readFile(l.chemin);
+    const id = crypto.randomUUID();
+    const rel = path.join('dossiers', String(d.id), `${id}-${l.nom}`);
+    const dest = path.join(racine, rel);
+    await fs.promises.mkdir(path.dirname(dest), { recursive: true });
+    await fs.promises.writeFile(dest, octets);
+    const sha = crypto.createHash('sha256').update(octets).digest('hex');
+    const mime = l.genre === 'image' ? l.mime : 'application/pdf';
+    const nouveau = await tx(async (db) => {
+      const row = await one<{ id: number }>(
+        `INSERT INTO fichiers (dossier_id, nom_original, chemin, mime, taille, sha256, uploaded_by) VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING id`,
+        [d.id, l.nom, rel, mime, octets.byteLength, sha, user.id],
+        db,
+      );
+      await evenement(db, d.id, user.id, { type: 'fichier', action: l.genre === 'resultat' ? 'imposition' : 'ajout', data: { fichier_id: row!.id, nom: l.nom, taille: octets.byteLength, rattache: true } });
+      await journal(req, 'fichier_rattache', 'fichier', row!.id, { dossier_id: d.id, nom: l.nom }, db);
+      return row!.id;
+    }).catch(async (e) => {
+      await fs.promises.rm(dest, { force: true });
+      throw e;
+    });
+    signalDossier({ ...d, ancien_statut: d.statut });
+    res.status(201).json({ fichier: { id: nouveau, nom: l.nom, taille: octets.byteLength, dossier_id: d.id }, dossier: { id: d.id, numero: d.numero, client_nom: d.client_nom } });
+  });
+
   router.get('/libre/:jeton/contenu', async (req, res) => {
     const jeton = String(req.params.jeton);
     if (!JETON_RE.test(jeton)) throw notFound('Fichier introuvable.');

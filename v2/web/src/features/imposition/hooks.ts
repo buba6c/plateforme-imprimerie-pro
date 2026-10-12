@@ -83,6 +83,17 @@ export function useTeleverserLibre(onProgression?: (nom: string, part: number) =
   });
 }
 
+export function useRattacher() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (b: { jeton: string; dossier_id: number }) => api.post<{ fichier: { id: number; nom: string; taille: number; dossier_id: number }; dossier: { id: number; numero: string; client_nom: string } }>(`/imposition/libre/${b.jeton}/rattacher`, { dossier_id: b.dossier_id }),
+    onSuccess: (r) => {
+      void qc.invalidateQueries({ queryKey: ['dossier', r.dossier.id] });
+      void qc.invalidateQueries({ queryKey: ['dossiers'] });
+    },
+  });
+}
+
 export function useModelesMutations() {
   const qc = useQueryClient();
   const maj = (r: { items: ModeleImposition[] }) => qc.setQueryData(['imposition', 'modeles'], { items: r.items });

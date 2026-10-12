@@ -242,3 +242,31 @@ describe('imposition : plusieurs pièces (recto et verso séparés, images)', ()
     expect((await prep.post('/api/imposition/analyser').send({ pieces: [{ fichier_id: txt, role: 'pages' }] })).status).toBe(400);
   });
 });
+
+describe('imposition : sans dossier puis rattachement', () => {
+  it('dépose un fichier libre, génère, télécharge, puis rattache le résultat à un dossier', async () => {
+    const prep = await agent(comptes.prep);
+    const pdf = await pdfTest(85, 55, 2);
+    const dep = await prep.post('/api/imposition/libre?nom=carte-libre.pdf').set('Content-Type', 'application/pdf').send(pdf);
+    expect(dep.status, JSON.stringify(dep.body)).toBe(201);
+    const jeton = dep.body.libre as string;
+    const a = await prep.post('/api/imposition/analyser').send({ pieces: [{ libre: jeton, role: 'pages' }] });
+    expect(a.status, JSON.stringify(a.body)).toBe(200);
+    expect(a.body.sans_dossier).toBe(true);
+    const g = await prep.post('/api/imposition/generer').send({ pieces: [{ libre: jeton, role: 'pages' }], params: a.body.params_defaut });
+    expect(g.status, JSON.stringify(g.body)).toBe(201);
+    expect(g.body.fichier).toBeNull();
+    expect(g.body.libre.nom).toMatch(/^carte-libre_IMPOSITION-\d+POSES\.pdf$/);
+    const dl = await prep.get(g.body.libre.telechargement);
+    expect(dl.status).toBe(200);
+    // Un autre préparateur n'y a pas accès.
+    expect((await (await agent(comptes.prep2)).get(`/api/imposition/libre/${g.body.libre.jeton}/contenu`)).status).toBe(403);
+    const dossierId = await creerDossier(prep);
+    const r = await prep.post(`/api/imposition/libre/${g.body.libre.jeton}/rattacher`).send({ dossier_id: dossierId });
+    expect(r.status, JSON.stringify(r.body)).toBe(201);
+    const fiche = await prep.get(`/api/dossiers/${dossierId}`);
+    expect(fiche.body.fichiers.map((f: { nom_original: string }) => f.nom_original)).toContain(g.body.libre.nom);
+    // Fichier non accepté
+    expect((await prep.post('/api/imposition/libre?nom=notes.txt').set('Content-Type', 'text/plain').send('x')).status).toBe(400);
+  });
+});

@@ -292,3 +292,41 @@
 .source__barre { height: 6px; border-radius: 999px; background: var(--surface); overflow: hidden; }
 .source__barre > span { display: block; height: 100%; background: var(--accent); transition: width 150ms; }
 .source__envoi-pc { font-family: var(--font-mono); text-align: right; }
+.auto-resume { display: flex; align-items: flex-start; gap: 8px; margin: 0; padding: 10px 12px; border-radius: 10px; background: color-mix(in srgb, var(--accent-soft) 60%, var(--surface)); color: var(--accent-ink); font-size: 13px; line-height: 18px; font-weight: 600; }
+.auto-resume svg { width: 16px; height: 16px; flex: none; margin-top: 1px; }
+
+/* Génération en cours */
+.gen { position: fixed; inset: 0; z-index: 80; display: grid; place-items: center; background: rgb(15 22 41 / 0.45); backdrop-filter: blur(2px); }
+.gen__carte { display: grid; gap: 12px; width: min(420px, calc(100vw - 32px)); padding: 22px; border-radius: 16px; background: var(--surface); box-shadow: 0 20px 50px -20px rgb(0 0 0 / 0.5); }
+.gen__titre { font-size: 17px; font-weight: 700; }
+.gen__etapes { display: grid; gap: 8px; margin: 0; padding: 0; list-style: none; font-size: 14px; }
+.gen__etapes li { display: flex; align-items: center; gap: 10px; color: var(--text-muted); }
+.gen__etapes li[data-etat="fait"] { color: var(--success-ink); }
+.gen__etapes li[data-etat="en_cours"] { color: var(--text); font-weight: 600; }
+.gen__puce { display: inline-grid; place-items: center; width: 20px; height: 20px; border-radius: 50%; border: 2px solid var(--line-strong); flex: none; }
+.gen__etapes li[data-etat="fait"] .gen__puce { background: var(--success-ink); border-color: var(--success-ink); color: #fff; }
+.gen__etapes li[data-etat="en_cours"] .gen__puce { border-color: var(--accent); border-top-color: transparent; animation: gen-tour 0.8s linear infinite; }
+@keyframes gen-tour { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .gen__etapes li[data-etat="en_cours"] .gen__puce { animation: none; border-top-color: var(--accent); } }
+.ratt { display: grid; gap: 8px; padding: 12px; border-radius: 12px; border: 1px solid var(--line); background: var(--surface-sunken); }
+
+/* Rapport d'analyse */
+.rapport { display: grid; gap: 10px; padding: 14px 16px; border-radius: var(--radius-lg); border: 1px solid var(--line); border-left: 5px solid var(--success-ink); background: var(--surface); box-shadow: var(--shadow-card); }
+.rapport[data-etat="attention"] { border-left-color: var(--warning-ink); }
+.rapport__tete { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
+.rapport__tete h2 { margin: 0; font-size: 15px; }
+.rapport__badge { padding: 3px 10px; border-radius: 999px; font-size: 12px; font-weight: 700; background: var(--success-soft); color: var(--success-ink); }
+.rapport[data-etat="attention"] .rapport__badge { background: var(--warning-soft); color: var(--warning-ink); }
+.rapport__lignes { display: grid; gap: 5px; margin: 0; padding: 0; list-style: none; font-size: 13px; line-height: 18px; }
+.rapport__lignes li { display: flex; align-items: flex-start; gap: 8px; }
+.rapport__puce { flex: none; width: 8px; height: 8px; margin-top: 5px; border-radius: 50%; background: var(--success-ink); }
+.rapport__lignes li[data-ton="auto"] .rapport__puce { background: var(--accent); }
+.rapport__lignes li[data-ton="attention"] .rapport__puce { background: var(--warning-ink); }
+.rapport__lignes li[data-ton="alerte"] .rapport__puce { background: var(--danger); }
+.rapport__lignes li[data-ton="info"] .rapport__puce { background: var(--line-strong); }
+.rapport__lignes li[data-ton="alerte"] { color: var(--danger-ink); font-weight: 600; }
+.rapport__auto { flex: none; padding: 0 6px; border-radius: 4px; background: var(--accent-soft); color: var(--accent-ink); font-size: 10px; font-weight: 800; letter-spacing: 0.04em; text-transform: uppercase; line-height: 18px; }
+.rapport__ia { display: grid; gap: 6px; padding: 10px 12px; border-radius: 10px; background: color-mix(in srgb, var(--accent-soft) 55%, var(--surface)); font-size: 13px; }
+.rapport__ia-tete { display: flex; align-items: center; gap: 8px; font-weight: 700; }
+.rapport__ia-tete svg { width: 16px; height: 16px; color: var(--accent); }
+.rapport__ia ul { margin: 0; padding-left: 18px; }

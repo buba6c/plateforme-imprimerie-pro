@@ -15,11 +15,13 @@ import { useDossier } from '../../features/dossiers/hooks';
 import { DialogueDossier, genreDe } from '../../features/imposition/DialogueDossier';
 import { extension } from '../../features/fichiers/ListeFichiers';
 import { useStatutIA } from '../../features/ia/hooks';
-import { useAnalyse, useGenerer, useModelesImposition, useModelesMutations, usePlan, useProposerIA, useTeleverserLibre } from '../../features/imposition/hooks';
+import { useAnalyse, useGenerer, useModelesImposition, useModelesMutations, usePlan, useProposerIA, useRattacher, useTeleverserLibre } from '../../features/imposition/hooks';
+import { useDossiers } from '../../features/dossiers/hooks';
 import { OptionCartes } from '../../features/imposition/OptionCartes';
 import { PictoFondsPerdus, PictoMode, PictoOperation, PictoOrientation, PictoTraits } from '../../features/imposition/Pictos';
 import { SchemaFeuille, type AffichageSchema } from '../../features/imposition/SchemaFeuille';
-import { FOURNISSEUR_LABELS_IA, METHODE_LABELS, MODE_LABELS, OPERATION_LABELS, type AnalysePdf, type Feuille, type ModeleImposition, type Operation, type ParamsImposition, type Piece, type PieceAnalysee, type PropositionImposition, type ResultatGeneration, type RolePiece } from '../../features/imposition/types';
+import { reglagesPour, resumeAuto } from '../../features/imposition/auto';
+import { FOURNISSEUR_LABELS_IA, METHODE_LABELS, MODE_LABELS, OPERATION_LABELS, type Feuille, type ModeleImposition, type Operation, type ParamsImposition, type Piece, type PieceAnalysee, type Plan, type PropositionImposition, type ReponseAnalyse, type ResultatGeneration, type RolePiece } from '../../features/imposition/types';
 import '../../features/imposition/imposition.css';
 import { apercuUrl, fichierUrl, messageErreur } from '../../lib/api';
 import { Alert, Button, Checkbox, ConfirmDialog, Dialog, MachineChip, PageHeader, Ref, SelectField, Skeleton, TextField, TextareaField, useToast } from '../../ui';
@@ -68,7 +70,7 @@ function ChipsPiece({ a }: { a: PieceAnalysee }) {
 // ---------------------------------------------------------------------------
 // Réglages
 
-function Reglages({ p, onChange, nbPages }: { p: ParamsImposition; onChange: (p: ParamsImposition) => void; nbPages: number }) {
+function Reglages({ p, onChange, nbPages, analyse }: { p: ParamsImposition; onChange: (p: ParamsImposition) => void; nbPages: number; analyse?: ReponseAnalyse }) {
   const maj = (patch: Partial<ParamsImposition>) => onChange({ ...p, ...patch });
   const num = p.numerotation ?? null;
   const majNum = (patch: Partial<NonNullable<ParamsImposition['numerotation']>>) => maj({ numerotation: { ...(num ?? { debut: 1, chiffres: 4, prefixe: '', position: 'bas_droite', taille_pt: 12, verso: false }), ...patch } });
@@ -77,10 +79,11 @@ function Reglages({ p, onChange, nbPages }: { p: ParamsImposition; onChange: (p:
       <OptionCartes<Operation>
         name="imp-operation" label="Opération" tone="accent"
         value={p.operation}
-        onChange={(operation) => maj({ operation, ...(operation === 'livret' ? { recto_verso: true, mode: 'sequence' as const } : {}) })}
+        onChange={(operation) => (analyse ? onChange(reglagesPour(operation, analyse, p)) : maj({ operation, ...(operation === 'livret' ? { recto_verso: true, mode: 'sequence' as const } : {}) }))}
         options={(Object.keys(OPERATION_LABELS) as Operation[]).map((o) => ({ value: o, label: OPERATION_LABELS[o].titre, aide: OPERATION_LABELS[o].aide, picto: <PictoOperation op={o} /> }))}
       />
 
+      <p className="auto-resume"><Sparkles aria-hidden="true" /> Réglé automatiquement : {resumeAuto(p)} Tout reste modifiable ci-dessous.</p>
       {p.operation === 'assembler' && (
         <p className="ev-help" style={{ margin: 0 }}>Les pièces sont réunies dans l’ordre de l’étape 1 (recto 1, verso 1, recto 2…), sans modification des pages. Utile pour envoyer un seul PDF à l’imprimeur.</p>
       )}
@@ -238,59 +241,136 @@ function Modeles({ params, onAppliquer }: { params: ParamsImposition | null; onA
   );
 }
 
-function BlocIA({ pieces, onAppliquer }: { pieces: Piece[]; onAppliquer: (p: ParamsImposition) => void }) {
-  const statut = useStatutIA();
-  const proposer = useProposerIA();
-  const [question, setQuestion] = useState('');
-  const r: PropositionImposition | undefined = proposer.data;
-  if (!statut.data?.actif) return null;
+// ---------------------------------------------------------------------------
+// Rapport d'analyse, en haut de l'écran d'imposition : ce qui a été trouvé, ce qui a été réglé tout seul,
+// ce qu'il faut vérifier, et l'avis de l'assistant IA.
+
+type Ligne = { ton: 'ok' | 'auto' | 'attention' | 'alerte' | 'info'; texte: string };
+
+function lignesRapport(r: ReponseAnalyse, p: ParamsImposition, plan: Plan | undefined): Ligne[] {
+  const a = r.analyse;
+  const l: Ligne[] = [];
+  const f = a.format;
+  l.push(f
+    ? { ton: 'ok', texte: `${a.nb_pages} page${a.nb_pages > 1 ? 's' : ''} reconnue${a.nb_pages > 1 ? 's' : ''} : ${f.libelle.replace(/\s*\(.*\)$/, '')}${f.paysage ? ', en paysage' : ''}.` }
+    : { ton: 'attention', texte: `${a.nb_pages} page${a.nb_pages > 1 ? 's' : ''} de ${a.largeur} × ${a.hauteur} mm : format non reconnu, format fini pris à ${p.fini.largeur} × ${p.fini.hauteur} mm. Vérifiez-le.` });
+  if (r.paires?.some((x) => x.verso !== null)) l.push({ ton: 'ok', texte: `Recto et verso séparés appariés : ${r.paires.filter((x) => x.verso !== null).length} paire${r.paires.filter((x) => x.verso !== null).length > 1 ? 's' : ''}.` });
+  if (r.paires?.some((x) => x.verso === null) && r.paires.some((x) => x.verso !== null)) l.push({ ton: 'attention', texte: 'Il y a plus de rectos que de versos : certains versos seront vides.' });
+  if (!a.uniforme) l.push({ ton: 'attention', texte: 'Les pages n’ont pas toutes la même taille : elles sont adaptées à la première.' });
+  if (p.operation !== 'assembler') {
+    if (a.fonds_perdus === 'declares') l.push({ ton: 'ok', texte: `Fonds perdus présents dans le fichier (${a.fonds_perdus_mm} mm) : utilisés tels quels.` });
+    else if (a.fonds_perdus === 'incertains') l.push({ ton: 'ok', texte: `Le fichier mesure le format fini plus ${a.fonds_perdus_mm} mm de chaque côté : fonds perdus pris dans le fichier.` });
+    else if (p.methode_fonds_perdus === 'miroir') l.push({ ton: 'auto', texte: `Pas de fonds perdus dans le fichier : ${p.fonds_perdus_mm} mm générés automatiquement en miroir des bords (visibles en rose sur la feuille).` });
+    else if (p.methode_fonds_perdus === 'etirer') l.push({ ton: 'auto', texte: `Pas de fonds perdus dans le fichier : visuel agrandi de ${p.fonds_perdus_mm} mm pour les créer.` });
+    else if (p.methode_fonds_perdus === 'blanc') l.push({ ton: 'info', texte: 'Pas de fonds perdus, mais le visuel a une marge blanche : aucun ajout nécessaire.' });
+    else l.push({ ton: 'alerte', texte: 'Pas de fonds perdus et aucun n’est ajouté : un filet blanc peut apparaître à la coupe. Cliquez « Générer les fonds perdus ».' });
+  }
+  for (const piece of r.pieces) for (const m of piece.avertissements) if (/résolution|dpi|flou/i.test(m)) l.push({ ton: 'attention', texte: `${piece.nom} : ${m}` });
+  if (plan) {
+    if (plan.operation === 'poses') l.push({ ton: 'auto', texte: `${plan.poses_par_face} poses par face sur ${plan.feuille.largeur} × ${plan.feuille.hauteur} mm (${plan.paysage ? 'paysage' : 'portrait'})${plan.feuilles_a_imprimer ? `, ${plan.feuilles_a_imprimer} feuilles à imprimer` : ''}.` });
+    if (plan.operation === 'livret') l.push({ ton: 'auto', texte: `Livret de ${plan.nb_feuilles * 4} pages sur ${plan.nb_feuilles} feuille${plan.nb_feuilles > 1 ? 's' : ''} ${plan.feuille.largeur} × ${plan.feuille.hauteur} mm${plan.pages_blanches ? `, ${plan.pages_blanches} page${plan.pages_blanches > 1 ? 's' : ''} blanche${plan.pages_blanches > 1 ? 's' : ''} ajoutée${plan.pages_blanches > 1 ? 's' : ''}` : ''}.` });
+    for (const m of plan.avertissements) l.push({ ton: 'attention', texte: m });
+  }
+  if (!a.rendu) l.push({ ton: 'info', texte: 'Le bord des pages n’a pas pu être contrôlé sur ce serveur.' });
+  return l;
+}
+
+function Rapport({ r, p, plan, ia, iaEnCours, iaErreur, onRedemander }: { r: ReponseAnalyse; p: ParamsImposition; plan?: Plan; ia: PropositionImposition | null; iaEnCours: boolean; iaErreur: string | null; onRedemander?: () => void }) {
+  const lignes = lignesRapport(r, p, plan);
+  const alertes = lignes.filter((x) => x.ton === 'alerte' || x.ton === 'attention').length;
   return (
-    <div className="imp-ia">
-      <div className="imp-ia__tete">
-        <Sparkles aria-hidden="true" />
-        Assistant IA
-        {r && <span className="imp-confiance" data-niveau={r.confiance}>confiance {r.confiance}</span>}
-      </div>
-      <TextField label="Précision (facultatif)" value={question} onChange={(e) => setQuestion(e.target.value)} placeholder="Ex. 500 cartes, coins arrondis" />
-      <Button variant="primary" icon={<Wand2 />} busy={proposer.isPending} onClick={() => proposer.mutate({ pieces, question: question.trim() || undefined }, { onSuccess: (x) => onAppliquer(x.params) })}>
-        Analyser et régler automatiquement
-      </Button>
-      {proposer.isError && <Alert tone="error">{messageErreur(proposer.error)}</Alert>}
-      {r && (
-        <>
-          <p style={{ margin: 0 }}><strong>{r.type_document}</strong> · {r.explication}</p>
-          {r.points_de_vigilance.length > 0 && <ul>{r.points_de_vigilance.map((x, i) => <li key={i}>{x}</li>)}</ul>}
-          {r.erreur_plan && <Alert tone="warning">{r.erreur_plan}</Alert>}
-          <span className="ev-help">{FOURNISSEUR_LABELS_IA[r.fournisseur] ?? r.fournisseur} · {r.modele}{r.secours ? ' · par le secours' : ''} · réglages appliqués, vérifiez la feuille.</span>
-        </>
+    <section className="rapport" data-etat={alertes ? 'attention' : 'ok'} aria-labelledby="titre-rapport">
+      <header className="rapport__tete">
+        <h2 id="titre-rapport">Rapport d’analyse</h2>
+        <span className="rapport__badge">{alertes ? `${alertes} point${alertes > 1 ? 's' : ''} à vérifier` : 'Prêt à imposer'}</span>
+      </header>
+      <ul className="rapport__lignes">
+        {lignes.map((x, i) => (
+          <li key={i} data-ton={x.ton}>
+            <span className="rapport__puce" aria-hidden="true" />
+            {x.ton === 'auto' && <span className="rapport__auto">Auto</span>}
+            {x.texte}
+          </li>
+        ))}
+      </ul>
+      {(ia || iaEnCours || iaErreur) && (
+        <div className="rapport__ia">
+          <span className="rapport__ia-tete">
+            <Sparkles aria-hidden="true" /> Assistant IA
+            {ia && <span className="imp-confiance" data-niveau={ia.confiance}>confiance {ia.confiance}</span>}
+            {onRedemander && !iaEnCours && <Button size="sm" variant="ghost" onClick={onRedemander}>Redemander</Button>}
+          </span>
+          {iaEnCours ? (
+            <span className="ev-muted">Lecture du fichier et des spécifications du dossier…</span>
+          ) : iaErreur ? (
+            <span className="ev-muted">L’assistant n’a pas répondu ({iaErreur}). Les réglages automatiques restent appliqués.</span>
+          ) : ia ? (
+            <>
+              <span><strong>{ia.type_document}</strong> · {ia.explication}</span>
+              {ia.points_de_vigilance.length > 0 && <ul>{ia.points_de_vigilance.map((x, i) => <li key={i}>{x}</li>)}</ul>}
+              <span className="ev-help">{FOURNISSEUR_LABELS_IA[ia.fournisseur] ?? ia.fournisseur} · {ia.modele}{ia.secours ? ' · par le secours' : ''}</span>
+            </>
+          ) : null}
+        </div>
       )}
-    </div>
+    </section>
   );
 }
 
 // ---------------------------------------------------------------------------
-// Résumé de l'analyse (centre, au-dessus de la feuille)
+// Génération : étapes affichées pendant le travail du serveur
 
-function Diagnostic({ a }: { a: AnalysePdf }) {
-  const f = a.format;
-  const touche = a.pages.some((p) => p.jusqu_au_bord === true);
-  const tone = a.fonds_perdus === 'declares' ? 'ok' : a.fonds_perdus === 'incertains' ? 'attention' : touche ? 'alerte' : 'attention';
+const ETAPES_GENERATION = ['Lecture et assemblage des fichiers', 'Contrôle des formats et des fonds perdus', 'Placement des poses sur la feuille', 'Fonds perdus et traits de coupe', 'Écriture du PDF'];
+
+function Generation({ actif }: { actif: boolean }) {
+  const [i, setI] = useState(0);
+  useEffect(() => {
+    if (!actif) return setI(0);
+    const t = setInterval(() => setI((v) => Math.min(ETAPES_GENERATION.length - 1, v + 1)), 900);
+    return () => clearInterval(t);
+  }, [actif]);
+  if (!actif) return null;
   return (
-    <div className="imp-resume-bloc">
-      <strong>
-        {a.nb_pages} page{a.nb_pages > 1 ? 's' : ''} · {a.largeur} × {a.hauteur} mm · {f ? f.libelle.replace(/\s*\(.*\)$/, '') : 'format non reconnu'}
-        {f?.paysage ? ' (paysage)' : ''}
-      </strong>
-      <span className="pc__chips">
-        <span className="pc__chip" data-tone={tone}>
-          {a.fonds_perdus === 'declares' ? `Fonds perdus déclarés ${a.fonds_perdus_mm} mm` : a.fonds_perdus === 'incertains' ? `Fonds perdus probables ${a.fonds_perdus_mm} mm (non déclarés)` : touche ? 'Sans fonds perdus, visuel jusqu’au bord : à fabriquer' : 'Sans fonds perdus, marge blanche autour'}
-        </span>
-        {!a.uniforme && <span className="pc__chip" data-tone="attention">pages de tailles différentes</span>}
-        {!a.rendu && <span className="pc__chip">bords non contrôlés (Poppler absent)</span>}
-      </span>
-      {a.avertissements.filter((m) => !/Poppler/.test(m)).map((m, i) => (
-        <span key={i} className="ev-help" style={{ margin: 0 }}>{m}</span>
-      ))}
+    <div className="gen" role="status" aria-live="polite">
+      <div className="gen__carte">
+        <span className="gen__titre">Génération du PDF…</span>
+        <ol className="gen__etapes">
+          {ETAPES_GENERATION.map((e, k) => (
+            <li key={e} data-etat={k < i ? 'fait' : k === i ? 'en_cours' : 'a_venir'}>
+              <span className="gen__puce" aria-hidden="true">{k < i ? <Check width={12} height={12} /> : null}</span>
+              {e}
+            </li>
+          ))}
+        </ol>
+        <span className="ev-help">Un gros livret peut prendre une minute.</span>
+      </div>
+    </div>
+  );
+}
+
+/** Rattacher un résultat sans dossier à un dossier existant. */
+function Rattacher({ jeton, onFait }: { jeton: string; onFait: (d: { id: number; numero: string; client_nom: string }) => void }) {
+  const toast = useToast();
+  const [q, setQ] = useState('');
+  const liste = useDossiers({ q: q.trim() || undefined, limit: 5, tri: 'recent', statut: ['en_cours', 'a_revoir'] });
+  const rattacher = useRattacher();
+  return (
+    <div className="ratt">
+      <strong>Ajouter ce PDF à un dossier</strong>
+      <span className="ev-help">Dossiers en préparation : le PDF y sera rangé, prêt pour l’imprimeur.</span>
+      <TextField label="Dossier" placeholder="Numéro, client…" value={q} onChange={(e) => setQ(e.target.value)} />
+      <ul className="imp-dossiers">
+        {(liste.data?.items ?? []).map((d) => (
+          <li key={d.id}>
+            <button type="button" className="imp-dossier" disabled={rattacher.isPending} onClick={() => rattacher.mutate({ jeton, dossier_id: d.id }, { onSuccess: (r) => (onFait(r.dossier), toast.success('PDF ajouté au dossier', `${r.dossier.numero} · ${r.dossier.client_nom}`)), onError: (e) => toast.error('Ajout impossible', messageErreur(e)) })}>
+              <Ref>{d.numero}</Ref>
+              <span className="imp-dossier__client">{d.client_nom}</span>
+              <Plus aria-hidden="true" width={14} height={14} />
+            </button>
+          </li>
+        ))}
+        {liste.data && liste.data.items.length === 0 && <li className="ev-muted" style={{ fontSize: 12 }}>Aucun dossier en préparation ne correspond.</li>}
+      </ul>
     </div>
   );
 }
@@ -326,7 +406,7 @@ function Etapes({ courant, max, onAller }: { courant: Ecran; max: Ecran; onAller
 }
 
 /** Écran 1 : les pièces du travail. */
-function EcranFichiers({ pieces, setPieces, analyses, dossierId, setDossierId, enAnalyse, onSuivant }: {
+function EcranFichiers({ pieces, setPieces, analyses, dossierId, setDossierId, enAnalyse, onSuivant, onPret }: {
   pieces: Piece[];
   setPieces: (p: Piece[]) => void;
   analyses: PieceAnalysee[];
@@ -334,6 +414,8 @@ function EcranFichiers({ pieces, setPieces, analyses, dossierId, setDossierId, e
   setDossierId: (id: number | null) => void;
   enAnalyse: boolean;
   onSuivant: () => void;
+  /** Appelé après un dépôt ou après « Terminé » dans la fenêtre du dossier : on passe à l'imposition dès que l'analyse est prête. */
+  onPret: () => void;
 }) {
   const toast = useToast();
   const [dialogue, setDialogue] = useState(false);
@@ -353,6 +435,7 @@ function EcranFichiers({ pieces, setPieces, analyses, dossierId, setDossierId, e
     setPieces(l);
   };
   const envoyer = async (files: File[]) => {
+    let ajoutes = 0;
     for (const f of files) {
       if (!genreDe(f.name, f.type)) {
         toast.error('Fichier non pris en charge', `${f.name} : déposez un PDF ou une image.`);
@@ -362,6 +445,7 @@ function EcranFichiers({ pieces, setPieces, analyses, dossierId, setDossierId, e
       try {
         const r = await deposer.mutateAsync(f);
         ajouter({ libre: r.libre, role: 'pages', nom: r.nom, taille: r.taille, mime: r.mime, genre: r.genre });
+        ajoutes++;
       } catch (err) {
         toast.error(`${f.name} non déposé`, messageErreur(err));
       } finally {
@@ -372,6 +456,7 @@ function EcranFichiers({ pieces, setPieces, analyses, dossierId, setDossierId, e
         });
       }
     }
+    if (ajoutes > 0) onPret();
   };
   const onChoix = (e: ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(e.target.files ?? []);
@@ -404,8 +489,8 @@ function EcranFichiers({ pieces, setPieces, analyses, dossierId, setDossierId, e
         <label className="source source--depot" data-survol={survol || undefined} onDragOver={(e) => (e.preventDefault(), setSurvol(true))} onDragLeave={() => setSurvol(false)} onDrop={onDrop}>
           <input ref={input} type="file" accept=".pdf,.ai,image/*" multiple onChange={onChoix} />
           <span className="source__icone"><Upload aria-hidden="true" /></span>
-          <span className="source__titre">{deposer.isPending ? 'Envoi en cours…' : 'Déposer des fichiers'}</span>
-          <span className="source__aide">Glissez des PDF ou des images ici, sans passer par un dossier. Le résultat se télécharge.</span>
+          <span className="source__titre">{deposer.isPending ? 'Envoi en cours…' : 'Déposer ou choisir des fichiers'}</span>
+          <span className="source__aide">Glissez des PDF ou des images ici, ou cliquez pour les choisir. Ils sont envoyés, analysés, puis l’imposition s’ouvre avec son rapport.</span>
           {Object.entries(envois).map(([nom, part]) => (
             <span key={nom} className="source__envoi">
               <span className="source__envoi-nom">{nom}</span>
@@ -461,13 +546,13 @@ function EcranFichiers({ pieces, setPieces, analyses, dossierId, setDossierId, e
       </section>
 
       <div className="ecran__pied">
-        <span className="ev-muted" style={{ fontSize: 13 }}>{pieces.length === 0 ? 'Ajoutez au moins un fichier pour continuer.' : rectos !== versos && avecRV && versos > 0 ? 'Attention : il n’y a pas autant de rectos que de versos.' : 'Le fichier d’origine n’est jamais modifié.'}</span>
+        <span className="ev-muted" style={{ fontSize: 13 }}>{enAnalyse && pieces.length ? 'Analyse des fichiers…' : pieces.length === 0 ? 'Ajoutez au moins un fichier pour continuer.' : rectos !== versos && avecRV && versos > 0 ? 'Attention : il n’y a pas autant de rectos que de versos.' : 'Le fichier d’origine n’est jamais modifié.'}</span>
         <Button variant="primary" size="lg" disabled={pieces.length === 0} onClick={onSuivant}>
           Suivant : prévisualiser et régler <ArrowRight aria-hidden="true" />
         </Button>
       </div>
 
-      {dialogue && <DialogueDossier dossierId={dossierId} pieces={pieces} onDossier={setDossierId} onAjouter={ajouter} onClose={() => setDialogue(false)} />}
+      {dialogue && <DialogueDossier dossierId={dossierId} pieces={pieces} onDossier={setDossierId} onAjouter={ajouter} onClose={() => (setDialogue(false), piecesRef.current.length > 0 && onPret())} />}
     </div>
   );
 }
@@ -489,6 +574,7 @@ export default function Imposition() {
   const [face, setFace] = useState<'recto' | 'verso'>('recto');
   const [feuilleVue, setFeuilleVue] = useState(0);
   const [resultat, setResultat] = useState<ResultatGeneration | null>(null);
+  const [rattache, setRattache] = useState<{ id: number; numero: string; client_nom: string } | null>(null);
   const dossier = useDossier(dossierId ?? undefined);
 
   // Fichier passé dans l'adresse (bouton « Imposer » de la fiche dossier) : première pièce.
@@ -510,7 +596,10 @@ export default function Imposition() {
     if (!analyse.data || analyse.isPlaceholderData) return;
     if (derniereCle.current !== clePieces) {
       derniereCle.current = clePieces;
-      setParams((prev) => (prev ? { ...analyse.data.params_defaut, operation: prev.operation, feuille: prev.feuille, orientation: prev.orientation, traits_de_coupe: prev.traits_de_coupe } : analyse.data.params_defaut));
+      const d = analyse.data;
+      const fam = d.analyse.format?.famille;
+      const op: Operation = (fam === 'page' || !fam) && d.analyse.nb_pages > 2 && !d.paires ? 'livret' : 'poses';
+      setParams((prev) => reglagesPour(prev?.operation ?? op, d, d.params_defaut));
       setFeuilleVue(0);
       setFace('recto');
     }
@@ -524,6 +613,38 @@ export default function Imposition() {
   }, [pieces.length]);
 
   const plan = usePlan(ecran >= 2 ? pieces : [], params);
+  // Avancer tout seul après un dépôt, dès que l'analyse est prête.
+  const [avancer, setAvancer] = useState(false);
+  useEffect(() => {
+    if (avancer && params && analyse.data && !analyse.isPlaceholderData) {
+      setAvancer(false);
+      setEcran(2);
+    }
+  }, [avancer, params, analyse.data, analyse.isPlaceholderData]);
+  // Assistant IA : appelé une fois par jeu de pièces à l'arrivée sur l'imposition (s'il est actif).
+  const statutIA = useStatutIA();
+  const proposerIA = useProposerIA();
+  const [ia, setIa] = useState<PropositionImposition | null>(null);
+  const [iaErreur, setIaErreur] = useState<string | null>(null);
+  const iaPour = useRef('');
+  const demanderIA = () => {
+    iaPour.current = clePieces;
+    setIaErreur(null);
+    proposerIA.mutate({ pieces }, {
+      onSuccess: (r) => {
+        setIa(r);
+        if (r.plan) setParams(r.params);
+      },
+      onError: (e) => setIaErreur(messageErreur(e)),
+    });
+  };
+  useEffect(() => {
+    if (ecran === 2 && statutIA.data?.actif && params && iaPour.current !== clePieces && !proposerIA.isPending) {
+      setIa(null);
+      demanderIA();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ecran, statutIA.data?.actif, clePieces, params !== null]);
   const generer = useGenerer();
   const planData = plan.data?.plan;
   const pages = analyse.data?.pages ?? [];
@@ -550,7 +671,7 @@ export default function Imposition() {
     params &&
     generer.mutate(
       { pieces, params },
-      { onSuccess: (r) => (setResultat(r), toast.success('PDF généré', r.fichier?.nom ?? r.libre?.nom)), onError: (e) => toast.error('Génération impossible', messageErreur(e)) },
+      { onSuccess: (r) => (setRattache(null), setResultat(r), toast.success('PDF généré', r.fichier?.nom ?? r.libre?.nom)), onError: (e) => toast.error('Génération impossible', messageErreur(e)) },
     );
 
   return (
@@ -559,7 +680,7 @@ export default function Imposition() {
       <Etapes courant={ecran} max={max} onAller={setEcran} />
 
       {ecran === 1 && (
-        <EcranFichiers pieces={pieces} setPieces={setPieces} analyses={analyse.data?.pieces ?? []} dossierId={dossierId} setDossierId={setDossierId} enAnalyse={analyse.isFetching}
+        <EcranFichiers pieces={pieces} setPieces={setPieces} analyses={analyse.data?.pieces ?? []} dossierId={dossierId} setDossierId={setDossierId} enAnalyse={analyse.isFetching} onPret={() => setAvancer(true)}
           onSuivant={() => (params ? setEcran(2) : toast.info('Analyse en cours', 'Patientez un instant, puis continuez.'))}
         />
       )}
@@ -575,7 +696,7 @@ export default function Imposition() {
           </div>
           <div className="ws ws--2">
             <section className="ws__centre" aria-label="Prévisualisation">
-              {analyse.data && <Diagnostic a={analyse.data.analyse} />}
+              {analyse.data && <Rapport r={analyse.data} p={params} plan={planData} ia={ia} iaEnCours={proposerIA.isPending} iaErreur={iaErreur} onRedemander={statutIA.data?.actif ? demanderIA : undefined} />}
               {fondsAFabriquer ? (
                 <div className="alerte-fonds">
                   <span>Ce fichier n’a pas de fonds perdus. Après la coupe, un filet blanc risque d’apparaître sur les bords.</span>
@@ -647,9 +768,8 @@ export default function Imposition() {
             </section>
             <aside className="ws__panneau ws__droite" aria-label="Réglages">
               <h2 className="ws__titre">Réglages</h2>
-              <BlocIA pieces={pieces} onAppliquer={(p) => (setParams(p), toast.success('Réglages de l’assistant appliqués', 'Vérifiez la feuille avant de générer.'))} />
               <Modeles params={params} onAppliquer={(m) => (setParams({ ...m.params, fini: params.fini, recto_verso: m.params.operation === 'livret' ? true : params.recto_verso }), toast.success(`Modèle appliqué : ${m.nom}`, 'Le format fini et le recto-verso du fichier sont conservés.'))} />
-              <Reglages p={params} onChange={setParams} nbPages={nbPages} />
+              <Reglages p={params} onChange={setParams} nbPages={nbPages} analyse={analyse.data} />
             </aside>
           </div>
           <div className="ecran__pied">
@@ -660,6 +780,7 @@ export default function Imposition() {
         </div>
       )}
 
+      <Generation actif={generer.isPending} />
       {resultat && (
         <Dialog open onClose={() => (setResultat(null), generer.reset())} title="PDF prêt" width={760}
           footer={
@@ -691,7 +812,9 @@ export default function Imposition() {
                 {resultat.plan.operation === 'poses' && <li>{resultat.plan.poses_par_face} poses par face</li>}
                 {resultat.plan.feuilles_a_imprimer && <li>{resultat.plan.feuilles_a_imprimer} feuilles à imprimer</li>}
               </ul>
-              <p className="ev-muted" style={{ margin: 0 }}>{resultat.fichier ? 'Ajouté au dossier, à côté du fichier d’origine : l’imprimeur le voit dans la fiche.' : 'Gardé 6 heures sur le serveur : téléchargez-le maintenant.'}</p>
+              <p className="ev-muted" style={{ margin: 0 }}>{resultat.fichier ? 'Ajouté au dossier, à côté du fichier d’origine : l’imprimeur le voit dans la fiche.' : rattache ? `Ajouté au dossier ${rattache.numero} (${rattache.client_nom}).` : 'Gardé 6 heures sur le serveur : téléchargez-le, ou ajoutez-le à un dossier.'}</p>
+              {resultat.libre && !rattache && <Rattacher jeton={resultat.libre.jeton} onFait={setRattache} />}
+              {rattache && <Link className="ev-btn" to={`/dossiers/${rattache.id}`}><FolderOpen aria-hidden="true" /> Ouvrir le dossier {rattache.numero}</Link>}
             </div>
           </div>
         </Dialog>
