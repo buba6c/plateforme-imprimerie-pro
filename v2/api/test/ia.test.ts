@@ -27,7 +27,8 @@ function reponseOpenAI(contenu: unknown, usage = { prompt_tokens: 1200, completi
   );
 }
 
-const CLE_GEMINI = 'AIzaSyTest0123456789abcdefghijklmnopqrs';
+// Valeur factice qui ne ressemble pas à une vraie clé Google (GitHub signalerait une clé « AIza… »).
+const CLE_GEMINI = 'CLE_GEMINI_DE_TEST_0123456789abcdefghijklmnopqrs';
 
 /** Réponse simulée de Gemini (generateContent). */
 function reponseGemini(contenu: unknown, usage = { promptTokenCount: 900, candidatesTokenCount: 200 }, finishReason = 'STOP') {
