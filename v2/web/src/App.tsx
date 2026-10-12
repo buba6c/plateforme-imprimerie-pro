@@ -7,6 +7,7 @@ import Connexion from './pages/compte/Connexion';
 
 const ListeDossiers = lazy(() => import('./pages/dossiers/ListeDossiers'));
 const NouveauDossier = lazy(() => import('./pages/dossiers/NouveauDossier'));
+const Modeles = lazy(() => import('./pages/dossiers/Modeles'));
 const FicheDossier = lazy(() => import('./pages/dossiers/FicheDossier'));
 const FileImpression = lazy(() => import('./pages/atelier/FileImpression'));
 const ALivrer = lazy(() => import('./pages/livraisons/ALivrer'));
@@ -65,21 +66,22 @@ export default function App() {
         <Route index element={<Accueil />} />
         <Route path="dossiers" element={<Lazy><ListeDossiers /></Lazy>} />
         <Route path="dossiers/nouveau" element={<Lazy><R roles={BUREAU}><NouveauDossier /></R></Lazy>} />
+        <Route path="modeles" element={<Lazy><R roles={BUREAU}><Modeles /></R></Lazy>} />
         <Route path="dossiers/:id" element={<Lazy><FicheDossier /></Lazy>} />
         <Route path="dossiers/:id/modifier" element={<Lazy><R roles={BUREAU}><NouveauDossier /></R></Lazy>} />
         <Route path="atelier" element={<Lazy><R roles={[...IMPRIMEURS, 'admin']}><FileImpression /></R></Lazy>} />
         <Route path="livraisons" element={<Lazy><R roles={['livreur', 'admin']}><ALivrer /></R></Lazy>} />
         <Route path="livraisons/livrees" element={<Lazy><R roles={['livreur', 'admin']}><Livrees /></R></Lazy>} />
         <Route path="encaissements" element={<Lazy><R roles={['livreur', 'preparateur']}><Encaissements /></R></Lazy>} />
-        <Route path="devis" element={<Lazy><R roles={BUREAU}><ListeDevis /></R></Lazy>} />
-        <Route path="devis/nouveau" element={<Lazy><R roles={BUREAU}><EditeurDevis /></R></Lazy>} />
-        <Route path="devis/:id" element={<Lazy><R roles={BUREAU}><FicheDevis /></R></Lazy>} />
-        <Route path="devis/:id/modifier" element={<Lazy><R roles={BUREAU}><EditeurDevis /></R></Lazy>} />
-        <Route path="factures" element={<Lazy><R roles={BUREAU}><ListeFactures /></R></Lazy>} />
-        <Route path="factures/nouvelle" element={<Lazy><R roles={BUREAU}><NouvelleFacture /></R></Lazy>} />
-        <Route path="factures/:id" element={<Lazy><R roles={BUREAU}><FicheFacture /></R></Lazy>} />
-        <Route path="clients" element={<Lazy><R roles={BUREAU}><ListeClients /></R></Lazy>} />
-        <Route path="clients/:id" element={<Lazy><R roles={BUREAU}><FicheClient /></R></Lazy>} />
+        <Route path="devis" element={<Lazy><R roles={ADMIN}><ListeDevis /></R></Lazy>} />
+        <Route path="devis/nouveau" element={<Lazy><R roles={ADMIN}><EditeurDevis /></R></Lazy>} />
+        <Route path="devis/:id" element={<Lazy><R roles={ADMIN}><FicheDevis /></R></Lazy>} />
+        <Route path="devis/:id/modifier" element={<Lazy><R roles={ADMIN}><EditeurDevis /></R></Lazy>} />
+        <Route path="factures" element={<Lazy><R roles={ADMIN}><ListeFactures /></R></Lazy>} />
+        <Route path="factures/nouvelle" element={<Lazy><R roles={ADMIN}><NouvelleFacture /></R></Lazy>} />
+        <Route path="factures/:id" element={<Lazy><R roles={ADMIN}><FicheFacture /></R></Lazy>} />
+        <Route path="clients" element={<Lazy><R roles={ADMIN}><ListeClients /></R></Lazy>} />
+        <Route path="clients/:id" element={<Lazy><R roles={ADMIN}><FicheClient /></R></Lazy>} />
         <Route path="paiements" element={<Lazy><R roles={ADMIN}><Paiements /></R></Lazy>} />
         <Route path="tableau-de-bord" element={<Lazy><R roles={ADMIN}><TableauDeBord /></R></Lazy>} />
         <Route path="statistiques" element={<Lazy><R roles={ADMIN}><Statistiques /></R></Lazy>} />

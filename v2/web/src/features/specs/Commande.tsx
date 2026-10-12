@@ -35,9 +35,10 @@ function useTarif(tarifs: Tarif[] | undefined, machine: Machine) {
   }, [tarifs, machine]);
 }
 
-/** « +5 000 FCFA », « prix à définir » ou « absent de la grille ». */
+/** « +5 000 FCFA », « prix à définir » ou « absent de la grille » ; rien pour qui ne voit pas les prix. */
 function supplement(t: Tarif | undefined): string {
   if (!t) return 'absent de la grille';
+  if (t.prix === undefined) return '';
   if (t.prix === null) return 'prix à définir';
   return `+${formatEntier(t.prix)} FCFA`;
 }

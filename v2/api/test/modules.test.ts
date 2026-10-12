@@ -132,7 +132,8 @@ describe('paramètres', () => {
 
   it("enregistre, journalise et s'applique au calcul des prix (arrondi_pas 0)", async () => {
     const spec = { machine: 'roland', specs: { lignes: [{ support: 'bache_m2', largeur: 110, hauteur: 130, unite: 'cm', quantite: 1 }] } };
-    const avant = await A.prep.post('/api/tarifs/estimer').send(spec);
+    expect((await A.prep.post('/api/tarifs/estimer').send(spec)).status).toBe(403);
+    const avant = await A.admin.post('/api/tarifs/estimer').send(spec);
     expect(avant.body.total_ttc).toBe(10100); // 1,43 m² x 7 000 = 10 010, arrondi à 100
 
     const r = await A.admin.put('/api/parametres').send({
@@ -146,7 +147,7 @@ describe('paramètres', () => {
     expect(r.body.entreprise.telephone).toBe('');
 
     expect((await A.livreur.get('/api/parametres')).body.entreprise.ninea).toBe('005551234');
-    const apres = await A.prep.post('/api/tarifs/estimer').send(spec);
+    const apres = await A.admin.post('/api/tarifs/estimer').send(spec);
     expect(apres.body.total_ttc).toBe(10010);
 
     const j = await A.admin.get('/api/journal?action=parametres_modifies');
@@ -163,17 +164,19 @@ describe('clients', () => {
   let doublonId: number;
 
   it('crée, refuse un doublon exact et propose les clients en autocomplétion', async () => {
-    const c = await A.prep.post('/api/clients').send({ nom: 'Imprimerie Teranga', telephone: '77 000 11 22', email: 'contact@teranga.sn' });
+    expect((await A.prep.post('/api/clients').send({ nom: 'Imprimerie Teranga' })).status).toBe(403);
+    expect((await A.prep.get('/api/clients')).status).toBe(403);
+    const c = await A.admin.post('/api/clients').send({ nom: 'Imprimerie Teranga', telephone: '77 000 11 22', email: 'contact@teranga.sn' });
     expect(c.status).toBe(201);
     terangaId = c.body.id;
     expect(c.body.totaux).toEqual({ nb_dossiers: 0, total_commandes: 0, total_paye: 0, reste_du: 0 });
-    const doublon = await A.prep.post('/api/clients').send({ nom: 'imprimerie teranga ', telephone: '77 000 11 22' });
+    const doublon = await A.admin.post('/api/clients').send({ nom: 'imprimerie teranga ', telephone: '77 000 11 22' });
     expect(doublon.status).toBe(409);
     expect(doublon.body.details.client_id).toBe(terangaId);
-    const d2 = await A.prep.post('/api/clients').send({ nom: 'Teranga Impression', adresse: 'Thiès' });
+    const d2 = await A.admin.post('/api/clients').send({ nom: 'Teranga Impression', adresse: 'Thiès' });
     expect(d2.status).toBe(201);
     doublonId = d2.body.id;
-    expect((await A.prep.post('/api/clients').send({ nom: '' })).status).toBe(400);
+    expect((await A.admin.post('/api/clients').send({ nom: '' })).status).toBe(400);
 
     const r = await A.prep.get('/api/clients/recherche?q=teran');
     expect(r.status).toBe(200);
@@ -189,7 +192,7 @@ describe('clients', () => {
     const d = await A.prep.post('/api/dossiers').send({ ...flyers, client_id: doublonId, client_nom: 'Teranga Impression' });
     expect(d.status).toBe(201);
     expect(d.body.client_id).toBe(doublonId);
-    const liste = await A.prep.get('/api/clients?q=teranga');
+    const liste = await A.admin.get('/api/clients?q=teranga');
     const ligne = liste.body.items.find((c: any) => c.id === doublonId);
     expect(ligne).toMatchObject({ nb_dossiers: 1, total_commandes: 50000, reste_du: 50000 });
     expect(ligne.dernier_dossier_at).toBeTruthy();
@@ -204,17 +207,18 @@ describe('clients', () => {
     expect(f.body.totaux).toMatchObject({ nb_dossiers: 1, total_commandes: 50000, total_paye: 0, reste_du: 50000 });
     expect(f.body.dossiers[0].id).toBe(d.body.id);
 
-    const source = await A.prep.get(`/api/clients/${doublonId}`);
+    const source = await A.admin.get(`/api/clients/${doublonId}`);
     expect(source.body.fusionne_dans).toBe(terangaId);
     const r = await A.prep.get('/api/clients/recherche?q=teran');
     expect(r.body.map((x: any) => x.id)).toEqual([terangaId]);
     expect((await A.admin.post(`/api/clients/${doublonId}/fusionner`).send({ dans_id: terangaId })).status).toBe(409);
-    expect((await A.prep.patch(`/api/clients/${doublonId}`).send({ notes: 'x' })).status).toBe(409);
+    expect((await A.admin.patch(`/api/clients/${doublonId}`).send({ notes: 'x' })).status).toBe(409);
 
     const j = await A.admin.get('/api/journal?action=client_fusionne');
     expect(j.body.items[0].data.destination.id).toBe(terangaId);
 
-    const p = await A.prep.patch(`/api/clients/${terangaId}`).send({ notes: 'Client fidèle' });
+    expect((await A.prep.patch(`/api/clients/${terangaId}`).send({ notes: 'Client fidèle' })).status).toBe(403);
+    const p = await A.admin.patch(`/api/clients/${terangaId}`).send({ notes: 'Client fidèle' });
     expect(p.status).toBe(200);
     expect(p.body.notes).toBe('Client fidèle');
   });
@@ -223,24 +227,34 @@ describe('clients', () => {
 describe('paiements', () => {
   let dossierId: number;
 
-  it('encaissement à valider, refus du dépassement, validation et solde', async () => {
+  /** Rend le dossier visible au livreur (prêt à livrer) sans passer par l'atelier. */
+  const pretALivrer = (id: number) =>
+    getPool().query(`UPDATE dossiers SET statut = 'pret_livraison', date_validation = now(), date_fin_impression = now() WHERE id = $1`, [id]);
+
+  it('le livreur encaisse « à valider », le préparateur jamais ; refus du dépassement, validation et solde', async () => {
     const d = await A.prep.post('/api/dossiers').send(bache);
     dossierId = d.body.id;
-    expect(d.body.montant).toBe(45000);
+    expect(d.body).not.toHaveProperty('montant');
+    expect((await A.admin.get(`/api/dossiers/${dossierId}`)).body.montant).toBe(45000);
 
-    const p1 = await A.prep.post(`/api/dossiers/${dossierId}/paiements`).send({ montant: 20000, mode: 'especes' });
-    expect(p1.status).toBe(201);
-    expect(p1.body).toMatchObject({ statut: 'a_valider', montant: 20000, numero: d.body.numero, encaisse_par_nom: 'Fatou Sarr' });
-
-    const trop = await A.prep.post(`/api/dossiers/${dossierId}/paiements`).send({ montant: 30000, mode: 'especes' });
-    expect(trop.status).toBe(409);
-    const sansRef = await A.prep.post(`/api/dossiers/${dossierId}/paiements`).send({ montant: 1000, mode: 'wave' });
-    expect(sansRef.status).toBe(400);
+    // Seuls l'administrateur et le livreur enregistrent un paiement.
+    expect((await A.prep.post(`/api/dossiers/${dossierId}/paiements`).send({ montant: 20000, mode: 'especes' })).status).toBe(403);
     expect((await A.roland.post(`/api/dossiers/${dossierId}/paiements`).send({ montant: 1000, mode: 'especes' })).status).toBe(403);
     // Le livreur ne voit pas un dossier en préparation : il ne peut pas y encaisser.
     expect((await A.livreur.post(`/api/dossiers/${dossierId}/paiements`).send({ montant: 1000, mode: 'especes' })).status).toBe(404);
+    await pretALivrer(dossierId);
+
+    const p1 = await A.livreur.post(`/api/dossiers/${dossierId}/paiements`).send({ montant: 20000, mode: 'especes' });
+    expect(p1.status).toBe(201);
+    expect(p1.body).toMatchObject({ statut: 'a_valider', montant: 20000, numero: d.body.numero, encaisse_par_nom: 'Ousmane Gueye' });
+
+    const trop = await A.livreur.post(`/api/dossiers/${dossierId}/paiements`).send({ montant: 30000, mode: 'especes' });
+    expect(trop.status).toBe(409);
+    const sansRef = await A.livreur.post(`/api/dossiers/${dossierId}/paiements`).send({ montant: 1000, mode: 'wave' });
+    expect(sansRef.status).toBe(400);
 
     expect((await A.prep.post(`/api/paiements/${p1.body.id}/valider`)).status).toBe(403);
+    expect((await A.livreur.post(`/api/paiements/${p1.body.id}/valider`)).status).toBe(403);
 
     const aValider = await A.admin.get('/api/paiements?statut=a_valider');
     expect(aValider.body.total).toBe(1);
@@ -252,18 +266,25 @@ describe('paiements', () => {
     expect(v.body).toMatchObject({ statut: 'valide', valide_par_nom: 'Awa Ndiaye' });
     expect((await A.admin.post(`/api/paiements/${p1.body.id}/valider`)).status).toBe(409);
 
-    const fiche = await A.prep.get(`/api/dossiers/${dossierId}`);
+    const fiche = await A.admin.get(`/api/dossiers/${dossierId}`);
     expect(fiche.body.deja_paye).toBe(20000);
     expect(fiche.body.solde).toBe(25000);
     expect(fiche.body.situation_paiement).toBe('partiel');
     expect(fiche.body.historique.map((e: any) => e.action)).toEqual(expect.arrayContaining(['encaisse', 'valide']));
 
-    const notifs = await A.prep.get('/api/notifications');
+    // Le préparateur ouvre son dossier, mais sans montant, sans paiements et sans l'historique d'argent.
+    const prep = await A.prep.get(`/api/dossiers/${dossierId}`);
+    expect(prep.status).toBe(200);
+    for (const k of ['montant', 'deja_paye', 'solde', 'situation_paiement', 'detail_prix']) expect(prep.body).not.toHaveProperty(k);
+    expect(prep.body.paiements).toEqual([]);
+    expect(prep.body.historique.map((e: any) => e.type)).not.toContain('paiement');
+
+    const notifs = await A.livreur.get('/api/notifications');
     expect(notifs.body.items.some((n: any) => n.type === 'paiement_valide' && n.dossier_id === dossierId)).toBe(true);
   });
 
   it('le refus exige un motif et notifie ; un paiement refusé ne se valide plus', async () => {
-    const p = await A.prep.post(`/api/dossiers/${dossierId}/paiements`).send({ montant: 5000, mode: 'orange_money', reference: 'OM-778899' });
+    const p = await A.livreur.post(`/api/dossiers/${dossierId}/paiements`).send({ montant: 5000, mode: 'orange_money', reference: 'OM-778899' });
     expect(p.status).toBe(201);
     const sans = await A.admin.post(`/api/paiements/${p.body.id}/refuser`).send({});
     expect(sans.status).toBe(400);
@@ -274,7 +295,7 @@ describe('paiements', () => {
     expect(r.body).toMatchObject({ statut: 'refuse', motif_refus: 'Transaction introuvable chez Orange Money' });
     expect((await A.admin.post(`/api/paiements/${p.body.id}/valider`)).status).toBe(409);
     expect((await A.admin.post(`/api/paiements/${p.body.id}/refuser`).send({ motif: 'Encore' })).status).toBe(409);
-    const notifs = await A.prep.get('/api/notifications');
+    const notifs = await A.livreur.get('/api/notifications');
     expect(notifs.body.items.some((n: any) => n.type === 'paiement_refuse')).toBe(true);
   });
 
@@ -285,12 +306,13 @@ describe('paiements', () => {
     const fiche = await A.admin.get(`/api/dossiers/${dossierId}`);
     expect(fiche.body.deja_paye).toBe(45000);
     expect(fiche.body.situation_paiement).toBe('paye');
-    expect((await A.prep.post(`/api/dossiers/${dossierId}/paiements`).send({ montant: 1, mode: 'especes' })).status).toBe(409);
+    expect((await A.livreur.post(`/api/dossiers/${dossierId}/paiements`).send({ montant: 1, mode: 'especes' })).status).toBe(409);
   });
 
   it('revérifie le montant à la validation', async () => {
     const d = await A.prep.post('/api/dossiers').send(flyers); // 50 000
-    const p = await A.prep.post(`/api/dossiers/${d.body.id}/paiements`).send({ montant: 30000, mode: 'especes' });
+    await pretALivrer(d.body.id);
+    const p = await A.livreur.post(`/api/dossiers/${d.body.id}/paiements`).send({ montant: 30000, mode: 'especes' });
     expect(p.status).toBe(201);
     await A.admin.patch(`/api/dossiers/${d.body.id}`).send({ montant: 20000 }).expect(200);
     const v = await A.admin.post(`/api/paiements/${p.body.id}/valider`);
@@ -298,20 +320,20 @@ describe('paiements', () => {
     expect(v.body.details).toEqual({ deja_paye: 0, montant_dossier: 20000 });
   });
 
-  it('chacun voit ses encaissements ; la caisse résume par encaisseur et par mode', async () => {
-    const mine = await A.prep.get('/api/paiements');
-    expect(mine.status).toBe(200);
-    expect(mine.body.items.length).toBeGreaterThan(0);
-    expect(mine.body.items.every((p: any) => p.encaisse_par_nom === 'Fatou Sarr')).toBe(true);
+  it('le livreur voit ses encaissements, le préparateur aucun ; la caisse résume par encaisseur et par mode', async () => {
     const liv = await A.livreur.get('/api/paiements');
-    expect(liv.body).toMatchObject({ items: [], total: 0, somme: 0 });
+    expect(liv.status).toBe(200);
+    expect(liv.body.items.length).toBeGreaterThan(0);
+    expect(liv.body.items.every((p: any) => p.encaisse_par_nom === 'Ousmane Gueye')).toBe(true);
+    expect((await A.prep.get('/api/paiements')).status).toBe(403);
     expect((await A.roland.get('/api/paiements')).status).toBe(403);
 
     const caisse = await A.admin.get('/api/caisse');
     expect(caisse.status).toBe(200);
-    const prep = caisse.body.par_encaisseur.find((e: any) => e.nom === 'Fatou Sarr');
-    expect(prep.a_valider).toEqual({ n: 1, somme: 30000 });
-    expect(prep.valide_aujourdhui).toEqual({ n: 1, somme: 20000 });
+    const livreur = caisse.body.par_encaisseur.find((e: any) => e.nom === 'Ousmane Gueye');
+    expect(livreur.a_valider).toEqual({ n: 1, somme: 30000 });
+    expect(livreur.valide_aujourdhui).toEqual({ n: 1, somme: 20000 });
+    expect(caisse.body.par_encaisseur.some((e: any) => e.nom === 'Fatou Sarr')).toBe(false);
     const admin = caisse.body.par_encaisseur.find((e: any) => e.nom === 'Awa Ndiaye');
     expect(admin.valide_aujourdhui).toEqual({ n: 1, somme: 25000 });
     const especes = caisse.body.par_mode.find((m: any) => m.mode === 'especes');
@@ -326,7 +348,7 @@ describe('devis', () => {
   let dossierId: number;
 
   it('chiffre avec le moteur et refuse un devis incalculable (422)', async () => {
-    const r = await A.prep.post('/api/devis').send({ ...flyers, description: 'Flyers fête de quartier', notes: 'Livraison possible' });
+    const r = await A.admin.post('/api/devis').send({ ...flyers, description: 'Flyers fête de quartier', notes: 'Livraison possible' });
     expect(r.status).toBe(201);
     expect(r.body.numero).toBe(`DEV-${ANNEE}-0001`);
     expect(r.body).toMatchObject({ statut: 'brouillon', total_ttc: 50000, validite_jours: 15, peut_modifier: true, peut_supprimer: true });
@@ -334,77 +356,78 @@ describe('devis', () => {
     expect(r.body.transitions).toEqual(['envoye']);
     devisId = r.body.id;
 
-    const ko = await A.prep.post('/api/devis').send({ ...bache, specs: { lignes: [{ ...bache.specs.lignes[0], support: 'mesh_m2' }] } });
+    const ko = await A.admin.post('/api/devis').send({ ...bache, specs: { lignes: [{ ...bache.specs.lignes[0], support: 'mesh_m2' }] } });
     expect(ko.status).toBe(422);
     expect(ko.body.details.erreurs[0]).toContain('Bâche mesh');
-    expect((await A.prep.post('/api/devis').send({ ...flyers, specs: { lignes: [] } })).status).toBe(422);
+    expect((await A.admin.post('/api/devis').send({ ...flyers, specs: { lignes: [] } })).status).toBe(422);
     expect((await A.livreur.get('/api/devis')).status).toBe(403);
   });
 
   it('recalcule à la modification et suit le circuit des statuts', async () => {
-    const p = await A.prep.patch(`/api/devis/${devisId}`).send({ specs: { lignes: [{ ...flyers.specs.lignes[0], quantite: 1000 }] } });
+    const p = await A.admin.patch(`/api/devis/${devisId}`).send({ specs: { lignes: [{ ...flyers.specs.lignes[0], quantite: 1000 }] } });
     expect(p.status).toBe(200);
     expect(p.body.total_ttc).toBe(100000);
-    expect((await A.prep.post(`/api/devis/${devisId}/convertir`)).status).toBe(409);
-    expect((await A.prep.post(`/api/devis/${devisId}/statut`).send({ statut: 'accepte' })).status).toBe(409);
-    expect((await A.prep.post(`/api/devis/${devisId}/statut`).send({ statut: 'converti' })).status).toBe(400);
-    const e = await A.prep.post(`/api/devis/${devisId}/statut`).send({ statut: 'envoye' });
+    expect((await A.admin.post(`/api/devis/${devisId}/convertir`)).status).toBe(409);
+    expect((await A.admin.post(`/api/devis/${devisId}/statut`).send({ statut: 'accepte' })).status).toBe(409);
+    expect((await A.admin.post(`/api/devis/${devisId}/statut`).send({ statut: 'converti' })).status).toBe(400);
+    const e = await A.admin.post(`/api/devis/${devisId}/statut`).send({ statut: 'envoye' });
     expect(e.status).toBe(200);
     expect(e.body.transitions).toEqual(['accepte', 'refuse']);
-    expect((await A.prep.post(`/api/devis/${devisId}/statut`).send({ statut: 'accepte' })).body.statut).toBe('accepte');
-    expect((await A.prep.patch(`/api/devis/${devisId}`).send({ notes: 'trop tard' })).status).toBe(409);
-    expect((await A.prep.delete(`/api/devis/${devisId}`)).status).toBe(409);
-    const liste = await A.prep.get('/api/devis?statut=accepte');
+    expect((await A.admin.post(`/api/devis/${devisId}/statut`).send({ statut: 'accepte' })).body.statut).toBe('accepte');
+    expect((await A.admin.patch(`/api/devis/${devisId}`).send({ notes: 'trop tard' })).status).toBe(409);
+    expect((await A.admin.delete(`/api/devis/${devisId}`)).status).toBe(409);
+    const liste = await A.admin.get('/api/devis?statut=accepte');
     expect(liste.body.total).toBe(1);
     expect(liste.body.items[0].id).toBe(devisId);
   });
 
   it('convertit en dossier au montant du devis, une seule fois', async () => {
-    const c = await A.prep.post(`/api/devis/${devisId}/convertir`).send({ urgent: true });
+    const c = await A.admin.post(`/api/devis/${devisId}/convertir`).send({ urgent: true });
     expect(c.status).toBe(201);
     dossierId = c.body.dossier_id;
-    const d = await A.prep.get(`/api/dossiers/${dossierId}`);
+    const d = await A.admin.get(`/api/dossiers/${dossierId}`);
     expect(d.body).toMatchObject({ montant: 100000, montant_source: 'devis', devis_id: devisId, urgent: true, client_nom: 'Mairie de Pikine' });
     expect(d.body.detail_prix.total_ttc).toBe(100000);
-    const dv = await A.prep.get(`/api/devis/${devisId}`);
+    const dv = await A.admin.get(`/api/devis/${devisId}`);
     expect(dv.body).toMatchObject({ statut: 'converti', dossier_id: dossierId, peut_convertir: false });
     expect(dv.body.dossier_numero).toBe(d.body.numero);
-    const encore = await A.prep.post(`/api/devis/${devisId}/convertir`);
+    const encore = await A.admin.post(`/api/devis/${devisId}/convertir`);
     expect(encore.status).toBe(409);
     expect(encore.body.details.dossier_id).toBe(dossierId);
   });
 
   it('deux conversions simultanées ne créent qu’un dossier', async () => {
-    const r = await A.prep.post('/api/devis').send(flyers);
-    await A.prep.post(`/api/devis/${r.body.id}/statut`).send({ statut: 'envoye' }).expect(200);
-    const [a, b] = await Promise.all([A.prep.post(`/api/devis/${r.body.id}/convertir`), A.admin.post(`/api/devis/${r.body.id}/convertir`)]);
+    const r = await A.admin.post('/api/devis').send(flyers);
+    await A.admin.post(`/api/devis/${r.body.id}/statut`).send({ statut: 'envoye' }).expect(200);
+    const [a, b] = await Promise.all([A.admin.post(`/api/devis/${r.body.id}/convertir`), A.admin.post(`/api/devis/${r.body.id}/convertir`)]);
     expect([a.status, b.status].sort()).toEqual([201, 409]);
     const n = await getPool().query(`SELECT count(*)::int AS n FROM dossiers WHERE devis_id = $1`, [r.body.id]);
     expect(n.rows[0].n).toBe(1);
   });
 
-  it("un préparateur ne voit que ses devis ; l'administrateur les voit tous", async () => {
+  it("les devis sont réservés à l'administrateur : le préparateur n'y accède pas du tout", async () => {
     const r = await A.admin.post('/api/devis').send({ ...flyers, client_nom: 'Devis admin' });
     expect(r.status).toBe(201);
-    expect((await A.prep.get(`/api/devis/${r.body.id}`)).status).toBe(404);
-    expect((await A.prep.get(`/api/devis/${r.body.id}/pdf`)).status).toBe(404);
-    expect((await A.prep.post(`/api/devis/${r.body.id}/statut`).send({ statut: 'envoye' })).status).toBe(404);
-    const liste = await A.prep.get('/api/devis?limit=200');
-    expect(liste.body.items.some((d: any) => d.id === r.body.id)).toBe(false);
+    expect((await A.prep.get('/api/devis')).status).toBe(403);
+    expect((await A.prep.post('/api/devis').send(flyers)).status).toBe(403);
+    expect((await A.prep.get(`/api/devis/${r.body.id}`)).status).toBe(403);
+    expect((await A.prep.get(`/api/devis/${r.body.id}/pdf`)).status).toBe(403);
+    expect((await A.prep.post(`/api/devis/${r.body.id}/statut`).send({ statut: 'envoye' })).status).toBe(403);
+    expect((await A.prep.post(`/api/devis/${r.body.id}/convertir`)).status).toBe(403);
     const tous = await A.admin.get('/api/devis?q=devis admin');
     expect(tous.body.items.map((d: any) => d.id)).toEqual([r.body.id]);
   });
 
   it('supprime un brouillon et produit le PDF', async () => {
-    const r = await A.prep.post('/api/devis').send(bache);
-    const pdf = await A.prep.get(`/api/devis/${r.body.id}/pdf`).buffer(true).parse(binaire);
+    const r = await A.admin.post('/api/devis').send(bache);
+    const pdf = await A.admin.get(`/api/devis/${r.body.id}/pdf`).buffer(true).parse(binaire);
     expect(pdf.status).toBe(200);
     expect(pdf.headers['content-type']).toBe('application/pdf');
     expect(pdf.headers['content-disposition']).toContain(`Devis ${r.body.numero}.pdf`);
     expect((pdf.body as Buffer).subarray(0, 5).toString()).toBe('%PDF-');
     expect((pdf.body as Buffer).length).toBeGreaterThan(1500);
-    await A.prep.delete(`/api/devis/${r.body.id}`).expect(204);
-    expect((await A.prep.get(`/api/devis/${r.body.id}`)).status).toBe(404);
+    await A.admin.delete(`/api/devis/${r.body.id}`).expect(204);
+    expect((await A.admin.get(`/api/devis/${r.body.id}`)).status).toBe(404);
   });
 });
 
@@ -415,13 +438,15 @@ describe('factures', () => {
   it('émet la facture d’un dossier (lignes du détail de prix), une seule fois, numéros sans trou', async () => {
     const d = await A.prep.post('/api/dossiers').send({ ...bache, client_nom: 'Hôtel Saly' });
     rolandId = d.body.id;
-    const sansMontant = await A.prep.post('/api/dossiers').send({ ...flyers, client_nom: 'Sans prix', specs: { lignes: [] } });
+    const sansMontant = await A.admin.post('/api/dossiers').send({ ...flyers, client_nom: 'Sans prix', specs: { lignes: [] } });
     expect(sansMontant.body.montant).toBeNull();
-    const ko = await A.prep.post(`/api/dossiers/${sansMontant.body.id}/facture`);
+    const ko = await A.admin.post(`/api/dossiers/${sansMontant.body.id}/facture`);
     expect(ko.status).toBe(409);
     expect(ko.body.error).toContain('montant');
 
-    const f = await A.prep.post(`/api/dossiers/${rolandId}/facture`);
+    // Le préparateur n'émet pas de facture, même pour son dossier.
+    expect((await A.prep.post(`/api/dossiers/${rolandId}/facture`)).status).toBe(403);
+    const f = await A.admin.post(`/api/dossiers/${rolandId}/facture`);
     expect(f.status).toBe(201);
     factureId = f.body.id;
     expect(f.body).toMatchObject({ numero: `FAC-${ANNEE}-0001`, statut: 'emise', total_ttc: 45000, total_ht: 45000, tva: 0, client_nom: 'Hôtel Saly' });
@@ -430,7 +455,7 @@ describe('factures', () => {
     expect(f.body.lignes[0].detail).toContain('300 × 200 cm');
     expect(f.body).toMatchObject({ deja_paye: 0, reste: 45000, situation_paiement: 'non_paye' });
 
-    const deux = await A.prep.post(`/api/dossiers/${rolandId}/facture`);
+    const deux = await A.admin.post(`/api/dossiers/${rolandId}/facture`);
     expect(deux.status).toBe(409);
     expect(deux.body.details.facture_id).toBe(factureId);
 
@@ -442,8 +467,10 @@ describe('factures', () => {
     expect(f2.body.total_ttc).toBe(100000);
     expect((await A.livreur.post(`/api/dossiers/${rolandId}/facture`)).status).toBe(403);
 
-    const fiche = await A.prep.get(`/api/dossiers/${rolandId}`);
+    const fiche = await A.admin.get(`/api/dossiers/${rolandId}`);
     expect(fiche.body.facture.numero).toBe(`FAC-${ANNEE}-0001`);
+    // Le préparateur sait qu'une facture existe (numéro), sans son montant.
+    expect((await A.prep.get(`/api/dossiers/${rolandId}`)).body.facture.numero).toBe(`FAC-${ANNEE}-0001`);
   });
 
   it('avec TVA, les lignes sont ramenées au hors taxes et totalisent exactement le HT', async () => {
@@ -462,8 +489,8 @@ describe('factures', () => {
   });
 
   it('une facture sans détail de prix porte une ligne « Travaux d’impression »', async () => {
-    const d = await A.prep.post('/api/dossiers').send({ ...flyers, client_nom: 'Forfait', specs: { lignes: [] }, montant: 12000 });
-    const f = await A.prep.post(`/api/dossiers/${d.body.id}/facture`);
+    const d = await A.admin.post('/api/dossiers').send({ ...flyers, client_nom: 'Forfait', specs: { lignes: [] }, montant: 12000 });
+    const f = await A.admin.post(`/api/dossiers/${d.body.id}/facture`);
     expect(f.status).toBe(201);
     expect(f.body.lignes).toHaveLength(1);
     expect(f.body.lignes[0]).toMatchObject({ designation: `Travaux d'impression ${d.body.numero}`, total: 12000 });
@@ -471,17 +498,20 @@ describe('factures', () => {
 
   it('liste avec somme, situation de paiement et PDF', async () => {
     await A.admin.post(`/api/dossiers/${rolandId}/paiements`).send({ montant: 15000, mode: 'especes' }).expect(201);
-    const f = await A.prep.get(`/api/factures/${factureId}`);
+    const f = await A.admin.get(`/api/factures/${factureId}`);
     expect(f.body).toMatchObject({ deja_paye: 15000, reste: 30000, situation_paiement: 'partiel', dossier_numero: expect.stringMatching(/^CMD-/) });
-    const liste = await A.prep.get('/api/factures');
+    const liste = await A.admin.get('/api/factures');
     expect(liste.body.total).toBe(3);
     expect(liste.body.somme_ttc).toBe(45000 + 100000 + 12000);
-    expect((await A.prep.get('/api/factures?q=hôtel')).body.total).toBe(1);
-    expect((await A.prep.get(`/api/factures?from=${jour(1)}`)).body.total).toBe(0);
-    expect((await A.prep.get('/api/factures?from=2026-13-01')).status).toBe(400);
+    expect((await A.admin.get('/api/factures?q=hôtel')).body.total).toBe(1);
+    expect((await A.admin.get(`/api/factures?from=${jour(1)}`)).body.total).toBe(0);
+    expect((await A.admin.get('/api/factures?from=2026-13-01')).status).toBe(400);
     expect((await A.roland.get('/api/factures')).status).toBe(403);
+    expect((await A.prep.get('/api/factures')).status).toBe(403);
+    expect((await A.prep.get(`/api/factures/${factureId}`)).status).toBe(403);
+    expect((await A.prep.get(`/api/factures/${factureId}/pdf`)).status).toBe(403);
 
-    const pdf = await A.prep.get(`/api/factures/${factureId}/pdf`).buffer(true).parse(binaire);
+    const pdf = await A.admin.get(`/api/factures/${factureId}/pdf`).buffer(true).parse(binaire);
     expect(pdf.status).toBe(200);
     expect(pdf.headers['content-type']).toBe('application/pdf');
     expect((pdf.body as Buffer).subarray(0, 5).toString()).toBe('%PDF-');
@@ -494,11 +524,11 @@ describe('factures', () => {
     expect(a.status).toBe(200);
     expect(a.body).toMatchObject({ statut: 'annulee', motif_annulation: 'Erreur sur le client', numero: `FAC-${ANNEE}-0001`, annulee_par_nom: 'Awa Ndiaye' });
     expect((await A.admin.post(`/api/factures/${factureId}/annuler`).send({ motif: 'Encore' })).status).toBe(409);
-    const liste = await A.prep.get('/api/factures');
+    const liste = await A.admin.get('/api/factures');
     expect(liste.body.somme_ttc).toBe(100000 + 12000);
-    const pdf = await A.prep.get(`/api/factures/${factureId}/pdf`).buffer(true).parse(binaire);
+    const pdf = await A.admin.get(`/api/factures/${factureId}/pdf`).buffer(true).parse(binaire);
     expect((pdf.body as Buffer).subarray(0, 5).toString()).toBe('%PDF-');
-    const nouvelle = await A.prep.post(`/api/dossiers/${rolandId}/facture`);
+    const nouvelle = await A.admin.post(`/api/dossiers/${rolandId}/facture`);
     expect(nouvelle.status).toBe(201);
     expect(nouvelle.body.numero).toBe(`FAC-${ANNEE}-0004`);
   });
@@ -598,7 +628,11 @@ describe('statistiques', () => {
     await A.admin.post(`/api/dossiers/${d1.body.id}/paiements`).send({ montant: 20000, mode: 'especes' }).expect(201);
     // D2 : Xerox 50 000, urgent, promis hier (en retard), 10 000 à valider.
     const d2 = await A.prep.post('/api/dossiers').send({ ...flyers, urgent: true, date_promise: jour(-1) });
-    await A.prep.post(`/api/dossiers/${d2.body.id}/paiements`).send({ montant: 10000, mode: 'wave', reference: 'WV-1' }).expect(201);
+    await getPool().query(
+      `INSERT INTO paiements (dossier_id, montant, mode, reference, statut, encaisse_par, encaisse_at)
+       VALUES ($1, 10000, 'wave', 'WV-1', 'a_valider', (SELECT id FROM users WHERE email = $2), now())`,
+      [d2.body.id, comptes.livreur],
+    );
     // D3 : supprimé, ne compte nulle part.
     const d3 = await A.prep.post('/api/dossiers').send({ ...flyers, client_nom: 'Supprimé', urgent: true });
     await A.admin.delete(`/api/dossiers/${d3.body.id}`).send({}).expect(204);

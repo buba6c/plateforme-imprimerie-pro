@@ -126,7 +126,8 @@ export interface Tarif {
   code: string;
   libelle: string;
   unite: string;
-  prix: number | null;
+  /** Absent (undefined) pour les rôles qui ne voient pas les prix : la grille vient alors de /tarifs/libelles. */
+  prix?: number | null;
   actif: boolean;
   ordre: number;
   description: string | null;

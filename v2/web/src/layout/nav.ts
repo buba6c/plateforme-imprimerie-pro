@@ -1,5 +1,6 @@
 import type { LucideIcon } from 'lucide-react';
 import {
+  BookmarkCheck,
   BarChart3,
   Banknote,
   ClipboardList,
@@ -47,6 +48,7 @@ export function navigationPour(role: Role): NavSection[] {
         { items: [
           { to: '/tableau-de-bord', label: "Vue d'ensemble", icon: LayoutDashboard, mobile: true },
           { to: '/dossiers', label: 'Dossiers', icon: FolderOpen, mobile: true },
+          { to: '/modeles', label: 'Modèles', icon: BookmarkCheck },
           { to: '/fichiers', label: 'Fichiers', icon: Files },
           { to: '/paiements', label: 'Paiements', icon: Banknote, mobile: true, countKey: 'paiements_a_valider' },
         ] },
@@ -72,11 +74,8 @@ export function navigationPour(role: Role): NavSection[] {
       return [
         { items: [
           { to: '/dossiers', label: 'Dossiers', icon: FolderOpen, mobile: true },
-          { to: '/fichiers', label: 'Fichiers', icon: Files },
-          { to: '/devis', label: 'Devis', icon: FileText, mobile: true },
-          { to: '/factures', label: 'Factures', icon: ReceiptText },
-          { to: '/clients', label: 'Clients', icon: UserRound, mobile: true },
-          { to: '/encaissements', label: 'Mes encaissements', icon: Banknote },
+          { to: '/modeles', label: 'Modèles', icon: BookmarkCheck, mobile: true },
+          { to: '/fichiers', label: 'Fichiers', icon: Files, mobile: true },
         ] },
       ];
     case 'imprimeur_roland':

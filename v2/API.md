@@ -4,6 +4,20 @@ Toutes les routes sont sous `/api`, en JSON, authentifiées par le cookie HttpOn
 (sauf `POST /auth/login` et `GET /health`). Erreurs : `{ error: "message lisible en français", code?, champs?, details? }`.
 Montants : entiers en FCFA. Dates : ISO 8601 (`date` = `AAAA-MM-JJ`).
 
+## Rôles : qui voit quoi (règle du 12 octobre 2026)
+
+- **Préparateur** : ne voit que **ses propres dossiers et fichiers** (filtre SQL sur `preparateur_id`, 404 ailleurs) ;
+  **jamais de montant** (`montant`, `montant_source`, `detail_prix`, `solde`, `deja_paye`, `en_attente_validation`,
+  `situation_paiement` absents, `paiements` vide, événements `paiement` retirés de l'historique) ; **n'encaisse pas**
+  (403, y compris `encaissement` joint à `remettre_client`) ; **ne fixe pas le prix** (`montant` ignoré à la création
+  et à la modification ; un prix incalculable laisse le dossier « montant à définir » sans erreur) ; **pas d'accès**
+  aux devis, aux factures, aux fiches clients (hors `/clients/recherche`), à `/tarifs` ni à `/tarifs/estimer`
+  (la grille sans prix vient de `/tarifs/libelles`). Les modèles de dossier restent partagés entre préparateurs.
+- **Administrateur** : voit tout et gère seul l'argent (encaissements validés d'office, validation des paiements,
+  devis, factures, prix).
+- **Livreur** : inchangé (encaisse « à valider » à la livraison, voit le reste à payer de ses tournées).
+- **Imprimeurs** : inchangés (leur machine, sans téléphone ni montant).
+
 ## Déjà en place
 
 | Méthode | Route | Rôles | Rôle |
@@ -33,10 +47,10 @@ Montants : entiers en FCFA. Dates : ISO 8601 (`date` = `AAAA-MM-JJ`).
 | GET | /fichiers/:id/contenu[?telecharger=1] | tous sauf livreur, si le dossier est visible | flux, Range accepté |
 | PATCH | /fichiers/:id `{a_reimprimer}` | admin, imprimeur de la machine, préparateur propriétaire | 204 |
 | DELETE | /fichiers/:id | comme l'envoi | 204 |
-| GET | /tarifs | admin, preparateur | toutes les lignes |
-| GET | /tarifs/libelles | tous | `[{machine,categorie,code,libelle,unite}]` sans les prix |
+| GET | /tarifs | admin | toutes les lignes, avec les prix |
+| GET | /tarifs/libelles | tous | `[{id,machine,categorie,code,libelle,unite,actif,ordre,description}]` : la grille sans les prix (c'est celle des préparateurs et des imprimeurs) |
 | POST / PATCH | /tarifs[/:id] | admin | |
-| POST | /tarifs/estimer `{machine,specs}` | admin, preparateur | `ResultatPrix` ou `{ok:false,erreurs}` |
+| POST | /tarifs/estimer `{machine,specs}` | admin | `ResultatPrix` ou `{ok:false,erreurs}` |
 
 Socket.IO (`/socket.io`, cookie) : événements `dossier {type,id,numero,statut,machine}`, `paiement {dossier_id}`,
 `notification {id,type,titre,message,dossier_id,created_at}`.
@@ -49,22 +63,22 @@ Socket.IO (`/socket.io`, cookie) : événements `dossier {type,id,numero,statut,
 | POST | /notifications/lues `{ids?: number[]}` | tous | 204 (toutes si `ids` absent) |
 | GET | /parametres | tous | `{entreprise, prix, livreur_jours_historique, fuseau}` (champs sensibles : aucun) |
 | PUT | /parametres `{entreprise?, prix?, livreur_jours_historique?, fuseau?}` | admin | paramètres complets ; journalisé |
-| GET | /clients?q&page&limit | admin, preparateur | `{items:[{id,nom,telephone,email,nb_dossiers,total_commandes,reste_du,dernier_dossier_at}], total}` |
+| GET | /clients?q&page&limit | admin | `{items:[{id,nom,telephone,email,nb_dossiers,total_commandes,reste_du,dernier_dossier_at}], total}` |
 | GET | /clients/recherche?q | admin, preparateur | `[{id,nom,telephone,email}]` (10 max, pour l'autocomplétion) |
-| GET | /clients/:id | admin, preparateur | client + `dossiers[]` (20 derniers) + totaux `{nb_dossiers,total_commandes,total_paye,reste_du}` |
-| POST | /clients `{nom,telephone?,email?,adresse?,notes?}` | admin, preparateur | 201 |
-| PATCH | /clients/:id | admin, preparateur | |
+| GET | /clients/:id | admin | client + `dossiers[]` (20 derniers) + totaux `{nb_dossiers,total_commandes,total_paye,reste_du}` |
+| POST | /clients `{nom,telephone?,email?,adresse?,notes?}` | admin | 201 |
+| PATCH | /clients/:id | admin | |
 | POST | /clients/:id/fusionner `{dans_id}` | admin | déplace dossiers/devis/factures vers `dans_id`, marque `fusionne_dans` |
-| GET | /paiements?statut=a_valider\|valide\|refuse&livreur_id&from&to&page&limit | admin (tout) ; livreur (les siens) ; préparateur (les siens) | `{items:[{id,dossier_id,numero,client_nom,montant,mode,reference,statut,notes,encaisse_par_nom,encaisse_at,valide_par_nom,valide_at,motif_refus}], total, somme}` |
-| POST | /dossiers/:id/paiements `{montant,mode,reference?,notes?}` | admin (validé d'office), préparateur, livreur (à valider) | paiement créé ; refuse un dépassement du reste à payer |
+| GET | /paiements?statut=a_valider\|valide\|refuse&livreur_id&from&to&page&limit | admin (tout) ; livreur (les siens) ; préparateur : 403 | `{items:[{id,dossier_id,numero,client_nom,montant,mode,reference,statut,notes,encaisse_par_nom,encaisse_at,valide_par_nom,valide_at,motif_refus}], total, somme}` |
+| POST | /dossiers/:id/paiements `{montant,mode,reference?,notes?}` | admin (validé d'office), livreur (à valider) ; préparateur : 403 | paiement créé ; refuse un dépassement du reste à payer |
 | POST | /paiements/:id/valider | admin | 409 si déjà traité, dossier à la corbeille ou dépassement du montant (`details:{deja_paye,montant_dossier}`) |
 | POST | /paiements/:id/refuser `{motif}` | admin | motif obligatoire |
 | POST | /paiements/valider-groupe `{ids}` | admin | 1 à 500 ids ; `{valides, somme, ids[], refuses:[{id,numero,code,message,details?}]}` (voir plus bas) |
 | GET | /paiements/historique?avant | admin | aperçu sans écriture de la validation de l'historique importé : `{avant, borne, n, somme, ignores:{n,somme,depassement,exemples[]}, importes_a_valider:{n,somme}}` |
 | POST | /paiements/valider-historique `{avant, mot_de_passe}` | admin | valide d'un coup les paiements importés à valider (voir plus bas) ; `{avant, borne, n, somme, ignores}` |
 | GET | /caisse | admin | par encaisseur : `[{user_id,nom,role,a_valider:{n,somme},valide_aujourdhui:{n,somme},refuse_aujourdhui:{n,somme}}]` + par mode |
-| GET | /devis?statut&q&page&limit | admin (tous), préparateur (les siens) | `{items,total}` |
-| POST | /devis `{machine,client_id?,client_nom,client_telephone?,client_email?,description?,specs,notes?,validite_jours?}` | admin, preparateur | prix calculé par le moteur ; 422 avec `details.erreurs` si incalculable |
+| GET | /devis?statut&q&page&limit | admin | `{items,total}` |
+| POST | /devis `{machine,client_id?,client_nom,client_telephone?,client_email?,description?,specs,notes?,validite_jours?}` | admin | prix calculé par le moteur ; 422 avec `details.erreurs` si incalculable |
 | GET | /devis/:id | | devis + `detail_prix` |
 | PATCH | /devis/:id | auteur ou admin, statut brouillon/envoye | recalcule |
 | POST | /devis/:id/statut `{statut: envoye\|accepte\|refuse}` | auteur ou admin | |
@@ -108,7 +122,7 @@ Le prix est toujours recalculé par le moteur (`calculerPrix`) et la grille, jam
 | GET | /ia/config | admin | `{actif, modele, modeles[], cle_configuree, cle_fin, cle_lisible, updated_at, updated_by_nom}` ; la clé n'est jamais renvoyée |
 | PUT | /ia/config `{actif?, modele?: gpt-4o-mini\|gpt-4o\|gpt-4.1-mini, cle?: string\|null}` | admin | configuration ; `cle: null` efface la clé et désactive ; 409 si activation sans clé ; clé `sk-…` (20 à 300 caractères), chiffrée AES-256-GCM ; journalisé `ia_config_modifiee` sans la clé |
 | POST | /ia/test `{cle?, modele?}` | admin | `{ok, modele, duree_ms}` ; teste la clé fournie ou l'enregistrée ; 409 si absente ou illisible |
-| POST | /ia/suggestion `{description (1 à 2000), machine?: roland\|xerox}` | admin, preparateur | `{machine, specs, prix: {total, …ResultatPrix}\|null, erreur_prix?, avertissements[], remarques?}` ; codes de tarif inconnus ou sans prix retirés avec un avertissement |
+| POST | /ia/suggestion `{description (1 à 2000), machine?: roland\|xerox}` | admin, preparateur | `{machine, specs, prix: {total, …ResultatPrix}\|null, erreur_prix?, avertissements[], remarques?}` (`prix` toujours `null` et `erreur_prix` absent pour le préparateur) ; codes de tarif inconnus ou sans prix retirés avec un avertissement |
 | GET | /ia/usages?limit (50, 200 max) | admin | `{items:[{id,user_nom,type,statut,modele,duree_ms,jetons_entree,jetons_sortie,longueur_demande,extrait,created_at}], totaux_30_jours}` (extrait ≤ 120 caractères ; ni la demande complète ni la réponse ne sont gardées) |
 
 Erreurs de `/ia/suggestion` : 409 `ia_inactif`, 409 `ia_cle_illisible` (secret de chiffrement changé : ressaisir la clé),
@@ -221,7 +235,7 @@ une facture directe a `dossier_id`, `dossier_numero`, `deja_paye`, `reste` et `s
 | Méthode | Route | Rôles | Rôle |
 |---|---|---|---|
 | GET | /factures?q&from&to&statut&vosfactures&origine&client_id&dossier_id&page&limit | admin, preparateur | **toutes les factures par défaut** (aucun filtre de période implicite) ; `q` cherche numéro, client, dossier et numéro VosFactures ; `vosfactures` = `envoyee` \| `non_envoyee` \| `erreur` ; `origine` = `dossier` \| `directe` ; réponse `{items,total,somme_ttc,compteurs:{emise,annulee},page,limit,vosfactures_actif}` ; chaque élément porte `vosfactures` (journal ci-dessous ou `null`) |
-| POST | /factures `{client_id?, client_nom, client_telephone?, client_email?, client_adresse?, date_emission?, date_echeance?, lignes:[{designation, detail?, quantite, unite, prix_unitaire}], remise?, notes?, conditions_paiement?}` | admin, preparateur | facture directe (201, format de `GET /factures/:id`) : client de l'annuaire (`client_id`, fusions suivies) ou retrouvé/créé par son nom ; 1 à 50 lignes, quantité > 0 (2 décimales), prix unitaire entier ≥ 0, unité libre (20 caractères) ; numéro FAC pris dans `compteurs` (même suite que les factures de dossier) ; 400 avec `champs` (`lignes.0.quantite`, `remise`, `date_echeance`…) ; total à 0 : 400 ; journal `facture_emise` (`directe: true`) |
+| POST | /factures `{client_id?, client_nom, client_telephone?, client_email?, client_adresse?, date_emission?, date_echeance?, lignes:[{designation, detail?, quantite, unite, prix_unitaire}], remise?, notes?, conditions_paiement?}` | admin | facture directe (201, format de `GET /factures/:id`) : client de l'annuaire (`client_id`, fusions suivies) ou retrouvé/créé par son nom ; 1 à 50 lignes, quantité > 0 (2 décimales), prix unitaire entier ≥ 0, unité libre (20 caractères) ; numéro FAC pris dans `compteurs` (même suite que les factures de dossier) ; 400 avec `champs` (`lignes.0.quantite`, `remise`, `date_echeance`…) ; total à 0 : 400 ; journal `facture_emise` (`directe: true`) |
 | GET | /factures/vosfactures/config | admin | `{sous_domaine, cle_configuree, cle_fin, cle_lisible, envoi_auto, actif, vendeur, vendeur_effectif, updated_at, updated_by_nom}` ; la clé n'est jamais renvoyée |
 | PUT | /factures/vosfactures/config `{sous_domaine?, cle?: string\|null, envoi_auto?, vendeur?:{nom,adresse,nif,email,telephone}}` | admin | `cle: null` efface la clé (et désactive l'envoi automatique) ; 409 si `envoi_auto` sans sous-domaine et clé ; clé chiffrée AES-256-GCM (même mécanisme que la clé OpenAI, `IA_CLE_CHIFFREMENT` sinon `JWT_SECRET`) ; journal `vosfactures_config_modifiee` sans la clé |
 | POST | /factures/vosfactures/test `{sous_domaine?, cle?}` | admin | `GET https://<sous_domaine>.vosfactures.fr/invoices.json?page=1&per_page=1` avec les valeurs fournies, sinon celles enregistrées ; `{ok, sous_domaine, nb_factures_visibles, duree_ms}` ; erreurs ci-dessous |
@@ -297,7 +311,7 @@ Précisions et ajouts par rapport au tableau ci-dessus (les champs listés dans 
 - **Historique importé** (`GET /paiements/historique`, `POST /paiements/valider-historique`) : concerne les paiements « à valider » importés (`legacy_id` non nul) de dossiers **livrés ou terminés**, non supprimés, encaissés **avant** `avant`. `avant` = `AAAA-MM-JJ` (début de ce jour dans le fuseau des paramètres) ou date-heure ISO 8601 avec fuseau ; 400 si absente, invalide ou dans le futur. Le POST exige `mot_de_passe` (celui de l'administrateur connecté, vérifié avec bcrypt) : 400 si absent ou faux (`champs.mot_de_passe`, journal `validation_historique_refusee`), 429 après 5 échecs en une heure. Les paiements qui dépasseraient le montant de leur dossier restent « à valider » et sont comptés dans `ignores` (`ignores.depassement`, 20 `exemples` au plus). Journal `paiements_historique_valides` (`avant`, `borne`, `valides`, `somme`, `ignores`, `somme_ignoree`, `ids`). Pas de notification aux encaisseurs (données importées).
 - **`POST /dossiers/:id/paiements`** : 201 avec le paiement (même format que la liste). Le livreur ne peut encaisser que sur un dossier qu'il voit (404 sinon). Valider ou refuser un paiement déjà traité : 409. À la validation, si le total validé dépassait le montant du dossier : 409 avec `details:{deja_paye, montant_dossier}`. Valider et refuser sont journalisés et notifient l'encaisseur (`paiement_valide`, `paiement_refuse`).
 - **`GET /caisse`** : objet `{ par_encaisseur: [{user_id,nom,role,a_valider:{n,somme},valide_aujourdhui:{n,somme},refuse_aujourdhui:{n,somme}}], par_mode: [{mode,libelle,a_valider,valide_aujourdhui,refuse_aujourdhui}], totaux:{a_valider,valide_aujourdhui,refuse_aujourdhui} }`. « Aujourd'hui » = jour civil dans le fuseau des paramètres ; `refuse_aujourdhui` compte les refus prononcés aujourd'hui (`valide_at` du refus).
-- **`/devis`** : chaque devis porte `statut_label`, `date_validite` (AAAA-MM-JJ), `expire`, `created_by_nom`, `dossier_numero`, et dans la fiche `transitions[]`, `peut_modifier`, `peut_supprimer`, `peut_convertir`. Un préparateur ne voit que ses devis (404 sinon). Circuit : brouillon → envoye → accepte | refuse ; en plus, accepte → refuse (le client se rétracte) et refuse → envoye (nouvelle proposition). `PATCH` ne recalcule le prix que si `machine` ou `specs` sont fournis. `detail_prix` contient aussi `tva_applicable`, `tva_taux`, `prix_saisis_ht` (règle appliquée au chiffrage).
+- **`/devis`** : chaque devis porte `statut_label`, `date_validite` (AAAA-MM-JJ), `expire`, `created_by_nom`, `dossier_numero`, et dans la fiche `transitions[]`, `peut_modifier`, `peut_supprimer`, `peut_convertir`. Réservé à l'administrateur (403 pour les autres rôles). Circuit : brouillon → envoye → accepte | refuse ; en plus, accepte → refuse (le client se rétracte) et refuse → envoye (nouvelle proposition). `PATCH` ne recalcule le prix que si `machine` ou `specs` sont fournis. `detail_prix` contient aussi `tva_applicable`, `tva_taux`, `prix_saisis_ht` (règle appliquée au chiffrage).
 - **`POST /devis/:id/convertir`** : 201 `{dossier_id, numero}`. Corps facultatif `{urgent?, date_promise?, consignes?, adresse_livraison?, mode_paiement_prevu?}` repris sur le dossier. Le `detail_prix` du dossier est celui du devis (prix convenus). Deuxième conversion : 409 avec `details.dossier_id`.
 - **`/factures`** : `somme_ttc` ne compte que les factures émises (pas les annulées) parmi les résultats filtrés ; filtres supplémentaires `client_id`, `dossier_id`, `statut` en liste. `from`/`to` portent sur `date_emission`. `GET /factures/:id` ajoute `dossier_numero`, `deja_paye`, `en_attente_validation`, `reste`, `situation_paiement`, `created_by_nom`, `annulee_par_nom`. `GET /factures/:id` ajoute aussi `origine`, `client_email`, `remise`, `notes`, `conditions_paiement`, `date_echeance`, `vosfactures`, `vosfactures_actif` (voir « Facturation »). Lignes : `{designation, detail, quantite, unite, prix_unitaire, total}` ; quand la TVA s'applique elles sont exprimées hors taxes et leur somme vaut `total_ht` (une ligne « Remise », « Arrondi » ou « Ajustement au prix convenu » rend l'écart explicite). Un dossier sans montant ou à 0 : 409. Émission et annulation sont journalisées.
 - **PDF** (`/devis/:id/pdf`, `/factures/:id/pdf`, `/dossiers/:id/bon-de-travail.pdf`) : affichés dans le navigateur ; `?telecharger=1` force le téléchargement. Le QR code du bon de travail pointe vers `${APP_URL}/dossiers/:id` (chemin relatif imprimé en clair si `APP_URL` n'est pas défini).

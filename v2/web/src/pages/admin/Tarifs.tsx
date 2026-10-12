@@ -229,8 +229,10 @@ function LigneTarif({
 }) {
   const qc = useQueryClient();
   const toast = useToast();
-  const valeur = brouillon ?? (t.prix === null ? '' : formatEntier(t.prix));
-  const saisi = brouillon === undefined ? t.prix : parseMontant(brouillon);
+  // Sur cette page (administrateur), le prix est toujours fourni par /tarifs : « undefined » n'y arrive pas.
+  const prixActuel = t.prix ?? null;
+  const valeur = brouillon ?? (prixActuel === null ? '' : formatEntier(prixActuel));
+  const saisi = brouillon === undefined ? prixActuel : parseMontant(brouillon);
   const invalide = brouillon !== undefined && brouillon.trim() !== '' && saisi === null;
   const modifie = brouillon !== undefined && saisi !== null && saisi !== t.prix;
 

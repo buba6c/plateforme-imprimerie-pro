@@ -110,14 +110,19 @@ describe('gestionnaire de fichiers : droits', () => {
     expect((await A.prep.post(`${URL}/${F.supprimeAvant}/restaurer`)).status).toBe(403);
   });
 
-  it('le préparateur voit les fichiers des dossiers qu’il peut ouvrir, et seulement ceux-là', async () => {
+  it('le préparateur ne voit que les fichiers de ses propres dossiers ; l’administrateur voit tout', async () => {
     const prep = await A.prep.get(URL);
     expect(prep.status).toBe(200);
-    expect(ids(prep).sort()).toEqual([F.pdf, F.png, F.zip, F.xerox].sort());
+    expect(ids(prep).sort()).toEqual([F.pdf, F.png, F.zip].sort());
+    // Le dossier d'un collègue : ni ses fichiers, ni sa fiche, même en le cherchant par son numéro.
+    expect(ids(prep)).not.toContain(F.xerox);
+    expect((await A.prep.get(`/api/dossiers/${D.xerox.id}`)).status).toBe(404);
+    expect(ids(await A.prep.get(URL).query({ q: D.xerox.numero }))).toEqual([]);
+    expect(ids(await A.prep2.get(URL))).toEqual([F.xerox]);
     // Les fichiers d'un dossier à la corbeille ne sont visibles par personne dans la liste.
     expect(ids(prep)).not.toContain(F.supprime);
-    expect((await A.prep.get(`/api/dossiers/${D.supprime.id}`)).status).toBe(404);
-    expect(ids(await A.prep.get(URL).query({ q: 'secret' }))).toEqual([]);
+    expect((await A.prep2.get(`/api/dossiers/${D.supprime.id}`)).status).toBe(404);
+    expect(ids(await A.prep2.get(URL).query({ q: 'secret' }))).toEqual([]);
 
     // Contre-épreuve : chaque fichier listé appartient à un dossier que le préparateur peut ouvrir.
     for (const item of prep.body.items as { dossier_id: number }[]) {
@@ -125,7 +130,7 @@ describe('gestionnaire de fichiers : droits', () => {
     }
     const admin = await A.admin.get(URL);
     expect(admin.status).toBe(200);
-    expect(ids(admin).sort()).toEqual(ids(prep).sort());
+    expect(ids(admin).sort()).toEqual([F.pdf, F.png, F.zip, F.xerox].sort());
   });
 });
 
@@ -154,48 +159,48 @@ describe('gestionnaire de fichiers : liste', () => {
   });
 
   it('filtre par recherche (fichier, numéro, client), type, machine, statut et auteur', async () => {
-    expect(ids(await A.prep.get(URL).query({ q: 'FAÇADE' }))).toEqual([F.pdf]);
-    expect(ids(await A.prep.get(URL).query({ q: D.xerox.numero }))).toEqual([F.xerox]);
-    expect(ids(await A.prep.get(URL).query({ q: 'keur yaye' })).sort()).toEqual([F.pdf, F.png, F.zip].sort());
-    expect(ids(await A.prep.get(URL).query({ q: '100%_' }))).toEqual([]);
+    expect(ids(await A.admin.get(URL).query({ q: 'FAÇADE' }))).toEqual([F.pdf]);
+    expect(ids(await A.admin.get(URL).query({ q: D.xerox.numero }))).toEqual([F.xerox]);
+    expect(ids(await A.admin.get(URL).query({ q: 'keur yaye' })).sort()).toEqual([F.pdf, F.png, F.zip].sort());
+    expect(ids(await A.admin.get(URL).query({ q: '100%_' }))).toEqual([]);
 
-    expect(ids(await A.prep.get(URL).query({ type: 'pdf' })).sort()).toEqual([F.pdf, F.xerox].sort());
-    expect(ids(await A.prep.get(URL).query({ type: 'image' }))).toEqual([F.png]);
-    expect(ids(await A.prep.get(URL).query({ type: 'autre' }))).toEqual([F.zip]);
-    expect(ids(await A.prep.get(URL).query({ type: 'image,autre' })).sort()).toEqual([F.png, F.zip].sort());
+    expect(ids(await A.admin.get(URL).query({ type: 'pdf' })).sort()).toEqual([F.pdf, F.xerox].sort());
+    expect(ids(await A.admin.get(URL).query({ type: 'image' }))).toEqual([F.png]);
+    expect(ids(await A.admin.get(URL).query({ type: 'autre' }))).toEqual([F.zip]);
+    expect(ids(await A.admin.get(URL).query({ type: 'image,autre' })).sort()).toEqual([F.png, F.zip].sort());
 
-    expect(ids(await A.prep.get(URL).query({ machine: 'xerox' }))).toEqual([F.xerox]);
-    expect(ids(await A.prep.get(URL).query({ statut: 'pret_impression' }))).toEqual([F.xerox]);
-    expect(ids(await A.prep.get(URL).query({ statut: 'en_cours,a_revoir' })).sort()).toEqual([F.pdf, F.png, F.zip].sort());
+    expect(ids(await A.admin.get(URL).query({ machine: 'xerox' }))).toEqual([F.xerox]);
+    expect(ids(await A.admin.get(URL).query({ statut: 'pret_impression' }))).toEqual([F.xerox]);
+    expect(ids(await A.admin.get(URL).query({ statut: 'en_cours,a_revoir' })).sort()).toEqual([F.pdf, F.png, F.zip].sort());
 
-    const auteurs = await A.prep.get(`${URL}/auteurs`);
+    const auteurs = await A.admin.get(`${URL}/auteurs`);
     expect(auteurs.status).toBe(200);
     const admin = auteurs.body.find((u: any) => u.role === 'admin');
     expect(admin).toMatchObject({ nom: 'Awa Ndiaye', nb: 1 });
     expect(auteurs.body.map((u: any) => u.nom)).not.toContain(undefined);
-    expect(ids(await A.prep.get(URL).query({ uploaded_by: admin.id }))).toEqual([F.zip]);
+    expect(ids(await A.admin.get(URL).query({ uploaded_by: admin.id }))).toEqual([F.zip]);
 
-    const filtre = await A.prep.get(URL).query({ type: 'pdf', machine: 'roland' });
+    const filtre = await A.admin.get(URL).query({ type: 'pdf', machine: 'roland' });
     expect(filtre.body.total).toBe(1);
     expect(filtre.body.taille_totale).toBe(3000);
   });
 
   it('filtre par période d’envoi', async () => {
-    expect((await A.prep.get(URL).query({ from: jour(0), to: jour(0) })).body.total).toBe(4);
-    expect((await A.prep.get(URL).query({ from: jour(1) })).body.total).toBe(0);
-    expect((await A.prep.get(URL).query({ to: jour(-1) })).body.total).toBe(0);
-    expect((await A.prep.get(URL).query({ from: jour(0), to: jour(-1) })).status).toBe(400);
-    expect((await A.prep.get(URL).query({ from: '02/10/2026' })).status).toBe(400);
+    expect((await A.admin.get(URL).query({ from: jour(0), to: jour(0) })).body.total).toBe(4);
+    expect((await A.admin.get(URL).query({ from: jour(1) })).body.total).toBe(0);
+    expect((await A.admin.get(URL).query({ to: jour(-1) })).body.total).toBe(0);
+    expect((await A.admin.get(URL).query({ from: jour(0), to: jour(-1) })).status).toBe(400);
+    expect((await A.admin.get(URL).query({ from: '02/10/2026' })).status).toBe(400);
   });
 
   it('trie par nom, taille ou date et pagine', async () => {
-    expect(ids(await A.prep.get(URL).query({ tri: 'nom' }))).toEqual([F.pdf, F.xerox, F.png, F.zip]);
-    expect(ids(await A.prep.get(URL).query({ tri: 'nom', ordre: 'desc' }))).toEqual([F.zip, F.png, F.xerox, F.pdf]);
-    expect(ids(await A.prep.get(URL).query({ tri: 'taille' }))).toEqual([F.zip, F.pdf, F.xerox, F.png]);
-    expect(ids(await A.prep.get(URL).query({ tri: 'date', ordre: 'asc' }))).toEqual([F.pdf, F.png, F.zip, F.xerox]);
+    expect(ids(await A.admin.get(URL).query({ tri: 'nom' }))).toEqual([F.pdf, F.xerox, F.png, F.zip]);
+    expect(ids(await A.admin.get(URL).query({ tri: 'nom', ordre: 'desc' }))).toEqual([F.zip, F.png, F.xerox, F.pdf]);
+    expect(ids(await A.admin.get(URL).query({ tri: 'taille' }))).toEqual([F.zip, F.pdf, F.xerox, F.png]);
+    expect(ids(await A.admin.get(URL).query({ tri: 'date', ordre: 'asc' }))).toEqual([F.pdf, F.png, F.zip, F.xerox]);
 
-    const p1 = await A.prep.get(URL).query({ tri: 'taille', limit: 3, page: 1 });
-    const p2 = await A.prep.get(URL).query({ tri: 'taille', limit: 3, page: 2 });
+    const p1 = await A.admin.get(URL).query({ tri: 'taille', limit: 3, page: 1 });
+    const p2 = await A.admin.get(URL).query({ tri: 'taille', limit: 3, page: 2 });
     expect(ids(p1)).toEqual([F.zip, F.pdf, F.xerox]);
     expect(ids(p2)).toEqual([F.png]);
     expect(p1.body.total).toBe(4);
@@ -205,13 +210,13 @@ describe('gestionnaire de fichiers : liste', () => {
   });
 
   it('refuse les valeurs de filtre inconnues avec un message clair', async () => {
-    const r = await A.prep.get(URL).query({ type: 'video' });
+    const r = await A.admin.get(URL).query({ type: 'video' });
     expect(r.status).toBe(400);
     expect(r.body.error).toContain('pdf, image, autre');
-    expect((await A.prep.get(URL).query({ machine: 'epson' })).status).toBe(400);
-    expect((await A.prep.get(URL).query({ statut: 'archive' })).status).toBe(400);
-    expect((await A.prep.get(URL).query({ tri: 'client' })).status).toBe(400);
-    expect((await A.prep.get(URL).query({ ordre: 'haut' })).status).toBe(400);
+    expect((await A.admin.get(URL).query({ machine: 'epson' })).status).toBe(400);
+    expect((await A.admin.get(URL).query({ statut: 'archive' })).status).toBe(400);
+    expect((await A.admin.get(URL).query({ tri: 'client' })).status).toBe(400);
+    expect((await A.admin.get(URL).query({ ordre: 'haut' })).status).toBe(400);
   });
 });
 

@@ -420,13 +420,22 @@ describe("import de l'ancienne plateforme", () => {
     expect(login.status, JSON.stringify(login.body)).toBe(200);
     expect(login.body.user.role).toBe('preparateur');
 
+    // Le préparateur ne voit que ses propres dossiers importés, sans montant ; l'administrateur voit les 28.
     const liste = await a.get('/api/dossiers?limit=200');
     expect(liste.status).toBe(200);
-    expect(liste.body.total).toBe(28);
-    const d2 = liste.body.items.find((d: any) => d.numero === 'CMD-2025-0001');
+    const miens = (await cible.query(`SELECT count(*)::int AS n FROM dossiers d JOIN users u ON u.id = d.preparateur_id WHERE u.email = 'preparateur@evocom.test' AND d.deleted_at IS NULL`)).rows[0].n;
+    expect(miens).toBeGreaterThan(0);
+    expect(liste.body.total).toBe(miens);
+    expect(liste.body.items.every((d: any) => d.montant === undefined)).toBe(true);
+
+    const admin = supertest.agent(app);
+    expect((await admin.post('/api/auth/login').send({ email: 'admin@evocom.test', password: 'Test1234!' })).status).toBe(200);
+    const tous = await admin.get('/api/dossiers?limit=200');
+    expect(tous.body.total).toBe(28);
+    const d2 = tous.body.items.find((d: any) => d.numero === 'CMD-2025-0001');
     expect(d2).toMatchObject({ statut: 'livre', montant: 45000, importe: true, situation_paiement: 'paye' });
 
-    const id14 = liste.body.items.find((d: any) => d.numero === 'CMD-2026-0013').id;
+    const id14 = tous.body.items.find((d: any) => d.numero === 'CMD-2026-0013').id;
     const detail = await a.get(`/api/dossiers/${id14}`);
     expect(detail.status).toBe(200);
     expect(detail.body.fichiers.map((f: any) => f.nom_original).sort()).toEqual(['Affiche Wave 60x40.pdf', 'affiche_été_€.pdf']);

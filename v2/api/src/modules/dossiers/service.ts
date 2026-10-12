@@ -355,10 +355,12 @@ export async function evenement(
 export async function creerDossier(user: AuthUser, body: unknown, opts: { devis_id?: number | null; montant_source?: string } = {}) {
   if (user.role !== 'admin' && user.role !== 'preparateur') throw forbidden('Seuls les préparateurs et les administrateurs créent des dossiers.');
   const input = dossierCreateSchema.parse(body);
+  // Un préparateur ne fixe jamais le prix : il vient du calcul, sinon l'administrateur le renseigne.
+  if (user.role !== 'admin') input.montant = null;
   const specs = specsSchemaFor(input.machine).parse(input.specs ?? { lignes: [], forfaits: [] }) as Specs;
   const created = await tx(async (db) => {
     const prix = await prixPour(input.machine, specs, db);
-    if (prix && !prix.ok && (input.montant === null || input.montant === undefined)) {
+    if (prix && !prix.ok && user.role === 'admin' && (input.montant === null || input.montant === undefined)) {
       throw unprocessable('Le prix ne peut pas être calculé. Corrigez les lignes ou saisissez le montant à la main.', { erreurs: prix.erreurs });
     }
     let montant: number | null = null;
@@ -423,6 +425,7 @@ const CHAMPS_SUIVIS = [
 
 export async function modifierDossier(user: AuthUser, id: number, body: unknown) {
   const input = dossierUpdateSchema.parse(body);
+  if (user.role !== 'admin') delete input.montant;
   const updated = await tx(async (db) => {
     const d = await chargerDossier(user, id, db, true);
     if (!peutModifier(user, d)) {
@@ -480,7 +483,14 @@ export async function modifierDossier(user: AuthUser, id: number, body: unknown)
           set('montant_source', 'calcul');
         }
       } else if (prix && !prix.ok && !montantSaisi && !revenirAuCalcul && suitLaGrille) {
-        throw unprocessable('Le prix ne peut pas être calculé. Corrigez les lignes ou saisissez le montant à la main.', { erreurs: prix.erreurs });
+        if (user.role !== 'admin') {
+          // Le préparateur n'a pas la main sur le prix : le dossier reste « montant à définir » pour l'administrateur.
+          changes.montant = { avant: d.montant, apres: null };
+          set('montant', null);
+          set('detail_prix', null);
+        } else {
+          throw unprocessable('Le prix ne peut pas être calculé. Corrigez les lignes ou saisissez le montant à la main.', { erreurs: prix.erreurs });
+        }
       }
     }
     if (input.client_nom !== undefined || input.client_id !== undefined) {
@@ -590,6 +600,7 @@ export async function executerAction(user: AuthUser, id: number, actionId: strin
 
     let paiementId: number | null = null;
     if ((action.id === 'confirmer_livraison' || action.id === 'remettre_client') && input.encaissement) {
+      if (user.role !== 'admin' && user.role !== 'livreur') throw forbidden('Seul un administrateur ou le livreur enregistre un paiement : remettez la commande, l’administrateur encaissera.');
       paiementId = await enregistrerPaiement(db, user, { ...d, deja_paye: d.deja_paye, en_attente_validation: d.en_attente_validation }, {
         montant: input.encaissement.montant,
         mode: input.encaissement.mode,
@@ -798,7 +809,7 @@ export const dupliquerSchema = z
 
 export async function dupliquerDossier(user: AuthUser, id: number, body: unknown): Promise<{ id: number; numero: string; statut: Statut }> {
   const input = dupliquerSchema.parse(body);
-  if (user.role !== 'admin' && !(user.role === 'preparateur' && input.type === 'nouvelle_commande')) {
+  if (user.role !== 'admin' && !(user.role === 'preparateur' && input.type === 'nouvelle_commande' && (input.prix === 'grille' || input.prix === 'meme'))) {
     throw forbidden('Seul un administrateur peut lancer une réimpression ; le préparateur peut créer une nouvelle commande à partir d’un dossier.');
   }
   const cree = await tx(async (db) => {

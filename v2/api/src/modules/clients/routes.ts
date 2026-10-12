@@ -18,7 +18,9 @@ import { intParam, qStr } from '../../lib/http';
 import { Conditions, motifLike, pagination } from '../commun/requete';
 
 export const clientsRouter = Router();
-clientsRouter.use(requireAuth, requireRole('admin', 'preparateur'));
+clientsRouter.use(requireAuth);
+// Les préparateurs n'ont que l'autocomplétion du nom (création de dossier) ; la gestion des clients est à l'administrateur.
+clientsRouter.use((req, res, next) => (req.path === '/recherche' ? requireRole('admin', 'preparateur') : requireRole('admin'))(req, res, next));
 
 /** Agrégats par client, en sous-requête latérale (alias `c` pour le client). */
 const TOTAUX_LATERAL = `

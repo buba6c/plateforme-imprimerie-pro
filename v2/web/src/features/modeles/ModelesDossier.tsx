@@ -6,8 +6,9 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { BookmarkPlus, Search, Trash2, Users, UserRound } from 'lucide-react';
 import { MACHINE_LABELS, resumeLigne, type LigneRoland, type LigneXerox, type Machine, type Specs } from '@evocom/shared';
 import { api, messageErreur } from '../../lib/api';
-import { Alert, Button, Checkbox, ConfirmDialog, Dialog, MachineIcone, Skeleton, TextField, useToast } from '../../ui';
+import { Alert, Button, Checkbox, ConfirmDialog, Dialog, MachineIcone, SelectField, Skeleton, TextField, useToast } from '../../ui';
 import { useLibelles, useTarifs } from '../specs/useTarifs';
+import { specsVersDraft } from '../specs/draft';
 import './modeles.css';
 
 export interface Modele {
@@ -30,6 +31,18 @@ export interface ContenuModele {
   description: string;
   consignes: string;
   mode_remise: 'livraison' | 'retrait' | '';
+}
+
+/** Applique un modèle à un formulaire de dossier (machine, lignes, description, consignes, remise). */
+export function appliquerModele<F extends { machine: Machine; specs: unknown; description: string; consignes: string; mode_remise: 'livraison' | 'retrait' | '' }>(f: F, m: Modele): F {
+  return {
+    ...f,
+    machine: m.machine,
+    specs: specsVersDraft(m.machine, m.specs),
+    description: m.description ?? f.description,
+    consignes: m.consignes ?? f.consignes,
+    mode_remise: m.mode_remise ?? f.mode_remise,
+  };
 }
 
 export function useModeles() {
@@ -136,11 +149,12 @@ export function ModelesDossier({ machineImposee, onAppliquer }: { machineImposee
   );
 }
 
-/** Bouton + fenêtre « Enregistrer comme modèle » pour la configuration en cours. */
-export function EnregistrerModele({ contenu, disabled }: { contenu: () => ContenuModele; disabled?: boolean }) {
+/** Fenêtre « Enregistrer comme modèle » : nouveau modèle, ou remplacement d'un de mes modèles existants. */
+export function EnregistrerModeleDialog({ contenu, onClose }: { contenu: () => ContenuModele; onClose: () => void }) {
   const qc = useQueryClient();
   const toast = useToast();
-  const [ouvert, setOuvert] = useState(false);
+  const miens = (useModeles().data ?? []).filter((m) => m.mien);
+  const [cible, setCible] = useState<number | 'nouveau'>('nouveau');
   const [nom, setNom] = useState('');
   const [partage, setPartage] = useState(true);
   const [erreur, setErreur] = useState<string | null>(null);
@@ -149,46 +163,60 @@ export function EnregistrerModele({ contenu, disabled }: { contenu: () => Conten
     mutationFn: () => {
       const c = contenu();
       if (!c.specs) throw new Error('Complétez d’abord les spécifications (support, dimensions ou pages, quantité).');
-      return api.post<Modele>('/modeles', { nom: nom.trim(), machine: c.machine, specs: c.specs, description: c.description || null, consignes: c.consignes || null, mode_remise: c.mode_remise || null, partage });
+      const corps = { machine: c.machine, specs: c.specs, description: c.description || null, consignes: c.consignes || null, mode_remise: c.mode_remise || null };
+      if (cible === 'nouveau') return api.post<Modele>('/modeles', { ...corps, nom: nom.trim(), partage });
+      return api.patch<Modele>(`/modeles/${cible}`, { ...corps, ...(nom.trim() ? { nom: nom.trim() } : {}) });
     },
     onSuccess: (r) => {
       void qc.invalidateQueries({ queryKey: ['modeles'] });
-      toast.success(`Modèle « ${r.nom} » enregistré`, partage ? 'Toute l’équipe le verra dans « Partir d’un modèle ».' : 'Vous seul le verrez.');
-      setOuvert(false);
-      setNom('');
-      setErreur(null);
+      toast.success(cible === 'nouveau' ? `Modèle « ${r.nom} » enregistré` : `Modèle « ${r.nom} » mis à jour`, r.partage ? 'Toute l’équipe le voit dans « Partir d’un modèle ».' : 'Vous seul le voyez.');
+      onClose();
     },
     onError: (e) => setErreur(messageErreur(e)),
   });
 
   return (
+    <Dialog
+      open
+      onClose={onClose}
+      title="Enregistrer comme modèle"
+      description="La machine, les lignes, les forfaits, l’urgence, la description, les consignes et le mode de remise sont gardés. Le client, les fichiers et le prix ne le sont pas."
+      width={520}
+      footer={
+        <>
+          <Button onClick={onClose}>Annuler</Button>
+          <Button variant="primary" busy={m.isPending} disabled={cible === 'nouveau' && !nom.trim()} onClick={() => m.mutate()}>
+            {cible === 'nouveau' ? 'Enregistrer' : 'Remplacer le modèle'}
+          </Button>
+        </>
+      }
+    >
+      <div className="stack">
+        {miens.length > 0 && (
+          <SelectField
+            label="Quel modèle ?"
+            value={String(cible)}
+            onChange={(e) => setCible(e.target.value === 'nouveau' ? 'nouveau' : Number(e.target.value))}
+            options={[{ value: 'nouveau', label: 'Nouveau modèle' }, ...miens.map((x) => ({ value: String(x.id), label: `Remplacer « ${x.nom} »` }))]}
+          />
+        )}
+        <TextField label={cible === 'nouveau' ? 'Nom du modèle' : 'Nouveau nom (facultatif)'} value={nom} onChange={(e) => setNom(e.target.value)} placeholder="Ex. En-têtes A4 250 g recto" maxLength={80} autoFocus />
+        {cible === 'nouveau' && <Checkbox label="Partager avec toute l’équipe" checked={partage} onChange={(v) => setPartage(v)} />}
+        {erreur && <Alert tone="error">{erreur}</Alert>}
+      </div>
+    </Dialog>
+  );
+}
+
+/** Bouton qui ouvre la fenêtre ci-dessus. */
+export function EnregistrerModele({ contenu, disabled }: { contenu: () => ContenuModele; disabled?: boolean }) {
+  const [ouvert, setOuvert] = useState(false);
+  return (
     <>
       <Button icon={<BookmarkPlus />} disabled={disabled} onClick={() => setOuvert(true)} title="Garder cette configuration pour la réutiliser">
         Enregistrer comme modèle
       </Button>
-      {ouvert && (
-        <Dialog
-          open
-          onClose={() => setOuvert(false)}
-          title="Enregistrer comme modèle"
-          description="La machine, les lignes, les forfaits, la description, les consignes et le mode de remise sont gardés. Le client, les fichiers et le prix ne le sont pas."
-          width={520}
-          footer={
-            <>
-              <Button onClick={() => setOuvert(false)}>Annuler</Button>
-              <Button variant="primary" busy={m.isPending} disabled={!nom.trim()} onClick={() => m.mutate()}>
-                Enregistrer
-              </Button>
-            </>
-          }
-        >
-          <div className="stack">
-            <TextField label="Nom du modèle" value={nom} onChange={(e) => setNom(e.target.value)} placeholder="Ex. En-têtes A4 250 g recto" maxLength={80} autoFocus />
-            <Checkbox label="Partager avec toute l’équipe" checked={partage} onChange={(v) => setPartage(v)} />
-            {erreur && <Alert tone="error">{erreur}</Alert>}
-          </div>
-        </Dialog>
-      )}
+      {ouvert && <EnregistrerModeleDialog contenu={contenu} onClose={() => setOuvert(false)} />}
     </>
   );
 }

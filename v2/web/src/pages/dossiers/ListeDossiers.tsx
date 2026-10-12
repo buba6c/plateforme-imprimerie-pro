@@ -74,7 +74,7 @@ export default function ListeDossiers() {
   const mobile = useMediaQuery('(max-width: 767px)');
   const imprimeur = user.role === 'imprimeur_roland' || user.role === 'imprimeur_xerox';
   const bureau = user.role === 'admin' || user.role === 'preparateur';
-  const montrerMontant = user.role !== 'imprimeur_roland' && user.role !== 'imprimeur_xerox';
+  const montrerMontant = user.role === 'admin' || user.role === 'livreur';
 
   const onglets = useMemo(() => ongletsPour(user.role), [user.role]);
   const q = sp.get('q') ?? '';
@@ -181,11 +181,6 @@ export default function ListeDossiers() {
           <button type="button" className="ev-btn ev-btn--sm dl-toggle" data-tone="urgent" aria-pressed={urgent} onClick={() => maj({ urgent: urgent ? null : '1' })}>
             Urgents
           </button>
-          {user.role === 'preparateur' && (
-            <button type="button" className="ev-btn ev-btn--sm dl-toggle" aria-pressed={mine} onClick={() => maj({ mine: mine ? null : '1' })}>
-              Mes dossiers
-            </button>
-          )}
           <select className="ev-select" aria-label="Ordre" value={tri} onChange={(e) => maj({ tri: e.target.value === triDefaut ? null : e.target.value })}>
             {TRIS.map((t) => (
               <option key={t.value} value={t.value}>

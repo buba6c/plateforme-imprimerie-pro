@@ -103,9 +103,15 @@ const TYPES_EN_PARTIES: readonly TypeDocument[] = ['brochure', 'catalogue', 'dep
 
 export function prixTexte(t: Tarif | undefined | null): string {
   if (!t) return 'absent de la grille';
+  if (t.prix === undefined) return '';
   if (t.prix === null) return 'prix à définir';
   if (t.unite === 'pourcent') return `+${t.prix} %`;
   return `${formatEntier(t.prix)} FCFA${suffixeUnite(t.unite)}`;
+}
+
+/** « Libellé · prix » ; le libellé seul quand il n'y a rien à afficher (rôles sans accès aux prix). */
+function avecPrix(libelle: string, texte: string, prefixe = ''): string {
+  return texte ? `${libelle} · ${prefixe}${texte}` : libelle;
 }
 
 function estVide(machine: Machine, l: LigneRolandDraft | LigneXeroxDraft): boolean {
@@ -303,7 +309,7 @@ function titreLigne(machine: Machine, l: LigneRolandDraft | LigneXeroxDraft, i: 
 // ---------------------------------------------------------------------------
 
 function optionsSupport(supports: Tarif[], code: string) {
-  const opts = supports.map((t) => ({ value: t.code, label: `${t.libelle} · ${prixTexte(t)}` }));
+  const opts = supports.map((t) => ({ value: t.code, label: avecPrix(t.libelle, prixTexte(t)) }));
   if (code && !supports.some((t) => t.code === code)) opts.unshift({ value: code, label: `${code} (retiré de la grille)` });
   return opts;
 }
@@ -314,11 +320,11 @@ type Trouver = (code: string) => Tarif | undefined;
 function TarifApplique({ code, tarif, prefixe = 'Tarif', siProbleme }: { code: string; tarif: Trouver; prefixe?: string; siProbleme?: boolean }) {
   if (!code) return null;
   const t = tarif(code);
-  const probleme = !t || t.prix === null || !t.actif;
+  const probleme = !t || t.prix === null || t.actif === false;
   if (siProbleme && !probleme) return null;
   return (
     <p className="sp-tarif" data-alerte={probleme}>
-      {prefixe} : {t ? t.libelle : code} · {t && !t.actif ? 'désactivé dans Tarifs' : t?.prix === null ? 'prix à renseigner dans Tarifs' : prixTexte(t)}
+      {prefixe} : {avecPrix(t ? t.libelle : code, t && !t.actif ? 'désactivé dans Tarifs' : t?.prix === null ? 'prix à renseigner dans Tarifs' : prixTexte(t))}
     </p>
   );
 }
@@ -388,7 +394,7 @@ function LigneRoland({ l, i, supports, tarif, maj, err, params }: {
             onChange={(b) => maj({ bords: b as BordsRoland })}
             options={(['aucun', 'oeillets', 'ourlet', 'collage'] as const).map((b) => ({
               value: b,
-              label: b === 'aucun' ? 'Aucune (bords coupés)' : `${BORDS_LABELS[b]} · ${prixTexte(tarif(TARIF_BORDS[b]))}`,
+              label: b === 'aucun' ? 'Aucune (bords coupés)' : avecPrix(BORDS_LABELS[b], prixTexte(tarif(TARIF_BORDS[b]))),
             }))}
           />
           {bords === 'oeillets' && (
@@ -530,7 +536,7 @@ function LigneXerox({ l, supports, finitions, tarif, maj, err }: {
           onChange={(v) => maj({ papier: v as LigneXeroxDraft['papier'] })}
           options={PAPIERS_XEROX.map((p) => {
             const code = TARIF_PAPIER[p];
-            return { value: p, label: code ? `${PAPIER_LABELS[p]} · +${prixTexte(tarif(code))}` : `${PAPIER_LABELS[p]} · compris` };
+            return { value: p, label: code ? avecPrix(PAPIER_LABELS[p], prixTexte(tarif(code)), '+') : `${PAPIER_LABELS[p]} · compris` };
           })}
         />
         <ChampTexte label="Pages" required value={l.pages} onChange={(p) => maj({ pages: p })} inputMode="numeric" mono erreur={err('pages')} aide="Faces imprimées d’un exemplaire" />
@@ -558,8 +564,8 @@ function LigneXerox({ l, supports, finitions, tarif, maj, err }: {
           onChange={(v) => maj({ pelliculage: v as LigneXeroxDraft['pelliculage'] })}
           options={[
             { value: '', label: 'Aucun' },
-            { value: 'mat', label: `Mat · ${prixTexte(tarif(TARIF_PELLICULAGE.mat))}` },
-            { value: 'brillant', label: `Brillant · ${prixTexte(tarif(TARIF_PELLICULAGE.brillant))}` },
+            { value: 'mat', label: avecPrix('Mat', prixTexte(tarif(TARIF_PELLICULAGE.mat))) },
+            { value: 'brillant', label: avecPrix('Brillant', prixTexte(tarif(TARIF_PELLICULAGE.brillant))) },
           ]}
         />
         {l.pelliculage && (

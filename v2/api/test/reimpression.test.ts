@@ -13,7 +13,9 @@ const pdf = Buffer.from('%PDF-1.4\n1 0 obj<< /Type /Catalog >>endobj\ntrailer<< 
 async function dossier(extra: Record<string, unknown> = {}) {
   const r = await A.prep.post('/api/dossiers').send({ machine: 'xerox', client_nom: 'Client test réimpression', specs, ...extra });
   expect(r.status, JSON.stringify(r.body)).toBe(201);
-  return r.body as { id: number; numero: string; montant: number };
+  // Le préparateur ne voit pas le prix : le montant est relu par l'administrateur.
+  const { montant } = (await A.admin.get(`/api/dossiers/${r.body.id}`)).body as { montant: number };
+  return { ...r.body, montant } as { id: number; numero: string; montant: number };
 }
 
 async function jusquImprime(id: number) {
@@ -85,9 +87,15 @@ describe('retrait sur place', () => {
     const d = (await A.prep.get(`/api/dossiers/${o.id}`)).body;
     expect(d.actions).toContain('remettre_client');
     expect(d.actions).not.toContain('confirmer_livraison');
-    const r = await A.prep.post(`/api/dossiers/${o.id}/actions/remettre_client`).send({ encaissement: { montant: o.montant, mode: 'especes' } });
+    // Le préparateur remet la commande mais n'encaisse pas : un encaissement joint est refusé et rien ne change.
+    const refus = await A.prep.post(`/api/dossiers/${o.id}/actions/remettre_client`).send({ encaissement: { montant: o.montant, mode: 'especes' } });
+    expect(refus.status, JSON.stringify(refus.body)).toBe(403);
+    expect((await A.admin.get(`/api/dossiers/${o.id}`)).body.statut).toBe('pret_livraison');
+    const r = await A.prep.post(`/api/dossiers/${o.id}/actions/remettre_client`).send({});
     expect(r.status, JSON.stringify(r.body)).toBe(200);
     expect(r.body.statut).toBe('livre');
+    // L'administrateur encaisse ensuite.
+    expect((await A.admin.post(`/api/dossiers/${o.id}/paiements`).send({ montant: o.montant, mode: 'especes' })).status).toBe(201);
     const apres = (await A.admin.get(`/api/dossiers/${o.id}`)).body;
     expect(apres.livre_at).toBeTruthy();
     expect(apres.paiements).toHaveLength(1);
@@ -119,9 +127,17 @@ describe('cloisonnement des livreurs', () => {
 });
 
 describe('prix', () => {
-  it('« revenir au prix calculé » avec les spécifications fonctionne', async () => {
+  it('« revenir au prix calculé » avec les spécifications fonctionne (administrateur) ; le préparateur ne touche pas au prix', async () => {
     const o = await dossier({ montant: 99999 });
-    const r = await A.prep.patch(`/api/dossiers/${o.id}`).send({ montant: null, specs });
+    // Le montant envoyé par le préparateur à la création a été ignoré : prix calculé.
+    expect(o.montant).not.toBe(99999);
+    await A.admin.patch(`/api/dossiers/${o.id}`).send({ montant: 99999 }).expect(200);
+    // Un « montant: null » du préparateur est ignoré aussi : le prix saisi reste.
+    const p = await A.prep.patch(`/api/dossiers/${o.id}`).send({ montant: null, specs });
+    expect(p.status, JSON.stringify(p.body)).toBe(200);
+    expect(p.body).not.toHaveProperty('montant');
+    expect((await A.admin.get(`/api/dossiers/${o.id}`)).body).toMatchObject({ montant: 99999, montant_source: 'saisi' });
+    const r = await A.admin.patch(`/api/dossiers/${o.id}`).send({ montant: null, specs });
     expect(r.status, JSON.stringify(r.body)).toBe(200);
     expect(r.body.montant).not.toBe(99999);
     expect(r.body.montant_source).toBe('calcul');
@@ -133,7 +149,8 @@ describe('prix', () => {
     const s2 = { ...specs, lignes: [{ ...specs.lignes[0], description: 'Papier 170 g' }] };
     const r = await A.prep.patch(`/api/dossiers/${o.id}`).send({ specs: s2 });
     expect(r.status).toBe(200);
-    expect(r.body.montant).toBe(12345);
+    expect(r.body).not.toHaveProperty('montant');
+    expect((await A.admin.get(`/api/dossiers/${o.id}`)).body.montant).toBe(12345);
   });
 
   it('le montant d’un dossier facturé est figé', async () => {

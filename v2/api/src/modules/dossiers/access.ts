@@ -17,8 +17,10 @@ export function visibilite(user: AuthUser, offset = 0, joursLivreur = 7): Clause
   const p = (n: number) => `$${offset + n}`;
   switch (user.role) {
     case 'admin':
-    case 'preparateur':
       return { sql: 'd.deleted_at IS NULL', params: [] };
+    case 'preparateur':
+      // Seulement ses propres dossiers : l'administrateur seul voit ceux des autres.
+      return { sql: `d.deleted_at IS NULL AND d.preparateur_id = ${p(1)}`, params: [user.id] };
     case 'imprimeur_roland':
     case 'imprimeur_xerox':
       // Sa machine, à partir du moment où le dossier a été validé une fois.
@@ -36,8 +38,14 @@ export function visibilite(user: AuthUser, offset = 0, joursLivreur = 7): Clause
   }
 }
 
+/** Prix et paiements : l'administrateur, et le livreur pour ce qu'il doit encaisser. Jamais les préparateurs. */
 export function peutVoirMontants(user: AuthUser): boolean {
-  return user.role === 'admin' || user.role === 'preparateur' || user.role === 'livreur';
+  return user.role === 'admin' || user.role === 'livreur';
+}
+
+/** Qui enregistre ou gère l'argent (encaissements, validation, factures, devis) : l'administrateur seul. */
+export function peutGererArgent(user: AuthUser): boolean {
+  return user.role === 'admin';
 }
 
 export function peutVoirContactClient(user: AuthUser): boolean {

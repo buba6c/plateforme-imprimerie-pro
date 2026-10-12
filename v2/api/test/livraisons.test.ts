@@ -58,9 +58,9 @@ afterAll(async () => {
   await viderDonnees();
 });
 
-/** Dossier prêt à livrer (montant 30 000 FCFA), sans passer par l'atelier. */
+/** Dossier prêt à livrer (montant 30 000 FCFA, saisi par l'administrateur), sans passer par l'atelier. */
 async function pretALivrer(extra: Record<string, unknown> = {}) {
-  const r = await A.prep.post('/api/dossiers').send({
+  const r = await A.admin.post('/api/dossiers').send({
     machine: 'xerox',
     client_nom: `Client livraison ${++seq}`,
     client_telephone: '77 123 45 67',
@@ -247,8 +247,9 @@ describe('livraisons : historique', () => {
     ref.ancien = await pretALivrer({ client_nom: 'Mairie de Pikine', adresse_livraison: 'Pikine, rond-point' });
     await livrer(A.livreur, ref.ancien.id, { montant: 12000, mode: 'especes' });
     ref.sans = await pretALivrer({ client_nom: 'Lycée Blaise Diagne' });
-    // Acompte encaissé par le préparateur : ce n'est pas un encaissement du livreur.
-    await A.prep.post(`/api/dossiers/${ref.sans.id}/paiements`).send({ montant: 5000, mode: 'especes' }).expect(201);
+    // Acompte encaissé par l'administrateur (le préparateur n'encaisse jamais) : ce n'est pas un encaissement du livreur.
+    expect((await A.prep.post(`/api/dossiers/${ref.sans.id}/paiements`).send({ montant: 5000, mode: 'especes' })).status).toBe(403);
+    await A.admin.post(`/api/dossiers/${ref.sans.id}/paiements`).send({ montant: 5000, mode: 'especes' }).expect(201);
     await livrer(A.livreur, ref.sans.id);
     ref.autre = await pretALivrer({ client_nom: 'Garage Sall Auto' });
     await livrer(A.livreur2, ref.autre.id, { montant: 30000, mode: 'especes' });

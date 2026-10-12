@@ -253,7 +253,7 @@ async function detailFacture(id: number, db?: Db) {
 // /api/factures
 
 export const facturesRouter = Router();
-facturesRouter.use(requireAuth, requireRole('admin', 'preparateur'));
+facturesRouter.use(requireAuth, requireRole('admin'));
 
 // Réglages de la liaison (administrateur) : avant les routes /:id.
 facturesRouter.use('/vosfactures', vosfacturesRouter);
@@ -484,7 +484,7 @@ facturesRouter.get('/:id/vosfactures.pdf', async (req, res) => {
 
 export const dossierFactureRouter = Router();
 
-dossierFactureRouter.post('/:id/facture', requireAuth, requireRole('admin', 'preparateur'), async (req, res) => {
+dossierFactureRouter.post('/:id/facture', requireAuth, requireRole('admin'), async (req, res) => {
   const user = me(req);
   const id = intParam(req);
   const factureId = await tx(async (db) => {

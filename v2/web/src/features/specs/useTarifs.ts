@@ -1,14 +1,27 @@
 import { useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { PARAMS_PRIX_DEFAUT, TARIFS_DEFAUT, type Machine, type ParamsPrix, type Tarif as TarifPrix } from '@evocom/shared';
+import { useAuth } from '../../auth/AuthContext';
 import { api, ApiError } from '../../lib/api';
 import type { Tarif } from '../../lib/types';
 
-/** Grille tarifaire complète (admin et préparateur). */
+/**
+ * Grille tarifaire : avec les prix pour l'administrateur ; sans les prix (/tarifs/libelles) pour les
+ * autres rôles, qui n'appellent jamais la route complète.
+ */
 export function useTarifs(enabled = true) {
+  const admin = useAuth().user?.role === 'admin';
   return useQuery({
-    queryKey: ['tarifs'],
-    queryFn: () => api.get<Tarif[]>('/tarifs'),
+    queryKey: ['tarifs', admin ? 'complet' : 'libelles'],
+    queryFn: async () => {
+      if (!admin) return api.get<Tarif[]>('/tarifs/libelles');
+      try {
+        return await api.get<Tarif[]>('/tarifs');
+      } catch (e) {
+        if (e instanceof ApiError && e.status === 403) return api.get<Tarif[]>('/tarifs/libelles');
+        throw e;
+      }
+    },
     enabled,
     staleTime: 60_000,
     retry: false,
@@ -47,7 +60,7 @@ export function versTarifsPrix(tarifs: Tarif[] | undefined): TarifPrix[] {
     categorie: t.categorie,
     libelle: t.libelle,
     unite: t.unite as TarifPrix['unite'],
-    prix: t.prix,
+    prix: t.prix ?? null,
     actif: t.actif,
   }));
 }

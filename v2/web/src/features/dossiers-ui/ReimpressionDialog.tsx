@@ -91,8 +91,9 @@ export function ReimpressionDialog({ d, admin, onClose }: { d: DossierDetail; ad
           </section>
         )}
 
+        {admin && (
         <section className="reimp__q">
-          <h3>{admin ? '2' : '1'}. Le prix a-t-il changé ?</h3>
+          <h3>2. Le prix a-t-il changé ?</h3>
           <Segmented<Prix>
             name="reimp-prix"
             label="Prix"
@@ -107,6 +108,7 @@ export function ReimpressionDialog({ d, admin, onClose }: { d: DossierDetail; ad
           />
           {prix === 'manuel' && <TextField label="Nouveau montant (FCFA)" inputMode="numeric" mono value={montant} onChange={(e) => setMontant(e.target.value)} placeholder="Ex. 25 000" />}
         </section>
+        )}
 
         <section className="reimp__q">
           <h3>{admin ? '3' : '2'}. Faut-il modifier quelque chose avant d’imprimer ?</h3>

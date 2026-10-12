@@ -88,8 +88,16 @@ describe('migration 008 et grille de départ', () => {
     expect(doublons.rowCount).toBe(0);
   });
 
-  it('100 cartes de visite valent 100 fois le prix unitaire (A3)', async () => {
-    const r = await A.prep.post('/api/tarifs/estimer').send({
+  it('100 cartes de visite valent 100 fois le prix unitaire (A3) ; l’estimation est réservée à l’administrateur', async () => {
+    expect((await A.prep.post('/api/tarifs/estimer').send({ machine: 'xerox', specs: { lignes: [], forfaits: [] } })).status).toBe(403);
+    expect((await A.prep.get('/api/tarifs')).status).toBe(403);
+    // La grille sans prix reste disponible pour remplir un dossier.
+    const lib = await A.prep.get('/api/tarifs/libelles');
+    expect(lib.status).toBe(200);
+    expect(lib.body.length).toBeGreaterThan(10);
+    expect(lib.body[0]).toMatchObject({ actif: expect.any(Boolean), ordre: expect.any(Number) });
+    expect(lib.body.every((t: Record<string, unknown>) => !('prix' in t))).toBe(true);
+    const r = await A.admin.post('/api/tarifs/estimer').send({
       machine: 'xerox',
       specs: { lignes: [{ support: 'carte_visite', pages: 2, recto_verso: true, quantite: 100, finitions: [], options: [], format: 'cdv_85x55' }], forfaits: [] },
     });
@@ -98,7 +106,7 @@ describe('migration 008 et grille de départ', () => {
   });
 
   it('la livraison est trouvée pour un dossier Xerox', async () => {
-    const r = await A.prep.post('/api/tarifs/estimer').send({
+    const r = await A.admin.post('/api/tarifs/estimer').send({
       machine: 'xerox',
       specs: { lignes: [{ support: 'papier_a4_couleur', pages: 1, quantite: 10, finitions: [], options: [] }], forfaits: [{ code: 'livraison' }] },
     });
@@ -125,7 +133,7 @@ describe('Tarifs : combinaisons impossibles refusées (A4)', () => {
   it('le moteur lève une erreur au lieu de compter 0 pour un tarif incohérent déjà en base', async () => {
     await getPool().query(`UPDATE tarifs SET unite = 'm2' WHERE code = 'plastification'`);
     invalidateTarifs();
-    const r = await A.prep.post('/api/tarifs/estimer').send({
+    const r = await A.admin.post('/api/tarifs/estimer').send({
       machine: 'xerox',
       specs: { lignes: [{ support: 'papier_a4_couleur', pages: 1, quantite: 10, finitions: [{ code: 'plastification' }], options: [] }], forfaits: [] },
     });
@@ -139,15 +147,16 @@ describe('Tarifs : combinaisons impossibles refusées (A4)', () => {
 describe('devis : remise au client, délai, acompte, conditions', () => {
   let devisId: number;
 
-  it('refuse tant que les nouveaux tarifs n’ont pas de prix, avec un message clair', async () => {
-    const r = await A.prep.post('/api/devis').send(flyersA5);
+  it('refuse tant que les nouveaux tarifs n’ont pas de prix, avec un message clair ; le préparateur ne fait pas de devis', async () => {
+    expect((await A.prep.post('/api/devis').send(flyersA5)).status).toBe(403);
+    const r = await A.admin.post('/api/devis').send(flyersA5);
     expect(r.status).toBe(422);
     expect(r.body.details.erreurs.join(' ')).toContain('prix de « A5 couleur » à renseigner dans Tarifs');
   });
 
   it('chiffre les choix structurés et enregistre les conditions', async () => {
     await poserPrix({ papier_a5_couleur: 60, papier_couche_170: 25, pelliculage_mat: 150 });
-    const r = await A.prep.post('/api/devis').send({
+    const r = await A.admin.post('/api/devis').send({
       ...flyersA5,
       mode_remise: 'livraison',
       adresse_livraison: 'Médina, rue 22',
@@ -168,38 +177,38 @@ describe('devis : remise au client, délai, acompte, conditions', () => {
   });
 
   it('valide les nouveaux champs', async () => {
-    const r = await A.prep.post('/api/devis').send({ ...flyersA5, acompte_pourcent: 150, delai_jours: -1, mode_remise: 'poste' });
+    const r = await A.admin.post('/api/devis').send({ ...flyersA5, acompte_pourcent: 150, delai_jours: -1, mode_remise: 'poste' });
     expect(r.status).toBe(400);
     expect(Object.keys(r.body.champs)).toEqual(expect.arrayContaining(['acompte_pourcent', 'delai_jours', 'mode_remise']));
   });
 
   it('modification : retrait sur place efface l’adresse ; le PDF porte les conditions', async () => {
-    const p = await A.prep.patch(`/api/devis/${devisId}`).send({ mode_remise: 'retrait', delai_jours: null });
+    const p = await A.admin.patch(`/api/devis/${devisId}`).send({ mode_remise: 'retrait', delai_jours: null });
     expect(p.status).toBe(200);
     expect(p.body).toMatchObject({ mode_remise: 'retrait', adresse_livraison: null, delai_jours: null, acompte_pourcent: 50 });
-    const pdf = await A.prep.get(`/api/devis/${devisId}/pdf`);
+    const pdf = await A.admin.get(`/api/devis/${devisId}/pdf`);
     expect(pdf.status).toBe(200);
     expect(pdf.headers['content-type']).toBe('application/pdf');
-    await A.prep.patch(`/api/devis/${devisId}`).send({ mode_remise: 'livraison', adresse_livraison: 'Médina, rue 22' }).expect(200);
+    await A.admin.patch(`/api/devis/${devisId}`).send({ mode_remise: 'livraison', adresse_livraison: 'Médina, rue 22' }).expect(200);
   });
 
   it('conversion : mode de remise, adresse et urgence repris sur le dossier, au montant du devis', async () => {
-    await A.prep.post(`/api/devis/${devisId}/statut`).send({ statut: 'envoye' }).expect(200);
-    const dv = (await A.prep.get(`/api/devis/${devisId}`)).body;
-    const c = await A.prep.post(`/api/devis/${devisId}/convertir`).send({});
+    await A.admin.post(`/api/devis/${devisId}/statut`).send({ statut: 'envoye' }).expect(200);
+    const dv = (await A.admin.get(`/api/devis/${devisId}`)).body;
+    const c = await A.admin.post(`/api/devis/${devisId}/convertir`).send({});
     expect(c.status).toBe(201);
-    const d = await A.prep.get(`/api/dossiers/${c.body.dossier_id}`);
+    const d = await A.admin.get(`/api/dossiers/${c.body.dossier_id}`);
     expect(d.body).toMatchObject({ mode_remise: 'livraison', adresse_livraison: 'Médina, rue 22', urgent: true, montant: dv.total_ttc, montant_source: 'devis' });
     expect(d.body.specs.lignes[0].type_document).toBe('flyer');
   });
 
   it('conversion d’un devis « sur place » sans urgence', async () => {
-    const r = await A.prep.post('/api/devis').send({ ...flyersA5, specs: { ...flyersA5.specs, forfaits: [] }, mode_remise: 'retrait', adresse_livraison: 'ignorée' });
+    const r = await A.admin.post('/api/devis').send({ ...flyersA5, specs: { ...flyersA5.specs, forfaits: [] }, mode_remise: 'retrait', adresse_livraison: 'ignorée' });
     expect(r.status).toBe(201);
     expect(r.body.adresse_livraison).toBeNull();
-    await A.prep.post(`/api/devis/${r.body.id}/statut`).send({ statut: 'envoye' }).expect(200);
-    const c = await A.prep.post(`/api/devis/${r.body.id}/convertir`).send({});
-    const d = await A.prep.get(`/api/dossiers/${c.body.dossier_id}`);
+    await A.admin.post(`/api/devis/${r.body.id}/statut`).send({ statut: 'envoye' }).expect(200);
+    const c = await A.admin.post(`/api/devis/${r.body.id}/convertir`).send({});
+    const d = await A.admin.get(`/api/dossiers/${c.body.dossier_id}`);
     expect(d.body).toMatchObject({ mode_remise: 'retrait', adresse_livraison: null, urgent: false });
   });
 });
@@ -207,7 +216,7 @@ describe('devis : remise au client, délai, acompte, conditions', () => {
 describe('dossier : œillets calculés et précisions', () => {
   it('bâche à œillets tout autour : le nombre suit les dimensions', async () => {
     await poserPrix({ oeillets: 100 });
-    const r = await A.prep.post('/api/dossiers').send({
+    const r = await A.admin.post('/api/dossiers').send({
       machine: 'roland',
       client_nom: 'Garage Sall',
       mode_remise: 'retrait',

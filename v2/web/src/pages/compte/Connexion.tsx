@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Navigate, useLocation, useNavigate } from 'react-router-dom';
-import { FileCheck, Printer, Truck } from 'lucide-react';
+import { Eye, EyeOff, FileCheck, Printer, Truck } from 'lucide-react';
 import { accueilPour, useAuth } from '../../auth/AuthContext';
 import { messageErreur } from '../../lib/api';
 import { Alert, Button, TextField } from '../../ui';
@@ -19,6 +19,7 @@ export default function Connexion() {
   const [password, setPassword] = useState('');
   const [erreur, setErreur] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [voirMdp, setVoirMdp] = useState(false);
 
   if (user) return <Navigate to={loc.state?.from ?? accueilPour(user.role)} replace />;
 
@@ -77,7 +78,19 @@ export default function Connexion() {
           </div>
           {erreur && <Alert tone="error">{erreur}</Alert>}
           <TextField label="Adresse e-mail" type="email" autoComplete="username" required value={email} onChange={(e) => setEmail(e.target.value)} autoFocus />
-          <TextField label="Mot de passe" type="password" autoComplete="current-password" required value={password} onChange={(e) => setPassword(e.target.value)} />
+          <TextField
+            label="Mot de passe"
+            type={voirMdp ? 'text' : 'password'}
+            autoComplete="current-password"
+            required
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            addon={
+              <button type="button" className="ev-icon-btn" onClick={() => setVoirMdp((v) => !v)} aria-label={voirMdp ? 'Masquer le mot de passe' : 'Voir le mot de passe'} aria-pressed={voirMdp} title={voirMdp ? 'Masquer' : 'Voir le mot de passe'}>
+                {voirMdp ? <EyeOff /> : <Eye />}
+              </button>
+            }
+          />
           <Button type="submit" variant="primary" size="lg" block busy={busy}>
             Se connecter
           </Button>

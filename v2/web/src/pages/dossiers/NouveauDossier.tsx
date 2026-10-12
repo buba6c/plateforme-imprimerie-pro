@@ -3,7 +3,7 @@
 // Le prix est calculé en direct par le moteur partagé ; le serveur le recalcule et fait foi.
 
 import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
-import { Link, useNavigate, useParams } from 'react-router-dom';
+import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
 import { Save } from 'lucide-react';
 import {
@@ -29,7 +29,7 @@ import { PrixPanel, usePrix } from '../../features/specs/PrixPanel';
 import { SpecsEditor } from '../../features/specs/SpecsEditor';
 import { FichiersEtBat, RemiseClient, UrgenceChoix, type ModeRemise } from '../../features/specs/Commande';
 import { SuggestionIA } from '../../features/ia/SuggestionIA';
-import { EnregistrerModele, ModelesDossier } from '../../features/modeles/ModelesDossier';
+import { appliquerModele, EnregistrerModele, ModelesDossier, useModeles } from '../../features/modeles/ModelesDossier';
 import { useLibelles, useParamsPrix, useTarifs } from '../../features/specs/useTarifs';
 import { Alert, Button, Card, Checkbox, EmptyState, LoadingRows, MachineChip, PageHeader, Segmented, SelectField, TextareaField, TextField, useToast, MachineIcone } from '../../ui';
 import '../../features/dossiers-ui/dossiers-ui.css';
@@ -135,7 +135,20 @@ export default function NouveauDossier() {
   const { params, parDefaut } = useParamsPrix();
   const libelle = useLibelles(tarifs.data);
 
+  const voitPrix = user.role === 'admin';
   const [f, setF] = useState<Formulaire>(formulaireVide);
+  // Arrivée depuis la page Modèles (?modele=ID) : le modèle est appliqué dès qu'il est chargé.
+  const [sp] = useSearchParams();
+  const modeles = useModeles();
+  const modeleDemande = Number(sp.get('modele')) || 0;
+  const modeleApplique = useRef(0);
+  useEffect(() => {
+    if (!modeleDemande || modeleApplique.current === modeleDemande || !modeles.data) return;
+    const m = modeles.data.find((x) => x.id === modeleDemande);
+    if (!m) return;
+    modeleApplique.current = modeleDemande;
+    setF((x) => appliquerModele(x, m));
+  }, [modeleDemande, modeles.data]);
   const initial = useRef<Formulaire | null>(edition ? null : formulaireVide());
   const [pret, setPret] = useState(!edition);
   const [erreurs, setErreurs] = useState<Record<string, string>>({});
@@ -332,19 +345,7 @@ export default function NouveauDossier() {
           />
           {!edition && (
             <Card title="Partir d’un modèle" className="nd-section nd-modeles" actions={<span className="ev-muted" style={{ fontSize: 13 }}>Vos configurations habituelles, en un clic</span>}>
-              <ModelesDossier
-                machineImposee={machineModifiable ? undefined : f.machine}
-                onAppliquer={(m) =>
-                  setF((x) => ({
-                    ...x,
-                    machine: m.machine,
-                    specs: specsVersDraft(m.machine, m.specs),
-                    description: m.description ?? x.description,
-                    consignes: m.consignes ?? x.consignes,
-                    mode_remise: m.mode_remise ?? x.mode_remise,
-                  }))
-                }
-              />
+              <ModelesDossier machineImposee={machineModifiable ? undefined : f.machine} onAppliquer={(m) => setF((x) => appliquerModele(x, m))} />
             </Card>
           )}
           <Card title={<><span className="nd-section__num">1</span>Machine</>} className="nd-section">
@@ -383,7 +384,6 @@ export default function NouveauDossier() {
                 }
               />
               <TextField label="Téléphone" type="tel" inputMode="tel" mono value={f.client_telephone} onChange={(e) => maj('client_telephone', e.target.value)} placeholder="77 123 45 67" error={erreurs.client_telephone} autoComplete="off" />
-              <TextField label="E-mail" type="email" value={f.client_email} onChange={(e) => maj('client_email', e.target.value)} placeholder="nom@exemple.sn" error={erreurs.client_email} autoComplete="off" />
             </div>
           </Card>
 
@@ -460,6 +460,7 @@ export default function NouveauDossier() {
           </Card>
         </div>
 
+        {voitPrix && (
         <aside className="nd-side">
           <PrixPanel
             machine={f.machine}
@@ -509,12 +510,19 @@ export default function NouveauDossier() {
             )}
           </PrixPanel>
         </aside>
+        )}
       </form>
 
       <div className="du-barre" role="region" aria-label="Enregistrer le dossier">
         <div className="du-barre__info">
-          <small>{f.montantManuel ? 'Montant saisi' : garde ? (d?.montant_source === 'devis' ? 'Prix du devis' : 'Prix convenu') : 'Total calculé'}</small>
-          <span className="ev-num">{totalAffiche === null ? 'À définir' : formatFCFA(totalAffiche)}</span>
+          {voitPrix ? (
+            <>
+              <small>{f.montantManuel ? 'Montant saisi' : garde ? (d?.montant_source === 'devis' ? 'Prix du devis' : 'Prix convenu') : 'Total calculé'}</small>
+              <span className="ev-num">{totalAffiche === null ? 'À définir' : formatFCFA(totalAffiche)}</span>
+            </>
+          ) : (
+            <small>Le prix est fixé par l’administrateur.</small>
+          )}
         </div>
         <div className="du-barre__actions">
           <EnregistrerModele

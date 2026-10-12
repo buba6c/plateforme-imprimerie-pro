@@ -48,7 +48,7 @@ export async function chargerPaiement(id: number, db?: Db) {
 export const paiementsRouter = Router();
 paiementsRouter.use(requireAuth);
 
-paiementsRouter.get('/', requireRole('admin', 'preparateur', 'livreur'), async (req, res) => {
+paiementsRouter.get('/', requireRole('admin', 'livreur'), async (req, res) => {
   const user = me(req);
   const params = await getParametres();
   const { page, limit, offset } = pagination(req, 50, 200);
@@ -375,7 +375,7 @@ paiementsRouter.post('/:id/refuser', requireRole('admin'), async (req, res) => {
 
 export const dossierPaiementsRouter = Router();
 
-dossierPaiementsRouter.post('/:id/paiements', requireAuth, requireRole('admin', 'preparateur', 'livreur'), async (req, res) => {
+dossierPaiementsRouter.post('/:id/paiements', requireAuth, requireRole('admin', 'livreur'), async (req, res) => {
   const user = me(req);
   const id = intParam(req);
   const input = paiementInputSchema.parse(req.body ?? {});

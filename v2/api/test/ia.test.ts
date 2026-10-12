@@ -251,7 +251,7 @@ describe('assistant IA : propositions', () => {
       }),
     );
 
-    const r = await A.prep.post('/api/ia/suggestion').send({ description });
+    const r = await A.admin.post('/api/ia/suggestion').send({ description });
     expect(r.status).toBe(200);
     expect(r.body.machine).toBe('roland');
     expect(r.body.specs.lignes).toHaveLength(1);
@@ -278,7 +278,7 @@ describe('assistant IA : propositions', () => {
 
     // Les spécifications proposées sont acceptées telles quelles par les schémas de création et par l'estimation.
     expect(dossierCreateSchema.safeParse({ machine: r.body.machine, client_nom: 'Boutique Keur Yaye', specs: r.body.specs }).success).toBe(true);
-    const estime = await A.prep.post('/api/tarifs/estimer').send({ machine: r.body.machine, specs: r.body.specs });
+    const estime = await A.admin.post('/api/tarifs/estimer').send({ machine: r.body.machine, specs: r.body.specs });
     expect(estime.status).toBe(200);
     expect(estime.body.total_ttc).toBe(71_000);
 
@@ -297,6 +297,15 @@ describe('assistant IA : propositions', () => {
     expect(u).toMatchObject({ statut: 'ok', jetons_entree: 1200, jetons_sortie: 300, longueur_demande: description.trim().length });
     expect(u.extrait.length).toBeLessThanOrEqual(120);
     expect(description.length).toBeGreaterThan(200);
+
+    // Le préparateur reçoit la même proposition, mais jamais le prix.
+    const p = await A.prep.post('/api/ia/suggestion').send({ description });
+    expect(p.status).toBe(200);
+    expect(p.body.specs.lignes).toHaveLength(1);
+    expect(p.body.specs.lignes[0].support).toBe('bache_m2');
+    expect(p.body.prix).toBeNull();
+    expect(p.body).not.toHaveProperty('erreur_prix');
+    expect(JSON.stringify(p.body)).not.toMatch(/71\s?000/);
   });
 
   it('respecte la machine imposée et renvoie une erreur de prix lisible quand aucune ligne ne reste', async () => {
@@ -309,7 +318,7 @@ describe('assistant IA : propositions', () => {
         remarques: null,
       }),
     );
-    const x = await A.prep.post('/api/ia/suggestion').send({ description: '500 flyers A4 recto-verso', machine: 'xerox' });
+    const x = await A.admin.post('/api/ia/suggestion').send({ description: '500 flyers A4 recto-verso', machine: 'xerox' });
     expect(x.status).toBe(200);
     expect(x.body.machine).toBe('xerox');
     expect(x.body.specs.lignes[0]).toMatchObject({ support: 'papier_a4_couleur', pages: 2, recto_verso: true, quantite: 500 });
@@ -328,7 +337,7 @@ describe('assistant IA : propositions', () => {
         remarques: null,
       }),
     );
-    const vide = await A.prep.post('/api/ia/suggestion').send({ description: '100 cartes', machine: 'xerox' });
+    const vide = await A.admin.post('/api/ia/suggestion').send({ description: '100 cartes', machine: 'xerox' });
     expect(vide.status).toBe(200);
     expect(vide.body.machine).toBe('xerox');
     expect(vide.body.specs.lignes).toEqual([]);

@@ -2,10 +2,11 @@
 
 import { ParcoursDossier } from '../../features/dossiers-ui/ParcoursDossier';
 import { ReimpressionDialog } from '../../features/dossiers-ui/ReimpressionDialog';
+import { EnregistrerModeleDialog } from '../../features/modeles/ModelesDossier';
 import { lazy, Suspense, useMemo, useState } from 'react';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
-import { ArrowLeft, CalendarClock, Copy, FileDown, Files, History, ListChecks, Pencil, Route, ShieldAlert, Trash2, UserCog, UserRound, Zap, ZapOff } from 'lucide-react';
+import { ArrowLeft, BookmarkPlus, CalendarClock, Copy, FileDown, Files, History, ListChecks, Pencil, Route, ShieldAlert, Trash2, UserCog, UserRound, Zap, ZapOff } from 'lucide-react';
 import {
   formatDate,
   formatDateHeure,
@@ -31,7 +32,7 @@ import '../../features/dossiers-ui/dossiers-ui.css';
 const Televersement = lazy(() => import('../../features/fichiers/Televersement').then((m) => ({ default: m.Televersement })));
 
 type Dossier = DossierDetail & { client_email?: string | null; devis_id?: number | null };
-type Dialogue = 'forcer' | 'affecter' | 'reporter' | 'supprimer' | 'reimprimer' | null;
+type Dialogue = 'forcer' | 'affecter' | 'reporter' | 'supprimer' | 'reimprimer' | 'modele' | null;
 
 export default function FicheDossier() {
   const { id: idParam } = useParams();
@@ -125,6 +126,7 @@ export default function FicheDossier() {
     menu.push({ id: 'affecter', label: 'Affecter…', icon: <UserCog />, onSelect: () => setDialogue('affecter') });
     menu.push({ id: 'forcer', label: 'Forcer le statut…', icon: <ShieldAlert />, onSelect: () => setDialogue('forcer') });
   }
+  if (bureau) menu.push({ id: 'modele', label: 'Enregistrer comme modèle…', icon: <BookmarkPlus />, onSelect: () => setDialogue('modele') });
   if (bureau) menu.push({ id: 'reimprimer', label: user.role === 'admin' ? 'Réimprimer ou dupliquer…' : 'Nouvelle commande identique…', icon: <Copy />, onSelect: () => setDialogue('reimprimer') });
   if (peutReporter) menu.push({ id: 'reporter', label: 'Reporter la livraison…', icon: <CalendarClock />, onSelect: () => setDialogue('reporter') });
   if (bon.data) menu.push({ id: 'bon', label: 'Bon de travail (PDF)', icon: <FileDown />, onSelect: () => {}, href: `/api/dossiers/${d.id}/bon-de-travail.pdf` });
@@ -266,7 +268,7 @@ export default function FicheDossier() {
           <Card
             className="fd-o-client"
             title={<span className="fd-titre"><span className="fd-titre__icone"><UserRound aria-hidden="true" /></span>Client</span>}
-            actions={bureau && d.client_id ? <Link className="ev-link" style={{ fontSize: 13 }} to={`/clients/${d.client_id}`}>Voir la fiche client</Link> : undefined}
+            actions={user.role === 'admin' && d.client_id ? <Link className="ev-link" style={{ fontSize: 13 }} to={`/clients/${d.client_id}`}>Voir la fiche client</Link> : undefined}
           >
             <dl className="fd-kv">
               <dt>Nom</dt>
@@ -300,7 +302,7 @@ export default function FicheDossier() {
 
           {voirMontants && (
             <div className="fd-o-montant">
-              <CarteMontant d={d} peutEncaisser={bureau} peutFacturer={bureau} params={params} libelleGroupe={libelleGroupe} />
+              <CarteMontant d={d} peutEncaisser={user.role === 'admin'} peutFacturer={user.role === 'admin'} params={params} libelleGroupe={libelleGroupe} />
             </div>
           )}
 
@@ -355,6 +357,12 @@ export default function FicheDossier() {
         </div>
       )}
 
+      {dialogue === 'modele' && (
+        <EnregistrerModeleDialog
+          contenu={() => ({ machine: d.machine, specs: d.specs, description: d.description ?? '', consignes: d.consignes ?? '', mode_remise: d.mode_remise ?? '' })}
+          onClose={() => setDialogue(null)}
+        />
+      )}
       {dialogue === 'reimprimer' && <ReimpressionDialog d={d} admin={user.role === 'admin'} onClose={() => setDialogue(null)} />}
       {dialogue === 'forcer' && <ForcerStatutDialog d={d} onClose={() => setDialogue(null)} />}
       {dialogue === 'affecter' && <AffecterDialog d={d} annuaire={annuaire.data ?? []} onClose={() => setDialogue(null)} />}

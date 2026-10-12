@@ -210,11 +210,12 @@ describe('envoi d’une facture', () => {
   let factureId: number;
 
   it('envoie la facture (POST /invoices.json) et garde numéro et lien distants ; une seule fois', async () => {
-    const f = await creerFactureDirecte(A.prep);
+    const f = await creerFactureDirecte(A.admin);
     factureId = f.id;
     expect(f.vosfactures).toBeNull();
     expect(f.vosfactures_actif).toBe(true);
-    const r = await A.prep.post(`/api/factures/${factureId}/vosfactures`);
+    expect((await A.prep.post(`/api/factures/${factureId}/vosfactures`)).status).toBe(403);
+    const r = await A.admin.post(`/api/factures/${factureId}/vosfactures`);
     expect(r.status).toBe(200);
     expect(r.body.vosfactures).toMatchObject({ id: 100, numero: `FV ${ANNEE}/0100`, url: `${faux.url}/invoice/tok100`, erreur: null, tentatives: 1, annulee_at: null, envoye_par_nom: expect.any(String) });
     expect(r.body.vosfactures.envoye_at).toBeTruthy();
@@ -231,7 +232,7 @@ describe('envoi d’une facture', () => {
     ]);
     expect(inv.description).toContain(f.numero);
 
-    const deux = await A.prep.post(`/api/factures/${factureId}/vosfactures`);
+    const deux = await A.admin.post(`/api/factures/${factureId}/vosfactures`);
     expect(deux.status).toBe(409);
     expect(deux.body.error).toContain(`FV ${ANNEE}/0100`);
     expect(dernieresRequetes('/invoices.json').filter((x) => x.methode === 'POST')).toHaveLength(1);
@@ -248,7 +249,8 @@ describe('envoi d’une facture', () => {
   });
 
   it('sert le PDF édité par VosFactures sans exposer la clé', async () => {
-    const pdf = await A.prep.get(`/api/factures/${factureId}/vosfactures.pdf`);
+    expect((await A.prep.get(`/api/factures/${factureId}/vosfactures.pdf`)).status).toBe(403);
+    const pdf = await A.admin.get(`/api/factures/${factureId}/vosfactures.pdf`);
     expect(pdf.status).toBe(200);
     expect(pdf.headers['content-type']).toBe('application/pdf');
     expect(dernieresRequetes('/invoices/100.pdf').at(-1)!.chemin).toContain(`api_token=${CLE}`);
@@ -327,7 +329,7 @@ describe('envoi automatique', () => {
   it('chaque facture émise part vers VosFactures ; un échec n’empêche pas l’émission', async () => {
     const r = await A.admin.put('/api/factures/vosfactures/config').send({ envoi_auto: true });
     expect(r.body.envoi_auto).toBe(true);
-    const f = await creerFactureDirecte(A.prep, 'Client auto');
+    const f = await creerFactureDirecte(A.admin, 'Client auto');
     expect(f.vosfactures).toMatchObject({ id: expect.any(Number), erreur: null });
     expect(f.vosfactures.numero).toMatch(/^FV /);
 
@@ -336,13 +338,13 @@ describe('envoi automatique', () => {
       client_nom: 'Dossier auto',
       specs: { lignes: [{ support: 'bache_m2', largeur: 100, hauteur: 100, unite: 'cm', quantite: 1, finitions: [], options: [] }], forfaits: [] },
     });
-    const fd = await A.prep.post(`/api/dossiers/${d.body.id}/facture`);
+    const fd = await A.admin.post(`/api/dossiers/${d.body.id}/facture`);
     expect(fd.status).toBe(201);
     expect(fd.body.vosfactures.id).toBeGreaterThan(0);
     expect(dernieresRequetes('/invoices.json').filter((x) => x.methode === 'POST').at(-1)!.corps.invoice.description).toContain(d.body.numero);
 
     process.env.VOSFACTURES_URL = 'http://127.0.0.1:1';
-    const sansReseau = await creerFactureDirecte(A.prep, 'Client auto sans réseau');
+    const sansReseau = await creerFactureDirecte(A.admin, 'Client auto sans réseau');
     expect(sansReseau.statut).toBe('emise');
     expect(sansReseau.vosfactures).toMatchObject({ id: null, tentatives: 1, erreur: expect.stringContaining('injoignable') });
     expect((await A.admin.put('/api/factures/vosfactures/config').send({ envoi_auto: false })).body.envoi_auto).toBe(false);

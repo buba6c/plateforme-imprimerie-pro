@@ -110,29 +110,31 @@ describe('facture directe (sans dossier)', () => {
   let dossierId: number;
 
   it('refuse une facture sans ligne, à 0 ou avec une remise trop forte, avec les champs en cause', async () => {
-    const vide = await A.prep.post('/api/factures').send({ client_nom: 'X', lignes: [] });
+    const vide = await A.admin.post('/api/factures').send({ client_nom: 'X', lignes: [] });
     expect(vide.status).toBe(400);
     expect(vide.body.champs.lignes).toMatch(/au moins une ligne/);
-    const sansNom = await A.prep.post('/api/factures').send({ client_nom: '', lignes: directe.lignes });
+    const sansNom = await A.admin.post('/api/factures').send({ client_nom: '', lignes: directe.lignes });
     expect(sansNom.status).toBe(400);
     expect(sansNom.body.champs.client_nom).toBeTruthy();
-    const zero = await A.prep.post('/api/factures').send({ client_nom: 'X', lignes: [{ designation: 'Offert', quantite: 1, unite: 'unite', prix_unitaire: 0 }] });
+    const zero = await A.admin.post('/api/factures').send({ client_nom: 'X', lignes: [{ designation: 'Offert', quantite: 1, unite: 'unite', prix_unitaire: 0 }] });
     expect(zero.status).toBe(400);
     expect(zero.body.error).toMatch(/supérieur à 0/);
-    const remise = await A.prep.post('/api/factures').send({ client_nom: 'X', lignes: directe.lignes, remise: 999_999 });
+    const remise = await A.admin.post('/api/factures').send({ client_nom: 'X', lignes: directe.lignes, remise: 999_999 });
     expect(remise.status).toBe(400);
     expect(remise.body.champs.remise).toBeTruthy();
-    const decimale = await A.prep.post('/api/factures').send({ client_nom: 'X', lignes: [{ designation: 'A', quantite: 1, unite: 'unite', prix_unitaire: 10.5 }] });
+    const decimale = await A.admin.post('/api/factures').send({ client_nom: 'X', lignes: [{ designation: 'A', quantite: 1, unite: 'unite', prix_unitaire: 10.5 }] });
     expect(decimale.status).toBe(400);
     expect(decimale.body.champs['lignes.0.prix_unitaire']).toMatch(/entier/);
-    const echeance = await A.prep.post('/api/factures').send({ ...directe, date_emission: '2026-03-10', date_echeance: '2026-03-01' });
+    const echeance = await A.admin.post('/api/factures').send({ ...directe, date_emission: '2026-03-10', date_echeance: '2026-03-01' });
     expect(echeance.status).toBe(400);
     expect(echeance.body.champs.date_echeance).toBeTruthy();
     expect((await A.livreur.post('/api/factures').send(directe)).status).toBe(403);
+    expect((await A.prep.post('/api/factures').send(directe)).status).toBe(403);
+    expect((await A.prep.get('/api/factures')).status).toBe(403);
   });
 
   it('crée la facture avec un client saisi (ajouté à l’annuaire), numéro FAC sans trou, lignes et remise', async () => {
-    const r = await A.prep.post('/api/factures').send(directe);
+    const r = await A.admin.post('/api/factures').send(directe);
     expect(r.status).toBe(201);
     directeId = r.body.id;
     expect(r.body).toMatchObject({
@@ -190,7 +192,8 @@ describe('facture directe (sans dossier)', () => {
   it('la numérotation reste commune et sans trou avec les factures de dossier ; la liste joint les dossiers en LEFT JOIN', async () => {
     const d = await A.prep.post('/api/dossiers').send(bache);
     dossierId = d.body.id;
-    const f = await A.prep.post(`/api/dossiers/${dossierId}/facture`);
+    expect((await A.prep.post(`/api/dossiers/${dossierId}/facture`)).status).toBe(403);
+    const f = await A.admin.post(`/api/dossiers/${dossierId}/facture`);
     expect(f.status).toBe(201);
     expect(f.body).toMatchObject({ numero: `FAC-${ANNEE}-0003`, origine: 'dossier', dossier_numero: d.body.numero, reste: 42000, situation_paiement: 'non_paye' });
 
@@ -217,7 +220,8 @@ describe('facture directe (sans dossier)', () => {
 
   it('PDF de la facture directe (sans dossier) et de la facture de dossier', async () => {
     for (const id of [directeId, dossierId ? (await A.admin.get(`/api/factures?dossier_id=${dossierId}`)).body.items[0].id : directeId]) {
-      const pdf = await A.prep.get(`/api/factures/${id}/pdf`).buffer(true).parse(binaire);
+      expect((await A.prep.get(`/api/factures/${id}/pdf`)).status).toBe(403);
+      const pdf = await A.admin.get(`/api/factures/${id}/pdf`).buffer(true).parse(binaire);
       expect(pdf.status).toBe(200);
       expect(pdf.headers['content-type']).toBe('application/pdf');
       expect((pdf.body as Buffer).subarray(0, 5).toString()).toBe('%PDF-');
@@ -227,12 +231,12 @@ describe('facture directe (sans dossier)', () => {
 
   it('avec TVA (prix saisis TTC), les lignes sont hors taxes et la facture porte le taux', async () => {
     await reglerPrix({ tva_applicable: true, tva_taux: 18, prix_saisis_ht: false });
-    const r = await A.prep.post('/api/factures').send({ client_nom: 'Client TVA', lignes: [{ designation: 'Roll-up', quantite: 1, unite: 'unite', prix_unitaire: 118000 }] });
+    const r = await A.admin.post('/api/factures').send({ client_nom: 'Client TVA', lignes: [{ designation: 'Roll-up', quantite: 1, unite: 'unite', prix_unitaire: 118000 }] });
     expect(r.status).toBe(201);
     expect(r.body).toMatchObject({ total_ttc: 118000, total_ht: 100000, tva: 18000, tva_taux: 18 });
     expect(r.body.lignes[0]).toMatchObject({ prix_unitaire: 100000, total: 100000 });
     await reglerPrix({ tva_applicable: true, tva_taux: 18, prix_saisis_ht: true });
-    const ht = await A.prep.post('/api/factures').send({ client_nom: 'Client TVA', lignes: [{ designation: 'Roll-up', quantite: 1, unite: 'unite', prix_unitaire: 100000 }] });
+    const ht = await A.admin.post('/api/factures').send({ client_nom: 'Client TVA', lignes: [{ designation: 'Roll-up', quantite: 1, unite: 'unite', prix_unitaire: 100000 }] });
     expect(ht.body).toMatchObject({ total_ttc: 118000, total_ht: 100000, tva: 18000 });
     await reglerPrix({ tva_applicable: false, prix_saisis_ht: false });
   });
@@ -246,9 +250,9 @@ describe('facture directe (sans dossier)', () => {
     const liste = await A.admin.get('/api/factures?statut=annulee');
     expect(liste.body.total).toBe(1);
     expect((await A.admin.get('/api/factures')).body.compteurs.annulee).toBe(1);
-    const pdf = await A.prep.get(`/api/factures/${directeId}/pdf`).buffer(true).parse(binaire);
+    const pdf = await A.admin.get(`/api/factures/${directeId}/pdf`).buffer(true).parse(binaire);
     expect((pdf.body as Buffer).subarray(0, 5).toString()).toBe('%PDF-');
-    const suivante = await A.prep.post('/api/factures').send({ client_nom: 'Suivante', lignes: [{ designation: 'A', quantite: 1, unite: 'unite', prix_unitaire: 1000 }] });
+    const suivante = await A.admin.post('/api/factures').send({ client_nom: 'Suivante', lignes: [{ designation: 'A', quantite: 1, unite: 'unite', prix_unitaire: 1000 }] });
     expect(suivante.body.numero).toBe(`FAC-${ANNEE}-0006`);
   });
 });

@@ -37,7 +37,7 @@ import { pdfDevis } from '../pdf/documents';
 import { lignesProduits } from '../pdf/lignes';
 
 export const devisRouter = Router();
-devisRouter.use(requireAuth, requireRole('admin', 'preparateur'));
+devisRouter.use(requireAuth, requireRole('admin'));
 
 const TRANSITIONS: Record<StatutDevis, StatutDevis[]> = {
   brouillon: ['envoye'],

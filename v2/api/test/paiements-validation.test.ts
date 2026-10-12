@@ -114,10 +114,12 @@ describe('dépassement du montant', () => {
 
   it('deux encaissements simultanés ne dépassent pas le reste à payer (A8)', async () => {
     for (let essai = 0; essai < 5; essai++) {
-      const d = await dossier(45000);
+      // Prêt à livrer : le livreur voit le dossier et peut encaisser (le préparateur, lui, ne le peut jamais).
+      const d = await dossier(45000, 'pret_livraison');
+      expect((await A.prep.post(`/api/dossiers/${d}/paiements`).send({ montant: 1000, mode: 'especes' })).status).toBe(403);
       const r = await Promise.all([
         A.admin.post(`/api/dossiers/${d}/paiements`).send({ montant: 30000, mode: 'especes' }),
-        A.prep.post(`/api/dossiers/${d}/paiements`).send({ montant: 30000, mode: 'especes' }),
+        A.livreur.post(`/api/dossiers/${d}/paiements`).send({ montant: 30000, mode: 'especes' }),
       ]);
       expect(r.map((x) => x.status).sort()).toEqual([201, 409]);
       const s = (await getPool().query(`SELECT coalesce(sum(montant),0)::int AS s FROM paiements WHERE dossier_id = $1 AND statut <> 'refuse'`, [d])).rows[0].s;

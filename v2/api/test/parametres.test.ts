@@ -221,10 +221,10 @@ describe('fichiers', () => {
 describe('documents', () => {
   it('la validité par défaut des devis vient des paramètres', async () => {
     await A.admin.put('/api/parametres').send({ documents: { devis_validite_jours: 30 } }).expect(200);
-    const d = await A.prep.post('/api/devis').send(bache);
+    const d = await A.admin.post('/api/devis').send(bache);
     expect(d.status).toBe(201);
     expect(d.body.validite_jours).toBe(30);
-    const explicite = await A.prep.post('/api/devis').send({ ...bache, validite_jours: 10 });
+    const explicite = await A.admin.post('/api/devis').send({ ...bache, validite_jours: 10 });
     expect(explicite.body.validite_jours).toBe(10);
   });
 
@@ -233,23 +233,23 @@ describe('documents', () => {
       .put('/api/parametres')
       .send({ documents: { mentions_devis: 'Acompte de 50 % a la commande.', conditions_paiement: 'Paiement sous 30 jours par Wave.' } })
       .expect(200);
-    const devis = await A.prep.post('/api/devis').send(bache);
-    const pdfDevis = await A.prep.get(`/api/devis/${devis.body.id}/pdf`).buffer(true).parse(binaire);
+    const devis = await A.admin.post('/api/devis').send(bache);
+    const pdfDevis = await A.admin.get(`/api/devis/${devis.body.id}/pdf`).buffer(true).parse(binaire);
     expect(pdfDevis.status).toBe(200);
     const texteDevis = textePdf(pdfDevis.body as Buffer);
     expect(texteDevis).toContain('Acompte de 50 % a la commande.');
     expect(texteDevis).not.toContain('Paiement sous 30 jours');
 
     const dossier = await A.prep.post('/api/dossiers').send(bache);
-    const f = await A.prep.post(`/api/dossiers/${dossier.body.id}/facture`);
+    const f = await A.admin.post(`/api/dossiers/${dossier.body.id}/facture`);
     expect(f.status).toBe(201);
-    const pdfFacture = await A.prep.get(`/api/factures/${f.body.id}/pdf`).buffer(true).parse(binaire);
+    const pdfFacture = await A.admin.get(`/api/factures/${f.body.id}/pdf`).buffer(true).parse(binaire);
     const texteFacture = textePdf(pdfFacture.body as Buffer);
     expect(texteFacture).toContain('Paiement sous 30 jours par Wave.');
     expect(texteFacture).not.toContain('Acompte de 50 %');
 
     await A.admin.put('/api/parametres').send({ documents: { mentions_devis: '', conditions_paiement: '' } }).expect(200);
-    const sans = await A.prep.get(`/api/devis/${devis.body.id}/pdf`).buffer(true).parse(binaire);
+    const sans = await A.admin.get(`/api/devis/${devis.body.id}/pdf`).buffer(true).parse(binaire);
     expect(textePdf(sans.body as Buffer)).not.toContain('Acompte de 50 %');
     await remettreParDefaut();
   });
@@ -414,7 +414,7 @@ describe('réinitialisation de la plateforme', () => {
     cheminFichier = (await getPool().query(`SELECT chemin FROM fichiers WHERE id = $1`, [up.fichierId])).rows[0].chemin;
     expect(fs.existsSync(path.join(STOCKAGE, cheminFichier))).toBe(true);
     await A.admin.post(`/api/dossiers/${dossierId}/paiements`).send({ montant: 5000, mode: 'especes' }).expect(201);
-    await A.prep.post(`/api/dossiers/${dossierId}/facture`).expect(201);
+    await A.admin.post(`/api/dossiers/${dossierId}/facture`).expect(201);
     const pool = getPool();
     await pool.query(`INSERT INTO ia_usage (type, statut, duree_ms, extrait) VALUES ('suggestion', 'ok', 120, 'Bâche pour Client à effacer')`);
     await pool.query(`INSERT INTO preferences_utilisateur (user_id, theme) SELECT id, 'dark' FROM users WHERE email = $1 ON CONFLICT (user_id) DO UPDATE SET theme = 'dark'`, [comptes.prep]);
