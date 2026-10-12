@@ -17,6 +17,7 @@ import {
 import { messageErreur } from '../../lib/api';
 import type { DossierResume } from '../../lib/types';
 import { Alert, Button, Checkbox, Dialog, SelectField, TextareaField, TextField, useToast } from '../../ui';
+import { ModeChoix } from '../paiements/ModePastille';
 import { useAction } from './hooks';
 
 const ICONS: Partial<Record<ActionId, React.ReactNode>> = {
@@ -241,7 +242,7 @@ function LivrerDialog({ numero, reste, modePrevu, busy, onClose, onValider }: {
       {encaisser && (
         <div className="ev-form-grid">
           <TextField label="Montant encaissé" required mono addon="FCFA" inputMode="numeric" value={montant} onChange={(e) => setMontant(e.target.value)} error={montant ? erreur : null} />
-          <SelectField label="Mode de paiement" required value={mode} onChange={(e) => setMode(e.target.value as ModePaiement)} options={MODES_PAIEMENT.map((v) => ({ value: v, label: MODE_PAIEMENT_LABELS[v] }))} />
+          <ModeChoix value={mode} onChange={setMode} name="mode-paiement-livraison" />
           {refRequise && (
             <TextField label="Référence de la transaction" required value={reference} onChange={(e) => setReference(e.target.value)} placeholder="Ex. numéro Wave" mono />
           )}

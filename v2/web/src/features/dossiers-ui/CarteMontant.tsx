@@ -20,6 +20,7 @@ import {
 import { api, messageErreur } from '../../lib/api';
 import type { DossierDetail } from '../../lib/types';
 import { Alert, Button, Dialog, PaiementStatutBadge, PaymentBadge, SelectField, TextareaField, TextField, useToast } from '../../ui';
+import { ModeChoix, ModePastille } from '../paiements/ModePastille';
 import { LignesPrix, TotauxPrix } from '../specs/PrixPanel';
 import './dossiers-ui.css';
 
@@ -111,7 +112,7 @@ export function CarteMontant({ d, peutEncaisser, peutFacturer, params, libelleGr
               {d.paiements.map((p) => (
                 <li key={p.id} className="fd-paiement">
                   <span>
-                    <span className="ev-num">{formatFCFA(p.montant)}</span> <span className="ev-muted">· {MODE_PAIEMENT_LABELS[p.mode]}</span>
+                    <span className="ev-num">{formatFCFA(p.montant)}</span> <ModePastille mode={p.mode} taille="sm" />
                   </span>
                   <PaiementStatutBadge statut={p.statut} />
                   <span className="fd-paiement__meta">
@@ -218,7 +219,7 @@ function PaiementDialog({ d, reste, onClose }: { d: DossierDetail; reste: number
       {reste !== null && <Alert tone="info">Reste à payer : {formatFCFA(reste)}</Alert>}
       <div className="ev-form-grid">
         <TextField label="Montant" required mono addon="FCFA" inputMode="numeric" value={montant} onChange={(e) => setMontant(e.target.value)} error={erreurs.montant} data-autofocus />
-        <SelectField label="Mode de paiement" required value={mode} onChange={(e) => setMode(e.target.value as ModePaiement)} options={MODES_PAIEMENT.map((v) => ({ value: v, label: MODE_PAIEMENT_LABELS[v] }))} />
+        <ModeChoix value={mode} onChange={setMode} />
       </div>
       <TextField
         label="Référence de la transaction"

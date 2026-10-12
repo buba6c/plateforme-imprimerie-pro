@@ -15,6 +15,7 @@ import type { LivraisonEffectuee } from '../../features/livraisons-planning/type
 import '../../features/livraisons-planning/livraisons-planning.css';
 import { messageErreur } from '../../lib/api';
 import { Alert, Button, Card, EmptyState, LoadingRows, PageHeader, PaiementStatutBadge, Pagination, Ref, SelectField, TextField } from '../../ui';
+import { ModePastille } from '../../features/paiements/ModePastille';
 
 const TAILLE = 20;
 
@@ -230,7 +231,7 @@ export default function Historique() {
               <dl className="lp-modes">
                 {t.par_mode.map((m) => (
                   <div key={m.mode}>
-                    <dt>{m.libelle}</dt>
+                    <dt><ModePastille mode={m.mode} taille="sm" /></dt>
                     <dd className="ev-num">
                       {formatFCFA(m.montant)}
                       <small>

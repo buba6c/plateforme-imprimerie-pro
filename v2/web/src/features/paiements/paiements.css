@@ -10,6 +10,29 @@
 }
 .pay-mode[data-taille="sm"] { height: 20px; padding: 0 8px 0 6px; font-size: 12px; }
 .pay-mode__point { width: 8px; height: 8px; border-radius: var(--radius-full); background: var(--pm-point); flex: none; }
+.pay-logo { display: inline-block; flex: none; border-radius: 4px; object-fit: contain; background: #fff; }
+.pay-mode[data-mode="wave"] .pay-logo { background: transparent; }
+.pay-picto { display: inline-grid; place-items: center; flex: none; color: var(--pm-point); }
+.pay-picto svg { width: 100%; height: 100%; }
+
+/* Choix du mode dans un formulaire : une tuile par mode, logo + libellé */
+.pay-choix { grid-column: 1 / -1; margin: 0; padding: 0; border: 0; min-width: 0; }
+.pay-choix legend { padding: 0; margin-bottom: 6px; }
+.pay-choix__liste { display: grid; grid-template-columns: repeat(auto-fill, minmax(118px, 1fr)); gap: 8px; }
+.pay-choix__tuile {
+  --pm-point: var(--text-muted);
+  position: relative; display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 10px 6px 8px;
+  border: 1.5px solid var(--line); border-radius: var(--radius-md, 12px); background: var(--surface); cursor: pointer;
+  font-size: 12.5px; font-weight: 600; color: var(--text); text-align: center; transition: border-color 0.15s, background 0.15s, box-shadow 0.15s;
+}
+.pay-choix__tuile input { position: absolute; inset: 0; opacity: 0; margin: 0; cursor: pointer; }
+.pay-choix__tuile:hover { border-color: var(--line-strong); }
+.pay-choix__tuile:focus-within { box-shadow: 0 0 0 3px var(--accent-soft); border-color: var(--accent); }
+.pay-choix__tuile[data-on] { border-color: var(--accent); background: var(--accent-soft); color: var(--accent-ink); box-shadow: inset 0 0 0 1px var(--accent); }
+.pay-choix__tuile .pay-logo { width: 30px; height: 30px; border-radius: 7px; }
+.pay-choix__tuile .pay-picto { width: 28px; height: 28px; }
+.pay-choix__tuile[data-mode="especes"] { --pm-point: var(--success-ink); }
+.pay-choix__tuile[data-mode="virement"], .pay-choix__tuile[data-mode="cheque"], .pay-choix__tuile[data-mode="carte"] { --pm-point: var(--text-muted); }
 .pay-mode[data-mode="especes"] { --pm-bg: var(--success-soft); --pm-ink: var(--success-ink); --pm-point: var(--success-ink); }
 .pay-mode[data-mode="wave"] { --pm-bg: var(--xerox-soft); --pm-ink: var(--xerox-ink); --pm-point: var(--brand-start); }
 .pay-mode[data-mode="orange_money"] { --pm-bg: var(--s-en-livraison-bg); --pm-ink: var(--s-en-livraison-ink); --pm-point: var(--s-en-livraison); }
