@@ -30,10 +30,11 @@ import { traiterPdf } from '../traitement/pdf';
 
 /** Au-delà, un PDF est allégé (Ghostscript) avant d'être imposé. */
 const LOURD = 80 * 1024 * 1024;
-import { assembler, type Assemblage, type FichierPiece, type PieceEntree } from './sources';
-import { CODES_FEUILLE, FEUILLES, FORMATS_FINIS, type Feuille } from './formats';
+import { assembler, type Assemblage, type FichierPiece, type OptionsAssemblage, type PieceEntree } from './sources';
+import { CODES_FEUILLE, FEUILLES, FORMATS_FINIS, formatProche, type Feuille } from './formats';
 import { genererPdf } from './generer';
-import { calculerPlan, paramsParDefaut, type ParamsImposition } from './plan';
+import { calculerPlan, paramsParDefaut, type ParamsImposition, type SourcePlan } from './plan';
+import { detecterPlanches } from './planches';
 
 const dim = z.object({ largeur: z.number().positive().max(2000), hauteur: z.number().positive().max(2000) });
 const numerotationSchema = z.object({
@@ -60,9 +61,12 @@ export const paramsSchema = z.object({
   mode: z.enum(['repetition', 'sequence', 'coupe_empile']).default('repetition'),
   quantite: z.number().int().positive().max(100_000).optional(),
   numerotation: numerotationSchema.nullable().optional(),
-  ajustement: z.enum(['centrer', 'adapter', 'remplir']).default('centrer'),
+  ajustement: z.enum(['auto', 'centrer', 'adapter', 'remplir', 'etirer']).default('auto'),
+  fini_impose: z.boolean().optional(),
   chasse_mm: z.number().min(0).max(10).optional(),
-  blanches: z.enum(['fin', 'avant_derniere']).default('fin'),
+  blanches: z.enum(['fin', 'avant_derniere', 'apres_couverture', 'reparties', 'positions']).default('fin'),
+  blanches_apres: z.array(z.number().int().min(0).max(5000)).max(64).optional(),
+  planches: z.enum(['non', 'simple', 'couverture']).optional(),
   reliure: z.enum(['piqure', 'dos_carre']).optional(),
   cahier_feuilles: z.number().int().min(1).max(16).optional(),
   couverture_separee: z.boolean().optional(),
@@ -291,7 +295,7 @@ export function impositionRouter(config: Config) {
   }
 
   /** Charge les fichiers des pièces (droits vérifiés), assemble le document de travail et l'analyse. */
-  async function preparer(user: AuthUser, pieces: PieceEntree[], fini?: { largeur: number; hauteur: number }, fonds?: number) {
+  async function preparer(user: AuthUser, pieces: PieceEntree[], opts: OptionsAssemblage = {}) {
     const fichiers: FichierPiece[] = [];
     let dossierId: number | null = null;
     for (const p of pieces) {
@@ -327,7 +331,7 @@ export function impositionRouter(config: Config) {
     }
     let assemblage: Assemblage;
     try {
-      assemblage = await assembler(pieces, fichiers, tempDir, fini, fonds);
+      assemblage = await assembler(pieces, fichiers, tempDir, opts);
     } catch (e) {
       throw badRequest(`Les fichiers n’ont pas pu être assemblés : ${e instanceof Error ? e.message : 'erreur inconnue'}`);
     }
@@ -382,7 +386,9 @@ export function impositionRouter(config: Config) {
     const pieces = lirePieces(body);
     const fini = finiOpt.safeParse(body.fini).data;
     const fonds = typeof body.fonds_perdus_mm === 'number' ? body.fonds_perdus_mm : undefined;
-    const { fichiers, assemblage, analyse, dossierId } = await preparer(me(req), pieces, fini, fonds);
+    const planches = z.enum(['non', 'simple', 'couverture']).optional().safeParse(body.planches).data;
+    const lecture = z.enum(['gauche_droite', 'droite_gauche']).optional().safeParse(body.lecture).data;
+    const { fichiers, assemblage, analyse, dossierId } = await preparer(me(req), pieces, { fini, fonds, planches, lecture });
     const premier = fichiers[0]!;
     const defaut = paramsParDefaut(analyse);
     if (assemblage.paires?.some((x) => x.verso !== null)) defaut.recto_verso = true;
@@ -395,8 +401,16 @@ export function impositionRouter(config: Config) {
       paires: assemblage.paires,
       analyse,
       params_defaut: defaut,
+      // Format non reconnu : format standard le plus proche, proposé pour mettre le fichier au format.
+      format_proche: analyse.format ? null : formatProche(analyse.fini.largeur, analyse.fini.hauteur),
+      // Planches : séparées (nombre) ou, sinon, repérées dans le document (proposition de les séparer).
+      planches: assemblage.planches_separees ? { separees: assemblage.planches_separees, detection: null } : { separees: 0, detection: detecterPlanches(analyse) },
     });
   });
+
+  const optionsDe = (p: ParamsImposition): OptionsAssemblage => ({ fini: p.fini, fonds: p.fonds_perdus_mm, planches: p.planches, lecture: p.lecture });
+  /** Zone finie du visuel reçu, pour la mise au format (les images sont faites à la taille demandée : rien à adapter). */
+  const sourceDe = (a: AnalysePdf, assemblage: Assemblage): SourcePlan | undefined => (assemblage.nb_images ? undefined : { fini: a.fini, marge_blanche: a.pages[0]?.marge_blanche ?? null });
 
   const avecParams = (body: Record<string, unknown>) => {
     const r = paramsSchema.safeParse(body.params);
@@ -408,9 +422,9 @@ export function impositionRouter(config: Config) {
     const body = (req.body ?? {}) as Record<string, unknown>;
     const pieces = lirePieces(body);
     const params = avecParams(body);
-    const { assemblage, analyse } = await preparer(me(req), pieces, params.fini, params.fonds_perdus_mm);
+    const { assemblage, analyse } = await preparer(me(req), pieces, optionsDe(params));
     try {
-      res.json({ plan: calculerPlan({ ...params, paires: assemblage.paires }, analyse.nb_pages, analyse.pages), pages: assemblage.pages });
+      res.json({ plan: calculerPlan({ ...params, paires: assemblage.paires }, analyse.nb_pages, analyse.pages, sourceDe(analyse, assemblage)), pages: assemblage.pages });
     } catch (e) {
       throw conflict(e instanceof Error ? e.message : 'Plan impossible.');
     }
@@ -424,14 +438,14 @@ export function impositionRouter(config: Config) {
     const params = avecParams(body);
     const nomVoulu = typeof body.nom === 'string' ? body.nom.trim().slice(0, 120) : '';
     const user = me(req);
-    const { fichiers, assemblage, analyse, dossierId } = await preparer(user, pieces, params.fini, params.fonds_perdus_mm);
+    const { fichiers, assemblage, analyse, dossierId } = await preparer(user, pieces, optionsDe(params));
     const f = fichiers[0]!;
     const d = dossierId !== null ? await chargerDossier(user, dossierId) : null;
     if (d && !peutDeposer(user, d)) throw new HttpError(403, 'Le dossier n’accepte plus de nouveaux fichiers (validé, livré ou annulé) : demandez son retour en préparation.');
     if (generationsEnCours >= 2) throw conflict('Deux impositions sont déjà en cours sur le serveur : réessayez dans un instant.');
     let plan;
     try {
-      plan = calculerPlan({ ...params, paires: assemblage.paires }, analyse.nb_pages, analyse.pages);
+      plan = calculerPlan({ ...params, paires: assemblage.paires }, analyse.nb_pages, analyse.pages, sourceDe(analyse, assemblage));
     } catch (e) {
       throw conflict(e instanceof Error ? e.message : 'Plan impossible.');
     }

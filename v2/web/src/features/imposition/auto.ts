@@ -1,7 +1,7 @@
 // Réglages automatiques : quand on choisit une opération, les réglages se calculent d'après le fichier
 // (format reconnu, fonds perdus présents ou non, visuel au bord, nombre de pages, recto/verso séparés).
 // La personne n'a plus qu'à vérifier la feuille ; tout reste modifiable.
-import type { AnalysePdf, Feuille, Operation, ParamsImposition, ReponseAnalyse } from './types';
+import type { Adaptation, AnalysePdf, Dimension, Feuille, Operation, ParamsImposition, ReponseAnalyse } from './types';
 
 const FEUILLES: { code: Feuille; largeur: number; hauteur: number }[] = [
   { code: 'a4', largeur: 210, hauteur: 297 },
@@ -45,7 +45,7 @@ export function reglagesPour(op: Operation, r: ReponseAnalyse, courant: ParamsIm
   const paires = r.paires?.filter((x) => x.verso !== null).length ?? 0;
   const nbVisuels = r.paires ? r.paires.length : a.nb_pages;
   const famille = a.format?.famille;
-  const base: ParamsImposition = { ...courant, operation: op, fini, ...fonds, orientation: 'auto', gouttiere_mm: 0, traits_de_coupe: true };
+  const base: ParamsImposition = { ...courant, operation: op, fini, ...fonds, orientation: 'auto', gouttiere_mm: 0, traits_de_coupe: true, ajustement: courant.ajustement ?? 'auto' };
   if (op === 'livret') {
     // Brochure : piqûre jusqu'à 64 pages (au-delà, le dos ne ferme plus), sinon dos carré collé en
     // cahiers de 4 feuilles. Chasse seulement en piqûre (≈ 0,1 mm par feuille au-delà de 40 pages).
@@ -61,7 +61,10 @@ export function reglagesPour(op: Operation, r: ReponseAnalyse, courant: ParamsIm
       cahier_feuilles: 4,
       couverture_separee: courant.couverture_separee ?? false,
       lecture: courant.lecture ?? 'gauche_droite',
-      blanches: nb % 4 === 0 ? 'fin' : 'avant_derniere',
+      // Pages impaires ou non multiples de 4 : les blanches vont avant la 4e de couverture (les pages gardent leur côté).
+      blanches: courant.blanches === 'positions' ? 'positions' : 'avant_derniere',
+      blanches_apres: courant.blanches_apres,
+      planches: courant.planches ?? (r.planches?.detection?.confiance === 'forte' ? 'simple' : undefined),
       chasse_mm: !dosCarre && nb > 40 ? Math.round((nb / 4) * 0.1 * 10) / 10 : 0,
       numerotation: null,
     };
@@ -137,4 +140,22 @@ export function rolesAuto<T extends { cle: string; nom: string; role: 'recto' | 
   const [recto, verso] = aVerso || bRecto ? [b, a] : [a, b];
   if (recto.role === 'recto' && verso.role === 'verso') return null;
   return pieces.map((p) => ({ ...p, role: p === recto ? 'recto' : 'verso', roleAuto: true }));
+}
+
+const mm = (v: number) => (Math.round(v * 10) / 10).toLocaleString('fr-FR');
+const pct = (e: number) => `${Math.round(e * 100)} %`;
+
+/** Explication de la mise au format, pour le rapport. */
+export function texteAdaptation(a: Adaptation, fini: Dimension): string {
+  const taille = `Le fichier mesure ${mm(a.source.largeur)} × ${mm(a.source.hauteur)} mm, le format fini est ${mm(fini.largeur)} × ${mm(fini.hauteur)} mm`;
+  if (a.pivote) return `${taille} : visuel pivoté d’un quart de tour (il est au bon format, mais en ${a.source.largeur > a.source.hauteur ? 'paysage' : 'portrait'}).`;
+  const cotesX = 'à gauche et à droite';
+  const cotesY = 'en haut et en bas';
+  const bandes = a.marges.x > 0.05 ? `bandes blanches de ${mm(a.marges.x)} mm ${cotesX}` : a.marges.y > 0.05 ? `bandes blanches de ${mm(a.marges.y)} mm ${cotesY}` : '';
+  const rogne = a.rognage.x > 0.05 ? `rogné de ${mm(a.rognage.x)} mm ${cotesX}` : a.rognage.y > 0.05 ? `rogné de ${mm(a.rognage.y)} mm ${cotesY}` : '';
+  const echelle = (e: number) => (e < 0.9995 ? `réduit à ${pct(e)}` : e > 1.0005 ? `agrandi à ${pct(e)}` : 'à sa taille');
+  if (a.mode === 'adapter') return `${taille} : visuel ${echelle(a.echelle_x)} pour tenir en entier${bandes ? `, ${bandes}` : ''}.`;
+  if (a.mode === 'remplir') return `${taille} : visuel ${echelle(a.echelle_x)} pour couvrir tout le format${rogne ? `, ${rogne}` : ''}${a.rognage.x <= 0.05 && a.rognage.y <= 0.05 ? ' (rien de perdu)' : ''}.`;
+  if (a.mode === 'etirer') return `${taille} : visuel étiré (${pct(a.echelle_x)} en largeur, ${pct(a.echelle_y)} en hauteur), légère déformation.`;
+  return `${taille} : taille d’origine gardée${rogne ? `, ${rogne}` : ''}${bandes ? `${rogne ? ' et ' : ', '}${bandes}` : ''}.`;
 }

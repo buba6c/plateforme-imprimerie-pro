@@ -78,20 +78,34 @@ export function bordure(cheminPdf: string, numero: number, zone: ZonePt, fondsMm
 async function fabriquer(cheminPdf: string, numero: number, zone: ZonePt, fondsMm: number, modes: ModesBords): Promise<Bordure | null> {
   if (!(await popplerPresent())) return null;
   const k = DPI_BORDURE / 72;
-  const cx = Math.max(0, Math.round((zone.x - zone.media.x) * k));
-  const cy = Math.max(0, Math.round((zone.media.y + zone.media.height - (zone.y + zone.h)) * k));
+  // Zone demandée (pixels, origine en haut à gauche de la page) : elle peut dépasser la page quand le
+  // visuel a été réduit pour tenir dans le format fini (bandes blanches) ; Poppler ne rend que la page,
+  // le reste est complété en blanc.
+  const x0 = Math.round((zone.x - zone.media.x) * k);
+  const y0 = Math.round((zone.media.y + zone.media.height - (zone.y + zone.h)) * k);
   const cw = Math.max(1, Math.round(zone.w * k));
   const ch = Math.max(1, Math.round(zone.h * k));
+  const pageW = Math.max(1, Math.round(zone.media.width * k));
+  const pageH = Math.max(1, Math.round(zone.media.height * k));
+  const cx = Math.min(pageW - 1, Math.max(0, x0));
+  const cy = Math.min(pageH - 1, Math.max(0, y0));
+  const rw = Math.max(1, Math.min(cw - (cx - x0), pageW - cx));
+  const rh = Math.max(1, Math.min(ch - (cy - y0), pageH - cy));
   const temp = path.join(os.tmpdir(), `evocom-bordure-${process.pid}-${crypto.randomBytes(4).toString('hex')}`);
   try {
-    await exec('pdftoppm', ['-f', String(numero), '-l', String(numero), '-r', String(DPI_BORDURE), '-x', String(cx), '-y', String(cy), '-W', String(cw), '-H', String(ch), '-png', '-singlefile', '-aa', 'yes', '-aaVector', 'yes', cheminPdf, temp], {
+    await exec('pdftoppm', ['-f', String(numero), '-l', String(numero), '-r', String(DPI_BORDURE), '-x', String(cx), '-y', String(cy), '-W', String(rw), '-H', String(rh), '-png', '-singlefile', '-aa', 'yes', '-aaVector', 'yes', cheminPdf, temp], {
       timeout: 120000,
       maxBuffer: 1024 * 1024,
     });
     const sharp = (await import('sharp')).default;
     const ext = Math.ceil(((fondsMm + 1) / 25.4) * DPI_BORDURE);
     const avec = (m: ModeBord) => (m === 'miroir' ? 'mirror' : 'copy') as 'mirror' | 'copy';
-    const base = await sharp(`${temp}.png`).flatten({ background: '#ffffff' }).removeAlpha().raw().toBuffer({ resolveWithObject: true });
+    const rendu = await sharp(`${temp}.png`).flatten({ background: '#ffffff' }).removeAlpha().metadata();
+    const left = cx - x0;
+    const top = cy - y0;
+    const right = Math.max(0, cw - left - (rendu.width ?? rw));
+    const bottom = Math.max(0, ch - top - (rendu.height ?? rh));
+    const base = await sharp(`${temp}.png`).flatten({ background: '#ffffff' }).removeAlpha().extend({ left, top, right, bottom, background: '#ffffff' }).raw().toBuffer({ resolveWithObject: true });
     const W = base.info.width;
     const H = base.info.height;
     // Profondeur prise dans la page : un peu plus que le débord, pour que le miroir ait de la matière.

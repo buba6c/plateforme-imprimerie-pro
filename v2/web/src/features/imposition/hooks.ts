@@ -12,11 +12,14 @@ export function useModelesImposition() {
 
 const clePieces = (pieces: Piece[]) => pieces.map((p) => `${p.libre ?? p.fichier_id}:${p.role}`).join('|');
 
-export function useAnalyse(pieces: Piece[], fini?: { largeur: number; hauteur: number }, fonds?: number) {
+export function useAnalyse(pieces: Piece[], fini?: { largeur: number; hauteur: number }, fonds?: number, opts: { planches?: ParamsImposition['planches']; lecture?: ParamsImposition['lecture'] } = {}) {
   const avecImage = pieces.some((p) => p.genre === 'image');
+  // Planches séparées : la lecture n'a d'effet que sur l'ordre des moitiés.
+  const planches = opts.planches && opts.planches !== 'non' ? opts.planches : undefined;
+  const lecture = planches ? opts.lecture : undefined;
   return useQuery({
-    queryKey: ['imposition', 'analyse', clePieces(pieces), avecImage ? fini : null, avecImage ? fonds : null],
-    queryFn: () => api.post<ReponseAnalyse>('/imposition/analyser', { pieces: corpsPieces(pieces), fini, fonds_perdus_mm: fonds }),
+    queryKey: ['imposition', 'analyse', clePieces(pieces), avecImage ? fini : null, avecImage ? fonds : null, planches ?? null, lecture ?? null],
+    queryFn: () => api.post<ReponseAnalyse>('/imposition/analyser', { pieces: corpsPieces(pieces), fini, fonds_perdus_mm: fonds, planches, lecture }),
     enabled: pieces.length > 0,
     staleTime: 10 * 60_000,
     retry: false,

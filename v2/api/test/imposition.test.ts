@@ -7,7 +7,8 @@ import type supertest from 'supertest';
 import { PDFDocument, rgb } from 'pdf-lib';
 import { getPool } from '../src/db/pool';
 import { calculerPlan, paramsParDefaut, type ParamsImposition } from '../src/modules/imposition/plan';
-import { detecterFormat } from '../src/modules/imposition/formats';
+import { detecterFormat, formatProche } from '../src/modules/imposition/formats';
+import { cadreSource, calculerAdaptation } from '../src/modules/imposition/ajuster';
 import { agent, app, comptes, envoyerFichier } from './helpers';
 
 const STOCKAGE = fs.mkdtempSync(path.join(os.tmpdir(), 'evocom-test-imposition-'));
@@ -120,6 +121,69 @@ describe('imposition : formats et plans (sans serveur)', () => {
     expect(r.feuilles[0]!.recto.poses.map((q) => q.page)).toEqual([1, 8]);
   });
 
+  it('livret de 13 pages (impair) : blanches placées selon le choix, ordre de lecture rendu', () => {
+    const livret = { ...base, operation: 'livret' as const, feuille: 'a4' as const, fini: { largeur: 148, hauteur: 210 }, fonds_perdus_mm: 0, mode: 'sequence' as const };
+    const n = (o: (number | null)[] | undefined) => (o ?? []).map((x) => (x === null ? 'B' : x));
+    // Avant la 4e de couverture : la pagination gauche/droite des pages 2 à 12 est gardée.
+    const a = calculerPlan({ ...livret, blanches: 'avant_derniere' }, 13);
+    expect(a.pages_blanches).toBe(3);
+    expect(n(a.ordre)).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 'B', 'B', 'B', 13]);
+    expect(a.avertissements[0]).toMatch(/impair.*3 pages blanches ajoutées avant la 4e de couverture/);
+    expect(n(calculerPlan({ ...livret, blanches: 'fin' }, 13).ordre).slice(-4)).toEqual([13, 'B', 'B', 'B']);
+    expect(n(calculerPlan({ ...livret, blanches: 'apres_couverture' }, 13).ordre).slice(0, 5)).toEqual([1, 'B', 'B', 'B', 2]);
+    expect(n(calculerPlan({ ...livret, blanches: 'reparties' }, 13).ordre)).toEqual([1, 'B', 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 'B', 'B', 13]);
+    // Placées à la main : après la page 1 et après la page 7 ; la troisième complète avant la 4e de couverture.
+    const m = calculerPlan({ ...livret, blanches: 'positions', blanches_apres: [1, 7] }, 13);
+    expect(n(m.ordre)).toEqual([1, 'B', 2, 3, 4, 5, 6, 7, 'B', 8, 9, 10, 11, 12, 'B', 13]);
+    expect(m.pages_blanches).toBe(3);
+    // L'ordre de lecture correspond aux faces : feuille 1 recto = dernière | première.
+    expect(m.feuilles[0]!.recto.poses.map((q) => q.page)).toEqual([13, 1]);
+  });
+
+  it('livret : chasse vers le pli pour les feuilles intérieures, côté du pli marqué', () => {
+    const plan = calculerPlan({ ...base, operation: 'livret', feuille: 'sra3', fini: { largeur: 148, hauteur: 210 }, fonds_perdus_mm: 3, mode: 'sequence', chasse_mm: 1 }, 16);
+    const ext = plan.feuilles[0]!.recto.poses;
+    const int = plan.feuilles[3]!.recto.poses;
+    expect(ext.map((q) => q.pli)).toEqual(['droite', 'gauche']);
+    expect(ext[0]!.decalage_x).toBe(0);
+    // Feuille intérieure : page de gauche poussée à droite (vers le pli), page de droite à gauche.
+    expect(int[0]!.x - ext[0]!.x).toBeCloseTo(1, 5);
+    expect(int[1]!.x - ext[1]!.x).toBeCloseTo(-1, 5);
+  });
+
+  it('mise au format : même taille, fonds perdus non déclarés, pivot, proportions proches, bandes blanches', () => {
+    const fini = { largeur: 85, hauteur: 55 };
+    expect(calculerAdaptation({ largeur: 85.5, hauteur: 54.8 }, fini)).toMatchObject({ mode: 'centrer', identique: true, pivote: false });
+    expect(calculerAdaptation({ largeur: 91, hauteur: 61 }, fini)).toMatchObject({ mode: 'centrer', identique: true, rognage: { x: 3, y: 3 } });
+    expect(calculerAdaptation({ largeur: 88, hauteur: 58 }, fini, 'auto').identique).toBe(false);
+    expect(calculerAdaptation({ largeur: 55, hauteur: 85 }, fini)).toMatchObject({ mode: 'centrer', identique: true, pivote: true });
+    // 88 × 58 : proportions à 2 % près → remplir, rognage d'un demi-millimètre en haut et en bas.
+    const r = calculerAdaptation({ largeur: 88, hauteur: 58 }, fini);
+    expect(r).toMatchObject({ mode: 'remplir', auto: true, identique: false, rognage: { x: 0, y: 0.5 }, marges: { x: 0, y: 0 } });
+    expect(r.echelle_x).toBeCloseTo(85 / 88, 3);
+    // 90 × 50 : proportions trop différentes → adapter (réduit à 94 %), bandes blanches de 3,9 mm en haut et en bas.
+    const a = calculerAdaptation({ largeur: 90, hauteur: 50 }, fini);
+    expect(a).toMatchObject({ mode: 'adapter', marges: { x: 0, y: 3.9 }, rognage: { x: 0, y: 0 } });
+    expect(a.echelle_x).toBeCloseTo(85 / 90, 3);
+    expect(calculerAdaptation({ largeur: 90, hauteur: 50 }, fini, 'remplir')).toMatchObject({ mode: 'remplir', rognage: { x: 7, y: 0 }, echelle_x: 1.1 });
+    expect(calculerAdaptation({ largeur: 90, hauteur: 50 }, fini, 'etirer')).toMatchObject({ mode: 'etirer', echelle_y: 1.1, marges: { x: 0, y: 0 }, rognage: { x: 0, y: 0 } });
+    expect(calculerAdaptation({ largeur: 90, hauteur: 50 }, fini, 'centrer')).toMatchObject({ mode: 'centrer', rognage: { x: 2.5, y: 0 }, marges: { x: 0, y: 2.5 } });
+    // Letter → A4 : avec 12 mm de marge blanche, « remplir » ne rogne que du blanc ; sans marge connue, adapter.
+    const a4 = { largeur: 210, hauteur: 297 };
+    const letter = { largeur: 215.9, hauteur: 279.4 };
+    expect(calculerAdaptation(letter, a4, 'auto', { haut: 12, bas: 12, gauche: 12, droite: 12 }).mode).toBe('remplir');
+    expect(calculerAdaptation(letter, a4).mode).toBe('adapter');
+    // Cadre à dessiner : 90 × 50 adapté en 85 × 55 → 90 × 58,2 mm centré sur le visuel (4,1 mm de blanc en haut et en bas).
+    const c = cadreSource(a, fini);
+    expect(c.largeur).toBeCloseTo(90, 1);
+    expect(c.hauteur).toBeCloseTo(58.2, 1);
+    expect(c.y).toBeCloseTo(-4.1, 1);
+    // Format standard le plus proche d'une taille non reconnue.
+    expect(formatProche(88, 58)).toMatchObject({ code: 'carte_visite_90x55', paysage: false });
+    expect(formatProche(58, 88)).toMatchObject({ code: 'carte_visite_90x55', paysage: true });
+    expect(formatProche(300, 100)).toBeNull();
+  });
+
   it('refuse une pose qui ne tient pas sur la feuille', () => {
     expect(() => calculerPlan({ ...base, feuille: 'a4', fini: { largeur: 300, hauteur: 300 } }, 1)).toThrow(/Aucune pose/);
   });
@@ -195,6 +259,60 @@ describe('imposition : routes', () => {
     expect(fp.body.fichier.nom).toBe('carte_FONDS-PERDUS.pdf');
     const j = (await getPool().query(`SELECT count(*)::int AS n FROM journal WHERE action = 'fichier_impose'`)).rows[0];
     expect(j.n).toBeGreaterThanOrEqual(3);
+  });
+
+  it('planches : repérées, puis séparées en pages (couverture seule, ou couverture à plat)', async () => {
+    // Export « planches » : couverture A5 seule, deux planches de deux A5, 4e de couverture seule.
+    const doc = await PDFDocument.create();
+    const couleurs = [rgb(0.9, 0.2, 0.2), rgb(0.2, 0.7, 0.3), rgb(0.2, 0.3, 0.9), rgb(0.9, 0.8, 0.1)];
+    [148, 296, 296, 148].forEach((l, i) => doc.addPage([l * PT, 210 * PT]).drawRectangle({ x: 0, y: 0, width: l * PT, height: 210 * PT, color: couleurs[i]! }));
+    const mixte = (await envoyerFichier(A.prep, dossierId, 'planches.pdf', Buffer.from(await doc.save()))).fichierId!;
+    const brut = await A.prep.post('/api/imposition/analyser').send({ fichier_id: mixte });
+    expect(brut.status, JSON.stringify(brut.body)).toBe(200);
+    expect(brut.body.planches).toMatchObject({ separees: 0, detection: { confiance: 'forte', pages_doubles: 2, couverture_seule: true } });
+    const sep = await A.prep.post('/api/imposition/analyser').send({ fichier_id: mixte, planches: 'simple' });
+    expect(sep.body.analyse.nb_pages).toBe(6);
+    expect(sep.body.analyse).toMatchObject({ uniforme: true, format: { code: 'a5' } });
+    expect(sep.body.planches).toEqual({ separees: 2, detection: null });
+    expect(sep.body.pages.map((p: { page_source: number; demi?: string }) => `${p.page_source}${p.demi?.[0] ?? ''}`)).toEqual(['1', '2g', '2d', '3g', '3d', '4']);
+    const params = { ...sep.body.params_defaut, operation: 'livret', feuille: 'a4', fonds_perdus_mm: 0, planches: 'simple' };
+    const g = await A.prep.post('/api/imposition/generer').send({ fichier_id: mixte, params });
+    expect(g.status, JSON.stringify(g.body)).toBe(201);
+    expect(g.body.plan).toMatchObject({ nb_feuilles: 2, pages_blanches: 2 });
+
+    // Couverture à plat : 4e | 1re, puis 2-3, 4-5 ; la 4e de couverture passe à la fin.
+    const plat = await PDFDocument.create();
+    for (let i = 0; i < 3; i++) plat.addPage([296 * PT, 210 * PT]).drawRectangle({ x: 0, y: 0, width: 148 * PT, height: 210 * PT, color: couleurs[i]! });
+    const couv = (await envoyerFichier(A.prep, dossierId, 'couverture-a-plat.pdf', Buffer.from(await plat.save()))).fichierId!;
+    const c = await A.prep.post('/api/imposition/analyser').send({ fichier_id: couv, planches: 'couverture' });
+    expect(c.body.pages.map((p: { page_source: number; demi?: string }) => `${p.page_source}${p.demi?.[0] ?? ''}`)).toEqual(['1d', '2g', '2d', '3g', '3d', '1g']);
+    // Arabe (droite à gauche) : la moitié droite se lit d'abord.
+    const ar = await A.prep.post('/api/imposition/analyser').send({ fichier_id: couv, planches: 'simple', lecture: 'droite_gauche' });
+    expect(ar.body.pages.slice(0, 2).map((p: { demi?: string }) => p.demi)).toEqual(['droite', 'gauche']);
+  });
+
+  it('fichier à la mauvaise taille : format proche proposé, mise au format dans le plan, génération', async () => {
+    const f = (await envoyerFichier(A.prep, dossierId, 'carte-80x54.pdf', await pdfTest(80, 54, 2))).fichierId!;
+    const a = await A.prep.post('/api/imposition/analyser').send({ fichier_id: f });
+    expect(a.status, JSON.stringify(a.body)).toBe(200);
+    expect(a.body.analyse.format).toBeNull();
+    expect(a.body.format_proche).toMatchObject({ code: 'carte_visite_85x55', largeur: 85, hauteur: 55 });
+    expect(a.body.params_defaut.ajustement).toBe('auto');
+    // Format fini mis à 85 × 55 : le plan explique la mise au format.
+    const params = { ...a.body.params_defaut, fini: { largeur: 85, hauteur: 55 } };
+    const plan = await A.prep.post('/api/imposition/plan').send({ fichier_id: f, params });
+    expect(plan.status, JSON.stringify(plan.body)).toBe(200);
+    // Proportions différentes et visuel jusqu'au bord : adapté (agrandi à 102 %), bandes blanches de 1,8 mm à gauche et à droite.
+    expect(plan.body.plan.adaptation).toMatchObject({ mode: 'adapter', auto: true, source: { largeur: 80, hauteur: 54 }, marges: { x: 1.8, y: 0 }, rognage: { x: 0, y: 0 } });
+    // Taille du fichier gardée : rien à adapter.
+    const meme = await A.prep.post('/api/imposition/plan').send({ fichier_id: f, params: a.body.params_defaut });
+    expect(meme.body.plan.adaptation).toBeNull();
+    const g = await A.prep.post('/api/imposition/generer').send({ fichier_id: f, params: { ...params, ajustement: 'remplir' } });
+    expect(g.status, JSON.stringify(g.body)).toBe(201);
+    expect(g.body.plan.adaptation).toMatchObject({ mode: 'remplir', auto: false, rognage: { x: 0, y: 1.2 } });
+    const contenu = await A.prep.get(`/api/fichiers/${g.body.fichier.id}/contenu`).buffer(true).parse((res, cb) => { const chunks: Buffer[] = []; res.on('data', (c: Buffer) => chunks.push(c)); res.on('end', () => cb(null, Buffer.concat(chunks))); });
+    const doc = await PDFDocument.load(contenu.body as Buffer);
+    expect(doc.getPageCount()).toBe(2);
   });
 
   it('refuse les dossiers Roland (grand format, pas d’imposition)', async () => {

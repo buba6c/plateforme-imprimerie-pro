@@ -8,7 +8,8 @@
 import { clip, clipEvenOdd, degrees, endPath, grayscale, PDFDocument, popGraphicsState, pushGraphicsState, rectangle, rgb, StandardFonts, type PDFEmbeddedPage, type PDFFont, type PDFImage, type PDFPage } from 'pdf-lib';
 import { chargerPdf } from './analyse';
 import { bordure, bordureDisponible, type ModesBords } from './bordure';
-import { pt, mm as enMm } from './formats';
+import { pt, mm as enMm, type Dimension } from './formats';
+import type { Adaptation } from './ajuster';
 import type { ParamsImposition, Plan, Pose } from './plan';
 
 const TRAIT = 0.25; // pt
@@ -36,6 +37,8 @@ interface SourcePage {
   largeur: number;
   hauteur: number;
   rotation: number;
+  /** Échelle de la mise au format (1 = taille d'origine). */
+  echelle: number;
 }
 
 interface Source {
@@ -48,38 +51,43 @@ interface Source {
   fondsSource: number;
 }
 
-/** Zone finie (trim) et fonds perdus réellement présents d'une page source, en points, repère de la page. */
-function zoneSource(page: PDFPage, finiMm: { largeur: number; hauteur: number }, fondsVoulusMm: number) {
+/**
+ * Zone de la page source à dessiner dans le format fini, en points, repère non tourné de la page :
+ * le format fini centré sur le visuel (centre du TrimBox, sinon du MediaBox), divisé par l'échelle de
+ * la mise au format (ajuster.ts). Un visuel pivoté est traité comme une page tournée d'un quart de tour.
+ * `fonds` : fonds perdus réellement disponibles autour de cette zone (pt source), bornés à la demande.
+ */
+function zoneSource(page: PDFPage, finiMm: Dimension, fondsVoulusMm: number, adaptation: Adaptation | null | undefined) {
   const media = page.getMediaBox();
-  const rotation = ((page.getRotation().angle % 360) + 360) % 360;
+  const rotationPage = ((page.getRotation().angle % 360) + 360) % 360;
+  const rotation = adaptation?.pivote ? (rotationPage + 90) % 360 : rotationPage;
   const tourne = rotation === 90 || rotation === 270;
   const trimNode = page.node.TrimBox();
-  const trim = trimNode ? page.getTrimBox() : null;
-  // Format fini dans le repère non tourné de la page.
-  const finiW = pt(tourne ? finiMm.hauteur : finiMm.largeur);
-  const finiH = pt(tourne ? finiMm.largeur : finiMm.hauteur);
-  let x: number;
-  let y: number;
-  if (trim && trim.width > 0 && trim.height > 0) {
-    x = trim.x + (trim.width - finiW) / 2;
-    y = trim.y + (trim.height - finiH) / 2;
-  } else {
-    x = media.x + (media.width - finiW) / 2;
-    y = media.y + (media.height - finiH) / 2;
-  }
-  // Fonds perdus disponibles : ce qui reste entre la zone finie et le MediaBox, borné à la valeur voulue.
-  const dispo = Math.max(0, Math.min(x - media.x, y - media.y, media.x + media.width - (x + finiW), media.y + media.height - (y + finiH)));
-  const fonds = Math.min(dispo, pt(fondsVoulusMm));
-  return { x, y, largeur: finiW, hauteur: finiH, fonds, rotation, tourne, media };
+  const trim = trimNode && page.getTrimBox().width > 0 && page.getTrimBox().height > 0 ? page.getTrimBox() : null;
+  const cx = trim ? trim.x + trim.width / 2 : media.x + media.width / 2;
+  const cy = trim ? trim.y + trim.height / 2 : media.y + media.height / 2;
+  // Échelles dans le repère de la page : quand la page est tournée, sa largeur devient la hauteur finie.
+  const ex = adaptation?.echelle_x ?? 1;
+  const ey = adaptation?.echelle_y ?? 1;
+  const [eX, eY] = tourne ? [ey, ex] : [ex, ey];
+  const largeur = pt(tourne ? finiMm.hauteur : finiMm.largeur) / eX;
+  const hauteur = pt(tourne ? finiMm.largeur : finiMm.hauteur) / eY;
+  const x = cx - largeur / 2;
+  const y = cy - hauteur / 2;
+  const echelle = Math.min(ex, ey);
+  // Fonds perdus disponibles : ce qui reste entre la zone et le MediaBox, borné à la valeur voulue (en pt source).
+  const dispo = Math.max(0, Math.min(x - media.x, y - media.y, media.x + media.width - (x + largeur), media.y + media.height - (y + hauteur)));
+  const fonds = Math.min(dispo, pt(fondsVoulusMm) / echelle);
+  return { x, y, largeur, hauteur, fonds, fondsMm: enMm(fonds * echelle), rotation, tourne, media, echelle };
 }
 
-async function preparerSource(doc: PDFDocument, src: PDFDocument, numeros: number[], params: ParamsImposition): Promise<Source> {
+async function preparerSource(doc: PDFDocument, src: PDFDocument, numeros: number[], params: ParamsImposition, adaptation: Adaptation | null | undefined): Promise<Source> {
   const pages = new Map<number, SourcePage>();
   let fondsSource = Infinity;
   for (const n of numeros) {
     const page = src.getPage(n - 1);
-    const z = zoneSource(page, params.fini, params.fonds_perdus_mm);
-    fondsSource = Math.min(fondsSource, z.fonds);
+    const z = zoneSource(page, params.fini, params.fonds_perdus_mm, adaptation);
+    fondsSource = Math.min(fondsSource, z.fondsMm);
     const avecFonds = params.methode_fonds_perdus === 'source' ? z.fonds : 0;
     const emb = await doc.embedPage(page, { left: z.x - avecFonds, bottom: z.y - avecFonds, right: z.x + z.largeur + avecFonds, top: z.y + z.hauteur + avecFonds });
     pages.set(n, {
@@ -87,11 +95,12 @@ async function preparerSource(doc: PDFDocument, src: PDFDocument, numeros: numbe
       largeur: z.largeur + 2 * avecFonds,
       hauteur: z.hauteur + 2 * avecFonds,
       rotation: z.rotation,
+      echelle: z.echelle,
       bordures: new Map(),
       zone: { x: z.x, y: z.y, w: z.largeur, h: z.hauteur, media: { x: z.media.x, y: z.media.y, width: z.media.width, height: z.media.height } },
     });
   }
-  return { doc, pages, fondsSource: Number.isFinite(fondsSource) ? enMm(fondsSource) : 0, raster: false };
+  return { doc, pages, fondsSource: Number.isFinite(fondsSource) ? fondsSource : 0, raster: false };
 }
 
 /** Dessine une page intégrée dans un rectangle (pt), rotation de la source compensée, avec option miroir. */
@@ -183,7 +192,8 @@ async function poserBordure(page: PDFPage, src: Source, s: SourcePage, num: numb
   const cle = `${fondsMm}|${modes.haut}${modes.bas}${modes.gauche}${modes.droite}`;
   let b = s.bordures!.get(cle);
   if (b === undefined) {
-    const r = await bordure(src.chemin, num, s.zone, fondsMm, modes);
+    // Les bandes sont prises dans la page source : un visuel réduit à 80 % a besoin de 25 % de bande en plus.
+    const r = await bordure(src.chemin, num, s.zone, fondsMm / (s.echelle || 1), modes);
     b = r ? { bandes: await Promise.all(r.bandes.map(async (x2) => ({ ...x2, image: await src.doc.embedJpg(x2.jpeg) }))) } : null;
     s.bordures!.set(cle, b);
   }
@@ -205,8 +215,25 @@ async function poserBordure(page: PDFPage, src: Source, s: SourcePage, num: numb
   return true;
 }
 
-/** Une pose : visuel + fonds perdus selon la méthode, découpée à la zone fini + fonds perdus. */
+/**
+ * Une pose. Dans un livret, la pose est découpée au pli : ses fonds perdus ne débordent jamais sur la
+ * page d'en face (sinon les 3 mm intérieurs de la page de gauche seraient recouverts par ceux de droite).
+ */
 async function dessinerPose(page: PDFPage, src: Source, pose: Pose, params: ParamsImposition, unis: (n: number) => BordsUnis | null) {
+  if (pose.page === null) return;
+  if (!pose.pli) return dessinerPoseInterne(page, src, pose, params, unis);
+  const fp = pt(Math.max(0, params.fonds_perdus_mm)) + 2;
+  const x = pt(pose.x);
+  const w = pt(pose.largeur);
+  const pli = (pose.pli === 'droite' ? x + w : x) - pt(pose.decalage_x ?? 0);
+  const [x1, x2] = pose.pli === 'droite' ? [x - fp, pli] : [pli, x + w + fp];
+  page.pushOperators(pushGraphicsState(), rectangle(x1, pt(pose.y) - fp, x2 - x1, pt(pose.hauteur) + 2 * fp), clip(), endPath());
+  await dessinerPoseInterne(page, src, pose, params, unis);
+  page.pushOperators(popGraphicsState());
+}
+
+/** Une pose : visuel + fonds perdus selon la méthode, découpée à la zone fini + fonds perdus. */
+async function dessinerPoseInterne(page: PDFPage, src: Source, pose: Pose, params: ParamsImposition, unis: (n: number) => BordsUnis | null) {
   if (pose.page === null) return;
   const s = src.pages.get(pose.page);
   if (!s) return;
@@ -341,7 +368,7 @@ export async function genererPdf(octetsSource: Uint8Array, plan: Plan, params: P
   doc.setCreator('Evocom Print v2');
   const numeros = new Set<number>();
   for (const f of plan.feuilles) for (const face of [f.recto, f.verso]) if (face) for (const q of face.poses) if (q.page !== null && q.page <= src.getPageCount()) numeros.add(q.page);
-  const source = await preparerSource(doc, src, [...numeros], params);
+  const source = await preparerSource(doc, src, [...numeros], params, plan.adaptation);
   source.chemin = cheminSource;
   source.raster = !!cheminSource && (await bordureDisponible());
   const font = params.numerotation ? await doc.embedFont(StandardFonts.HelveticaBold) : null;

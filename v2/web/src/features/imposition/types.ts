@@ -2,6 +2,9 @@
 export type Operation = 'poses' | 'livret' | 'fonds_perdus' | 'assembler';
 export type ModePoses = 'repetition' | 'sequence' | 'coupe_empile';
 export type MethodeFondsPerdus = 'source' | 'intelligent' | 'prolonger' | 'miroir' | 'etirer' | 'blanc';
+export type ModeAjustement = 'auto' | 'centrer' | 'adapter' | 'remplir' | 'etirer';
+export type ModeBlanches = 'fin' | 'avant_derniere' | 'apres_couverture' | 'reparties' | 'positions';
+export type ModePlanches = 'non' | 'simple' | 'couverture';
 export type Feuille = 'sra3' | 'a3' | 'a3_plus' | 'sra4' | 'a4' | 'a5' | 'banniere_330' | 'personnalisee';
 
 export interface Dimension {
@@ -34,9 +37,13 @@ export interface ParamsImposition {
   mode: ModePoses;
   quantite?: number;
   numerotation?: Numerotation | null;
-  ajustement: 'centrer' | 'adapter' | 'remplir';
+  ajustement: ModeAjustement;
+  /** Modèle d'imposition : son format fini s'applique même si le fichier a une autre taille. */
+  fini_impose?: boolean;
   chasse_mm?: number;
-  blanches: 'fin' | 'avant_derniere';
+  blanches: ModeBlanches;
+  blanches_apres?: number[];
+  planches?: ModePlanches;
   reliure?: 'piqure' | 'dos_carre';
   cahier_feuilles?: number;
   couverture_separee?: boolean;
@@ -50,6 +57,8 @@ export interface Pose {
   y: number;
   largeur: number;
   hauteur: number;
+  decalage_x?: number;
+  pli?: 'gauche' | 'droite';
   rang: number;
   colonne: number;
 }
@@ -77,8 +86,27 @@ export interface Plan {
   nb_pages_sortie: number;
   feuilles_a_imprimer: number | null;
   pages_blanches: number;
+  /** Livret : ordre de lecture (pages du document, null = page blanche ajoutée). */
+  ordre?: (number | null)[];
+  /** Livret : positions (dans `ordre`) des blanches placées à la main. */
+  blanches_manuelles?: number[];
+  /** Mise au format quand le fichier n'a pas la taille du format fini ; null si rien à adapter. */
+  adaptation?: Adaptation | null;
   feuilles: FeuillePlan[];
   avertissements: string[];
+}
+
+/** Mise au format (miroir de api/src/modules/imposition/ajuster.ts). */
+export interface Adaptation {
+  mode: Exclude<ModeAjustement, 'auto'>;
+  auto: boolean;
+  source: Dimension;
+  pivote: boolean;
+  echelle_x: number;
+  echelle_y: number;
+  marges: { x: number; y: number };
+  rognage: { x: number; y: number };
+  identique: boolean;
 }
 
 export interface Bords {
@@ -148,6 +176,8 @@ export interface PageVirtuelle {
   page_source: number;
   role: RolePiece;
   genre: 'pdf' | 'image';
+  /** Moitié d'une planche séparée en deux pages. */
+  demi?: 'gauche' | 'droite';
 }
 
 export interface PieceAnalysee {
@@ -172,7 +202,25 @@ export interface ReponseAnalyse {
   paires: { recto: number; verso: number | null }[] | null;
   analyse: AnalysePdf;
   params_defaut: ParamsImposition;
+  planches?: { separees: number; detection: DetectionPlanches | null };
+  /** Format non reconnu : format standard le plus proche (pour mettre le fichier au format). */
+  format_proche?: (FormatDetecte & { ecart: number }) | null;
 }
+
+export interface DetectionPlanches {
+  confiance: 'forte' | 'possible';
+  pages_doubles: number;
+  format_page: string | null;
+  couverture_seule: boolean;
+}
+
+export const BLANCHES_LABELS: Record<ModeBlanches, { label: string; aide: string }> = {
+  avant_derniere: { label: 'Avant la 4e de couverture', aide: 'Recommandé : les couvertures restent dehors et les pages gardent leur côté (paires à gauche, impaires à droite).' },
+  fin: { label: 'À la fin', aide: 'Après la dernière page : la 4e de couverture n’est plus au dos.' },
+  apres_couverture: { label: 'Après la couverture', aide: 'Le contenu commence plus loin : les pages changent de côté.' },
+  reparties: { label: '2e et 3e de couverture', aide: 'Une blanche au revers de la couverture, les autres avant la 4e de couverture.' },
+  positions: { label: 'Placées à la main', aide: 'Cliquez « + » entre deux pages dans la vue des pages ; le complément va avant la 4e de couverture.' },
+};
 
 export interface FichierLibre {
   libre: string;
@@ -249,3 +297,17 @@ export const MODE_LABELS: Record<ModePoses, { label: string; aide: string }> = {
 };
 
 export const FOURNISSEUR_LABELS_IA: Record<string, string> = { openai: 'OpenAI', gemini: 'Google Gemini', openrouter: 'OpenRouter' };
+
+export const AJUSTEMENT_LABELS: Record<ModeAjustement, { label: string; aide: string }> = {
+  auto: { label: 'Auto', aide: 'Même taille : rien. Proportions proches : rempli. Sinon adapté sans rien perdre, et le rapport explique.' },
+  adapter: { label: 'Adapter', aide: 'Le visuel entier tient dans le format : des bandes blanches peuvent apparaître sur deux côtés.' },
+  remplir: { label: 'Remplir', aide: 'Le visuel couvre tout le format : il est rogné sur deux côtés.' },
+  etirer: { label: 'Étirer', aide: 'Le visuel prend exactement le format, en se déformant un peu.' },
+  centrer: { label: 'Centrer', aide: 'Taille d’origine, format fini pris au centre : rogné ou entouré de blanc.' },
+};
+
+export const PLANCHES_LABELS: Record<ModePlanches, { label: string; aide: string }> = {
+  non: { label: 'Telles quelles', aide: 'Chaque page du PDF reste une page.' },
+  simple: { label: 'Séparer en pages', aide: 'Chaque page double devient deux pages (gauche, puis droite).' },
+  couverture: { label: 'Couverture à plat', aide: 'La première planche est la couverture ouverte (4e à gauche, 1re à droite) : la 4e passe à la fin.' },
+};

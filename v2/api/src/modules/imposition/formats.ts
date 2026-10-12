@@ -76,3 +76,25 @@ export function detecterFormat(largeur: number, hauteur: number): FormatDetecte 
 }
 
 export const arrondi = (v: number, d = 1) => Math.round(v * 10 ** d) / 10 ** d;
+
+/**
+ * Format standard le plus proche d'une taille non reconnue (mm), dans les deux orientations, si l'écart
+ * reste raisonnable (15 % par côté au plus) : proposé comme format fini pour mettre le fichier au format.
+ */
+export function formatProche(largeur: number, hauteur: number): (FormatDetecte & { ecart: number }) | null {
+  let meilleur: (FormatDetecte & { ecart: number }) | null = null;
+  let meilleurEcart = Infinity;
+  for (const f of FORMATS_FINIS) {
+    for (const paysage of [false, true]) {
+      const w = paysage ? f.hauteur : f.largeur;
+      const h = paysage ? f.largeur : f.hauteur;
+      // Écart sur le côté le plus éloigné, départagé par l'écart total (le premier format du catalogue l'emporte à égalité).
+      const ecart = Math.max(Math.abs(largeur - w) / w, Math.abs(hauteur - h) / h) + (Math.abs(largeur - w) / w + Math.abs(hauteur - h) / h) / 100;
+      if (ecart <= 0.15 && ecart < meilleurEcart - 1e-9) {
+        meilleurEcart = ecart;
+        meilleur = { ...f, avec_fonds_perdus: false, fonds_perdus_mm: 0, paysage, ecart: arrondi(ecart, 3) };
+      }
+    }
+  }
+  return meilleur;
+}

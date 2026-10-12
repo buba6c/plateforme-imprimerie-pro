@@ -8,7 +8,7 @@ import { Check, FileCheck2, Settings2 } from 'lucide-react';
 import { messageErreur } from '../../lib/api';
 import type { Fichier } from '../../lib/types';
 import { Alert, Button, Dialog, Skeleton, useToast } from '../../ui';
-import { reglagesPour, resumeAuto } from './auto';
+import { reglagesPour, resumeAuto, texteAdaptation } from './auto';
 import { useAnalyse, useGenerer, usePlan, useTeleverserLibre } from './hooks';
 import { SchemaFeuille } from './SchemaFeuille';
 import { OPERATION_LABELS, type Operation, type ParamsImposition, type Piece } from './types';
@@ -139,7 +139,7 @@ export function ImpositionRapide({ dossierId, fichier, fichierLocal, onClose, on
                 )}
                 <div className="ws__scene" style={{ maxHeight: 460 }}>
                   <div className="ws__scene-int">
-                    <SchemaFeuille plan={p} face={faceVue} pages={analyse.data?.pages} methode={params.methode_fonds_perdus} sourceAvecFonds={a.fonds_perdus !== 'absents'} unisDe={(n) => a.pages[n - 1]?.bords_unis ?? null} largeur={p.feuille.largeur > p.feuille.hauteur ? 460 : 320} />
+                    <SchemaFeuille plan={p} face={faceVue} pages={analyse.data?.pages} methode={params.methode_fonds_perdus} sourceAvecFonds={a.fonds_perdus !== 'absents'} unisDe={(n) => a.pages[n - 1]?.bords_unis ?? null} dimsDe={(n) => (a.pages[n - 1] ? { largeur: a.pages[n - 1]!.largeur, hauteur: a.pages[n - 1]!.hauteur } : null)} largeur={p.feuille.largeur > p.feuille.hauteur ? 460 : 320} />
                   </div>
                 </div>
               </>
@@ -158,6 +158,7 @@ export function ImpositionRapide({ dossierId, fichier, fichierLocal, onClose, on
               <li data-ton={a.format ? 'ok' : 'attention'}><span className="rapport__puce" aria-hidden="true" />{a.format ? a.format.libelle : `Format non reconnu (${a.largeur} × ${a.hauteur} mm)`}, {a.nb_pages} page{a.nb_pages > 1 ? 's' : ''}</li>
               {p && p.operation === 'poses' && <li data-ton="auto"><span className="rapport__puce" aria-hidden="true" />{p.poses_par_face} poses par face sur {p.feuille.largeur} × {p.feuille.hauteur} mm</li>}
               {p && p.operation === 'livret' && <li data-ton="auto"><span className="rapport__puce" aria-hidden="true" />{p.nb_feuilles} feuille{p.nb_feuilles > 1 ? 's' : ''}{p.pages_blanches ? `, ${p.pages_blanches} page(s) blanche(s)` : ''}</li>}
+              {p?.adaptation && <li data-ton="auto"><span className="rapport__puce" aria-hidden="true" />{texteAdaptation(p.adaptation, params.fini)}</li>}
               {p?.avertissements.map((m, i) => <li key={i} data-ton="attention"><span className="rapport__puce" aria-hidden="true" />{m}</li>)}
             </ul>
             <span className="ev-help">{fichier ? 'Le fichier d’origine n’est pas modifié : le PDF imposé est ajouté à côté.' : 'Le fichier d’origine et le PDF imposé seront rangés dans le dossier à sa création.'}</span>

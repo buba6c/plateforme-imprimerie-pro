@@ -7,6 +7,7 @@
 //  - « fonds_perdus » : une page par page source, avec des fonds perdus ajoutés.
 // Les positions sont en mm, origine en bas à gauche de la feuille (comme le PDF).
 
+import { calculerAdaptation, type Adaptation, type MargesBlanches, type ModeAjustement } from './ajuster';
 import { FEUILLES, FONDS_PERDUS_STANDARD, type Dimension, type Feuille } from './formats';
 
 export type Operation = 'poses' | 'livret' | 'fonds_perdus' | 'assembler';
@@ -14,7 +15,10 @@ export type ModePoses = 'repetition' | 'sequence' | 'coupe_empile';
 export type MethodeFondsPerdus = 'source' | 'intelligent' | 'prolonger' | 'miroir' | 'etirer' | 'blanc';
 export type Retournement = 'bord_long' | 'bord_court';
 export type Orientation = 'auto' | 'portrait' | 'paysage';
-export type Ajustement = 'centrer' | 'adapter' | 'remplir';
+export type Ajustement = ModeAjustement;
+export type ModeBlanches = 'fin' | 'avant_derniere' | 'apres_couverture' | 'reparties' | 'positions';
+/** Planches (deux pages côte à côte sur une page du PDF) : laissées telles quelles ou séparées. */
+export type ModePlanches = 'non' | 'simple' | 'couverture';
 
 export interface Numerotation {
   debut: number;
@@ -47,12 +51,26 @@ export interface ParamsImposition {
   /** Nombre d'exemplaires à produire (répétition : information ; coupe & empile sans numérotation : nb de pages). */
   quantite?: number;
   numerotation?: Numerotation | null;
-  /** Si la page source n'a pas la taille finie : la centrer, l'adapter (réduire) ou la remplir (agrandir et rogner). */
+  /** Si le visuel n'a pas la taille du format fini : auto (recommandé), centrer, adapter, remplir ou étirer (voir ajuster.ts). */
   ajustement: Ajustement;
+  /** Modèle d'imposition : son format fini s'applique même si le fichier a une autre taille. */
+  fini_impose?: boolean;
   /** Livret : décalage de chasse total (mm) réparti du cahier extérieur vers l'intérieur. */
   chasse_mm?: number;
-  /** Livret : page(s) blanche(s) ajoutées à la fin (défaut) ou avant la dernière page. */
-  blanches: 'fin' | 'avant_derniere';
+  /**
+   * Livret : où mettre les pages blanches qui complètent le multiple de 4 :
+   *  - « avant_derniere » : avant la 4e de couverture (la pagination gauche/droite est gardée) ;
+   *  - « fin » : après la dernière page ;
+   *  - « apres_couverture » : juste après la 1re de couverture (le contenu commence page 3) ;
+   *  - « reparties » : 2e et 3e de couverture blanches (une au début, le reste à la fin) ;
+   *  - « positions » : là où le préparateur les a placées (`blanches_apres`), le reste avant la 4e de couverture.
+   */
+  blanches: ModeBlanches;
+  /**
+   * Livret, mode « positions » : une page blanche après la k-ième page du document, dans l'ordre de
+   * lecture (0 = avant la première). Une valeur répétée place plusieurs blanches à la suite.
+   */
+  blanches_apres?: number[];
   /** Appariement recto/verso des pages du document assemblé (posé par le serveur), sinon pages alternées. */
   paires?: { recto: number; verso: number | null }[] | null;
   /** Livret : piqûre à cheval (un seul cahier) ou dos carré collé (cahiers empilés). */
@@ -63,6 +81,11 @@ export interface ParamsImposition {
   couverture_separee?: boolean;
   /** Livret : sens de lecture (droite à gauche pour l'arabe). */
   lecture?: 'gauche_droite' | 'droite_gauche';
+  /**
+   * Planches : chaque page double est coupée en deux pages (« simple ») ; avec « couverture », la
+   * première planche est la couverture à plat (4e à gauche, 1re à droite) : la 4e passe à la fin.
+   */
+  planches?: ModePlanches;
 }
 
 export interface Pose {
@@ -75,8 +98,10 @@ export interface Pose {
   y: number;
   largeur: number;
   hauteur: number;
-  /** Décalage de chasse appliqué (mm, positif vers l'extérieur). */
+  /** Décalage de chasse appliqué (mm, positif vers la droite) : les pages intérieures vont vers le pli. */
   decalage_x?: number;
+  /** Livret : côté de la pose qui touche le pli ; aucun fond perdu ne déborde de ce côté sur la page voisine. */
+  pli?: 'gauche' | 'droite';
   /** Repère : rangée et colonne (0-based), et pour le livret, le côté. */
   rang: number;
   colonne: number;
@@ -114,6 +139,12 @@ export interface Plan {
   feuilles_a_imprimer: number | null;
   /** Pages blanches ajoutées (livret). */
   pages_blanches: number;
+  /** Mise au format du visuel quand le fichier n'a pas la taille du format fini (null : rien à adapter ou inconnu). */
+  adaptation?: Adaptation | null;
+  /** Livret : ordre de lecture du livret fini (pages du document, null = page blanche ajoutée). */
+  ordre?: (number | null)[];
+  /** Livret : positions (dans `ordre`) des blanches placées à la main. */
+  blanches_manuelles?: number[];
   feuilles: FeuillePlan[];
   avertissements: string[];
 }
@@ -309,10 +340,18 @@ export function planLivret(p: ParamsImposition, nbPagesTotal: number): Plan {
       : `La feuille a exactement la taille de deux pages : aucun fond perdu ni trait de coupe possible. Pour en avoir, prenez une feuille plus grande (SRA4 pour un A5, SRA3 pour un A4).`);
   }
 
-  const pages: (number | null)[] = ordrePages ? [...ordrePages] : Array.from({ length: nbPages }, (_, i) => i + 1);
+  let pages: (number | null)[] = ordrePages ? [...ordrePages] : Array.from({ length: nbPages }, (_, i) => i + 1);
   const dosCarre = p.reliure === 'dos_carre';
   const feuillesParCahier = dosCarre ? Math.min(16, Math.max(1, Math.round(p.cahier_feuilles ?? 4))) : Infinity;
-  const couvSeparee = !!p.couverture_separee && nbPages >= 4;
+  // Blanches placées à la main : insérées d'abord, à leur place dans le document.
+  let placees = 0;
+  if (p.blanches === 'positions' && p.blanches_apres?.length) {
+    const apres = p.blanches_apres.filter((k) => Number.isInteger(k) && k >= 0 && k <= pages.length).sort((a, b) => b - a).slice(0, 64);
+    // -1 marque une blanche placée à la main (remplacée par null une fois l'ordre établi).
+    for (const k of apres) pages = [...pages.slice(0, k), -1, ...pages.slice(k)];
+    placees = apres.length;
+  }
+  const couvSeparee = !!p.couverture_separee && pages.length >= 4;
 
   let couverture: (number | null)[] | null = null;
   let interieur = pages;
@@ -321,12 +360,23 @@ export function planLivret(p: ParamsImposition, nbPagesTotal: number): Plan {
     interieur = pages.slice(2, pages.length - 2);
   }
   const reste = interieur.length % 4;
-  const blanches = reste === 0 ? 0 : 4 - reste;
-  if (blanches) {
-    if (p.blanches === 'avant_derniere' && !couvSeparee && interieur.length >= 1) interieur = [...interieur.slice(0, -1), ...Array(blanches).fill(null), interieur[interieur.length - 1]!];
-    else interieur = [...interieur, ...Array(blanches).fill(null)];
-    avertissements.push(`${blanches} page${blanches > 1 ? 's' : ''} blanche${blanches > 1 ? 's' : ''} ajoutée${blanches > 1 ? 's' : ''} pour obtenir un multiple de 4 (${interieur.length + (couverture ? 4 : 0)} pages).`);
+  const completees = reste === 0 ? 0 : 4 - reste;
+  if (completees) interieur = completerBlanches(interieur, completees, p.blanches, !couvSeparee);
+  const blanches = placees + completees;
+  if (completees) {
+    const total = interieur.length + (couverture ? 4 : 0);
+    const ou = { fin: 'à la fin', avant_derniere: couvSeparee ? 'à la fin de l’intérieur' : 'avant la 4e de couverture', apres_couverture: couvSeparee ? 'au début de l’intérieur' : 'après la 1re de couverture', reparties: couvSeparee ? 'au début et à la fin de l’intérieur' : 'en 2e et 3e de couverture', positions: couvSeparee ? 'à la fin de l’intérieur' : 'avant la 4e de couverture' }[p.blanches];
+    const impair = nbPages % 2 === 1 ? `Le document a un nombre impair de pages (${nbPages}). ` : '';
+    avertissements.push(`${impair}${completees} page${completees > 1 ? 's' : ''} blanche${completees > 1 ? 's' : ''} ajoutée${completees > 1 ? 's' : ''} ${ou} pour obtenir un multiple de 4 (${total} pages).${placees ? ` ${placees} autre${placees > 1 ? 's' : ''} placée${placees > 1 ? 's' : ''} à la main.` : ''}`);
+  } else if (placees) {
+    avertissements.push(`${placees} page${placees > 1 ? 's' : ''} blanche${placees > 1 ? 's' : ''} placée${placees > 1 ? 's' : ''} à la main.`);
   }
+  const ordreBrut: (number | null)[] = couverture ? [couverture[0]!, couverture[1]!, ...interieur, couverture[2]!, couverture[3]!] : [...interieur];
+  const blanchesManuelles = ordreBrut.flatMap((v, i) => (v === -1 ? [i] : []));
+  const sansMarque = (l: (number | null)[]) => l.map((v) => (v === -1 ? null : v));
+  const ordre = sansMarque(ordreBrut);
+  interieur = sansMarque(interieur);
+  if (couverture) couverture = sansMarque(couverture);
 
   const cahiers: (number | null)[][] = [];
   const pagesParCahier = Number.isFinite(feuillesParCahier) ? feuillesParCahier * 4 : Math.max(4, interieur.length);
@@ -344,11 +394,14 @@ export function planLivret(p: ParamsImposition, nbPagesTotal: number): Plan {
     const pose = (page: number | null, aGauche: boolean): Pose => ({
       page,
       numero: null,
-      x: arr(aGauche ? x0 - dec : x0 + fini.largeur + dec),
+      // Chasse : les pages des feuilles intérieures dépassent à la coupe une fois pliées ; leur visuel
+      // est rapproché du pli d'autant, pour garder les mêmes marges extérieures d'une page à l'autre.
+      x: arr(aGauche ? x0 + dec : x0 + fini.largeur - dec),
       y: y0,
       largeur: fini.largeur,
       hauteur: fini.hauteur,
-      decalage_x: aGauche ? -dec : dec,
+      decalage_x: aGauche ? dec : -dec,
+      pli: aGauche ? 'droite' : 'gauche',
       rang: 0,
       colonne: aGauche ? 0 : 1,
     });
@@ -389,9 +442,34 @@ export function planLivret(p: ParamsImposition, nbPagesTotal: number): Plan {
     nb_pages_sortie: nbFeuilles * 2,
     feuilles_a_imprimer: p.quantite && p.quantite > 0 ? nbFeuilles * p.quantite : nbFeuilles,
     pages_blanches: blanches,
+    ordre,
+    blanches_manuelles: blanchesManuelles,
     feuilles,
     avertissements,
   };
+}
+
+/**
+ * Complète une suite de pages avec `n` blanches selon le mode. `couvertures` : la première et la
+ * dernière page de la suite sont les couvertures (on ne les déplace pas à l'intérieur).
+ */
+export function completerBlanches(pages: (number | null)[], n: number, mode: ModeBlanches, couvertures: boolean): (number | null)[] {
+  if (n <= 0) return pages;
+  const b = (k: number) => Array<null>(k).fill(null);
+  const debut = (k: number) => (couvertures && pages.length >= 1 ? [pages[0]!, ...b(k), ...pages.slice(1)] : [...b(k), ...pages]);
+  const avantFin = (liste: (number | null)[], k: number) => (couvertures && liste.length >= 2 ? [...liste.slice(0, -1), ...b(k), liste[liste.length - 1]!] : [...liste, ...b(k)]);
+  switch (mode) {
+    case 'fin':
+      return [...pages, ...b(n)];
+    case 'apres_couverture':
+      return debut(n);
+    case 'reparties':
+      return avantFin(debut(1), n - 1);
+    case 'avant_derniere':
+    case 'positions':
+    default:
+      return avantFin(pages, n);
+  }
 }
 
 /** Plan « fonds perdus » : une page de sortie par page source, format fini + fonds perdus (+ traits). */
@@ -447,12 +525,21 @@ export function planAssembler(p: ParamsImposition, nbPages: number, pages?: { la
   };
 }
 
-export function calculerPlan(p: ParamsImposition, nbPages: number, pages?: { largeur: number; hauteur: number }[]): Plan {
+export interface SourcePlan {
+  /** Zone finie du visuel reçu (mm) : format reconnu, sinon page moins fonds perdus déclarés. */
+  fini: Dimension;
+  marge_blanche: MargesBlanches | null;
+}
+
+export function calculerPlan(p: ParamsImposition, nbPages: number, pages?: { largeur: number; hauteur: number }[], source?: SourcePlan): Plan {
   if (nbPages < 1) throw new Error('Le fichier ne contient aucune page.');
   if (p.operation === 'assembler') return planAssembler(p, nbPages, pages);
-  if (p.operation === 'livret') return planLivret(p, nbPages);
-  if (p.operation === 'fonds_perdus') return planFondsPerdus(p, nbPages);
-  return planPoses(p, nbPages);
+  const plan = p.operation === 'livret' ? planLivret(p, nbPages) : p.operation === 'fonds_perdus' ? planFondsPerdus(p, nbPages) : planPoses(p, nbPages);
+  if (source) {
+    const a = calculerAdaptation(source.fini, p.fini, p.ajustement ?? 'auto', source.marge_blanche);
+    plan.adaptation = a.identique && !a.pivote ? null : a;
+  }
+  return plan;
 }
 
 /** Paramètres de départ raisonnables pour un fichier analysé. */
@@ -474,7 +561,7 @@ export function paramsParDefaut(analyse: { fini: Dimension; fonds_perdus: string
     mode: famille === 'ticket' ? 'coupe_empile' : analyse.nb_pages > 2 ? 'sequence' : 'repetition',
     quantite: undefined,
     numerotation: null,
-    ajustement: 'centrer',
+    ajustement: 'auto',
     chasse_mm: 0,
     blanches: 'fin',
   };

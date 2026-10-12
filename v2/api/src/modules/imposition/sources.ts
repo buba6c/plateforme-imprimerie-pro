@@ -10,11 +10,12 @@
 import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
-import { PDFDocument } from 'pdf-lib';
+import { PDFDocument, PDFPage } from 'pdf-lib';
 import { genreApercu } from '../fichiers/apercu';
 import { chargerPdf } from './analyse';
 import { reparer } from '../traitement/pdf';
 import { pt, type Dimension } from './formats';
+import type { ModePlanches } from './plan';
 
 export type RolePiece = 'recto' | 'verso' | 'pages';
 
@@ -47,6 +48,8 @@ export interface PageVirtuelle {
   page_source: number;
   role: RolePiece;
   genre: 'pdf' | 'image';
+  /** Moitié d'une planche (deux pages côte à côte) séparée en deux pages. */
+  demi?: 'gauche' | 'droite';
 }
 
 export interface Paire {
@@ -63,13 +66,23 @@ export interface Assemblage {
   nb_images: number;
   /** Première pièce : dossier de destination du résultat. */
   dossier_id: number;
+  /** Planches séparées en deux pages (0 si aucune). */
+  planches_separees: number;
+}
+
+export interface OptionsAssemblage {
+  fini?: Dimension;
+  fonds?: number;
+  planches?: ModePlanches;
+  lecture?: 'gauche_droite' | 'droite_gauche';
 }
 
 const TTL_MS = 30 * 60_000;
 const cache = new Map<string, { at: number; a: Assemblage }>();
 
-export function signaturePieces(pieces: PieceEntree[], fichiers: FichierPiece[], fini: Dimension | undefined, fonds: number | undefined): string {
+export function signaturePieces(pieces: PieceEntree[], fichiers: FichierPiece[], fini: Dimension | undefined, fonds: number | undefined, planches: ModePlanches = 'non', lecture = 'gauche_droite'): string {
   const h = crypto.createHash('sha1');
+  if (planches !== 'non') h.update(`planches=${planches}|${lecture};`);
   for (const p of pieces) {
     const f = fichiers.find((x) => x.id === p.fichier_id);
     h.update(`${p.fichier_id}|${f?.libre ?? ''}|${f?.sha256 ?? f?.taille ?? ''}|${p.role}|${(p.pages ?? []).join(',')};`);
@@ -78,7 +91,7 @@ export function signaturePieces(pieces: PieceEntree[], fichiers: FichierPiece[],
   return h.digest('hex');
 }
 
-async function imageEnPage(doc: PDFDocument, abs: string, fini: Dimension | undefined, fonds: number | undefined): Promise<{ largeur: number; hauteur: number }> {
+async function imageEnPage(doc: PDFDocument, abs: string, fini: Dimension | undefined, fonds: number | undefined): Promise<PDFPage> {
   const sharp = (await import('sharp')).default;
   const img = sharp(abs, { limitInputPixels: 400_000_000 }).rotate();
   const meta = await img.metadata();
@@ -109,19 +122,48 @@ async function imageEnPage(doc: PDFDocument, abs: string, fini: Dimension | unde
   }
   const png = await img.png().toBuffer();
   const image = await doc.embedPng(png);
-  const page = doc.addPage([pt(largeurMm), pt(hauteurMm)]);
+  // Page créée hors de l'arbre : elle est ajoutée au document dans l'ordre définitif des pages.
+  const page = PDFPage.create(doc);
+  page.setSize(pt(largeurMm), pt(hauteurMm));
   page.drawImage(image, { x: 0, y: 0, width: pt(largeurMm), height: pt(hauteurMm) });
-  return { largeur: largeurMm, hauteur: hauteurMm };
+  return page;
+}
+
+/** Taille utile d'une page (TrimBox s'il est déclaré, sinon MediaBox), en points, avec sa rotation. */
+function boiteUtile(pg: PDFPage) {
+  const b = pg.node.TrimBox() ? pg.getTrimBox() : pg.getMediaBox();
+  const rotation = ((pg.getRotation().angle % 360) + 360) % 360;
+  return { x: b.x, y: b.y, w: b.width, h: b.height, rotation };
+}
+
+/**
+ * Pages à couper en deux : les pages doubles. Si la pièce mélange pages simples (portrait) et pages
+ * doubles (export « planches » d'InDesign : couverture seule, puis 2-3, 4-5…), seules les pages deux fois
+ * plus larges que les simples sont coupées ; si toutes sont en paysage, toutes le sont.
+ */
+export function pagesDoubles(dims: { w: number; h: number; rotation: number }[]): boolean[] {
+  const paysage = (d: { w: number; h: number }) => d.w > d.h * 1.2;
+  const simples = dims.filter((d) => !paysage(d) && d.rotation === 0).map((d) => d.w).sort((a, b) => a - b);
+  const ref = simples.length ? simples[Math.floor(simples.length / 2)]! : null;
+  return dims.map((d) => d.rotation === 0 && paysage(d) && (ref === null || Math.abs(d.w - 2 * ref) <= 0.12 * ref));
 }
 
 /** Assemble les pièces ; `dossierTemp` reçoit le PDF de travail. */
-export async function assembler(pieces: PieceEntree[], fichiers: FichierPiece[], dossierTemp: string, fini?: Dimension, fonds?: number): Promise<Assemblage> {
-  const signature = signaturePieces(pieces, fichiers, fini, fonds);
+export async function assembler(pieces: PieceEntree[], fichiers: FichierPiece[], dossierTemp: string, opts: OptionsAssemblage = {}): Promise<Assemblage> {
+  const { fini, fonds } = opts;
+  const planches = opts.planches ?? 'non';
+  const droiteGauche = opts.lecture === 'droite_gauche';
+  const signature = signaturePieces(pieces, fichiers, fini, fonds, planches, opts.lecture);
   const c = cache.get(signature);
   if (c && Date.now() - c.at < TTL_MS && fs.existsSync(c.a.chemin)) return c.a;
 
   const doc = await PDFDocument.create();
   const pages: PageVirtuelle[] = [];
+  // Pages ajoutées au document à la fin, dans l'ordre définitif (la 4e de couverture d'une planche de
+  // couverture passe en dernier).
+  const aAjouter: { page: PDFPage; meta: Omit<PageVirtuelle, 'numero'> }[] = [];
+  let quatrieme: (typeof aAjouter)[number] | null = null;
+  let separees = 0;
   let nbImages = 0;
   for (const p of pieces) {
     const f = fichiers.find((x) => x.id === p.fichier_id);
@@ -143,17 +185,44 @@ export async function assembler(pieces: PieceEntree[], fichiers: FichierPiece[],
       const voulues = (p.pages?.length ? p.pages : Array.from({ length: total }, (_, i) => i + 1)).filter((n) => n >= 1 && n <= total);
       if (!voulues.length) throw new Error(`« ${f.nom_original} » : aucune page valide demandée.`);
       const copiees = await doc.copyPages(src, voulues.map((n) => n - 1));
+      const doubles = planches === 'non' ? copiees.map(() => false) : pagesDoubles(copiees.map(boiteUtile));
       copiees.forEach((pg, i) => {
-        doc.addPage(pg);
-        pages.push({ numero: pages.length + 1, fichier_id: f.id, libre: f.libre, nom: f.nom_original, page_source: voulues[i]!, role: p.role, genre: 'pdf' });
+        const meta = { fichier_id: f.id, libre: f.libre, nom: f.nom_original, page_source: voulues[i]!, role: p.role, genre: 'pdf' as const };
+        if (!doubles[i]) {
+          aAjouter.push({ page: pg, meta });
+          return;
+        }
+        // Planche : la même page deux fois (contenu partagé, rien n'est dupliqué), chacune réduite à une moitié.
+        const b = boiteUtile(pg);
+        const feuille = pg.node.clone();
+        const droite = PDFPage.of(feuille, doc.context.register(feuille), doc);
+        const moitie = (page: PDFPage, x: number) => {
+          for (const set of [page.setMediaBox, page.setCropBox, page.setTrimBox, page.setBleedBox]) set.call(page, x, b.y, b.w / 2, b.h);
+        };
+        moitie(pg, b.x);
+        moitie(droite, b.x + b.w / 2);
+        const g = { page: pg, meta: { ...meta, demi: 'gauche' as const } };
+        const d = { page: droite, meta: { ...meta, demi: 'droite' as const } };
+        const [premiere, seconde] = droiteGauche ? [d, g] : [g, d];
+        separees++;
+        // Couverture à plat (4e | 1re) : la première moitié lue est la 4e de couverture, gardée pour la fin.
+        if (planches === 'couverture' && separees === 1 && aAjouter.length === 0) {
+          quatrieme = premiere;
+          aAjouter.push(seconde);
+        } else aAjouter.push(premiere, seconde);
       });
     } else if (genre === 'image') {
-      await imageEnPage(doc, f.abs, fini, fonds);
+      const page = await imageEnPage(doc, f.abs, fini, fonds);
       nbImages++;
-      pages.push({ numero: pages.length + 1, fichier_id: f.id, libre: f.libre, nom: f.nom_original, page_source: 1, role: p.role, genre: 'image' });
+      aAjouter.push({ page, meta: { fichier_id: f.id, libre: f.libre, nom: f.nom_original, page_source: 1, role: p.role, genre: 'image' } });
     } else {
       throw new Error(`« ${f.nom_original} » n'est ni un PDF ni une image : il ne peut pas être imposé.`);
     }
+  }
+  if (quatrieme) aAjouter.push(quatrieme);
+  for (const x of aAjouter) {
+    doc.addPage(x.page);
+    pages.push({ numero: pages.length + 1, ...x.meta });
   }
   if (!pages.length) throw new Error('Aucune page à imposer.');
 
@@ -169,7 +238,7 @@ export async function assembler(pieces: PieceEntree[], fichiers: FichierPiece[],
   await fs.promises.mkdir(dossierTemp, { recursive: true });
   const chemin = path.join(dossierTemp, `${signature}.pdf`);
   await fs.promises.writeFile(chemin, await doc.save({ useObjectStreams: true }));
-  const a: Assemblage = { signature, chemin, pages, paires, nb_images: nbImages, dossier_id: 0 };
+  const a: Assemblage = { signature, chemin, pages, paires, nb_images: nbImages, dossier_id: 0, planches_separees: separees };
   cache.set(signature, { at: Date.now(), a });
   // Ménage : fichiers de travail trop vieux.
   void nettoyerTemp(dossierTemp).catch(() => {});

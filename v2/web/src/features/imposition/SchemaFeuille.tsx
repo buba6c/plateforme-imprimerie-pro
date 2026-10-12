@@ -2,9 +2,25 @@
 // serveur). Les fonds perdus sont dessinés en temps réel selon la méthode choisie : ceux du fichier,
 // miroir des bords (bandes retournées), étirement, ou blanc. Traits de coupe, zone finie, pli du livret
 // et numéros s'affichent ou se masquent à la demande.
-import { useState } from 'react';
-import { useApercuPage } from './rendu';
-import type { Face, MethodeFondsPerdus, PageVirtuelle, Plan } from './types';
+import { useId, useState } from 'react';
+import { useApercuPage, type Cadre } from './rendu';
+import type { Adaptation, Dimension, Face, MethodeFondsPerdus, PageVirtuelle, Plan } from './types';
+
+/**
+ * Cadre de la page rendue (fractions, origine haut-gauche) qui correspond au format fini, d'après la
+ * mise au format : le visuel est centré dans la page ; le format fini (plus les fonds perdus pris dans
+ * le fichier) est divisé par l'échelle. Même calcul que le moteur (ajuster.ts, cadreSource).
+ */
+export function cadrePage(dims: Dimension, fini: Dimension, a: Adaptation | null | undefined, fondsMm: number): Cadre {
+  const pivote = !!a?.pivote;
+  const PW = pivote ? dims.hauteur : dims.largeur;
+  const PH = pivote ? dims.largeur : dims.hauteur;
+  const ex = a?.echelle_x || 1;
+  const ey = a?.echelle_y || 1;
+  const w = (fini.largeur + 2 * fondsMm) / ex;
+  const h = (fini.hauteur + 2 * fondsMm) / ey;
+  return { rotation: pivote ? 90 : 0, x: (PW - w) / 2 / PW, y: (PH - h) / 2 / PH, w: w / PW, h: h / PH };
+}
 
 export interface AffichageSchema {
   fonds: boolean;
@@ -23,10 +39,9 @@ function Image({ href, x, y, w, h, clip, sx = 1, sy = 1, onError, t: tForce }: {
   );
 }
 
-function Visuel({ pg, x, y, w, h, fp, methode, sourceAvecFonds, i, afficherFonds, unis }: { pg: PageVirtuelle; x: number; y: number; w: number; h: number; fp: number; methode: MethodeFondsPerdus; sourceAvecFonds: boolean; i: number; afficherFonds: boolean; unis?: { haut: boolean; bas: boolean; gauche: boolean; droite: boolean } | null }) {
+function Visuel({ pg, x, y, w, h, fp, methode, sourceAvecFonds, id, afficherFonds, unis, cadre }: { pg: PageVirtuelle; x: number; y: number; w: number; h: number; fp: number; methode: MethodeFondsPerdus; sourceAvecFonds: boolean; id: string; afficherFonds: boolean; unis?: { haut: boolean; bas: boolean; gauche: boolean; droite: boolean } | null; cadre?: Cadre }) {
   const [ko, setKo] = useState(false);
-  const rendu = useApercuPage({ fichier_id: pg.libre ? undefined : pg.fichier_id, libre: pg.libre, page: pg.page_source, genre: pg.genre }, 360);
-  const id = `p${i}-${pg.numero}`;
+  const rendu = useApercuPage({ fichier_id: pg.libre ? undefined : pg.fichier_id, libre: pg.libre, page: pg.page_source, genre: pg.genre, demi: pg.demi, cadre }, 360);
   if (rendu.etat === 'chargement') {
     return (
       <g className="imp-schema__charge">
@@ -120,6 +135,7 @@ export function SchemaFeuille({
   methode = 'source',
   sourceAvecFonds = false,
   unisDe,
+  dimsDe,
   affichage = { fonds: true, traits: true, zone_finie: true, numeros: true },
 }: {
   plan: Plan;
@@ -131,6 +147,8 @@ export function SchemaFeuille({
   sourceAvecFonds?: boolean;
   /** Bords unis de chaque page (analyse) : décide prolonger ou miroir en mode intelligent. */
   unisDe?: (numero: number) => { haut: boolean; bas: boolean; gauche: boolean; droite: boolean } | null;
+  /** Taille (mm) de chaque page du document (analyse) : l'aperçu est alors recadré au format fini, mise au format comprise. */
+  dimsDe?: (numero: number) => Dimension | null;
   affichage?: AffichageSchema;
 }) {
   const W = plan.feuille.largeur;
@@ -140,6 +158,13 @@ export function SchemaFeuille({
   const fp = plan.fonds_perdus_mm * k;
   const yS = (yMm: number, hMm: number) => (H - yMm - hMm) * k;
   const pageDe = (n: number | null) => (n === null ? null : (pages ?? []).find((p) => p.numero === n) ?? null);
+  const avecFondsSource = methode === 'source' && sourceAvecFonds;
+  const cadreDe = (n: number): Cadre | undefined => {
+    const d = dimsDe?.(n);
+    return d && d.largeur > 0 && d.hauteur > 0 ? cadrePage(d, plan.fini, plan.adaptation, avecFondsSource ? plan.fonds_perdus_mm : 0) : undefined;
+  };
+  // Identifiants des découpes propres à ce schéma : plusieurs feuilles s'affichent sur la même page.
+  const uid = useId().replace(/[^a-zA-Z0-9_-]/g, '');
   const L = 4 * k; // longueur des traits de coupe (4 mm)
   const e = (plan.fonds_perdus_mm + 1) * k; // écart des traits (fonds perdus + 1 mm)
   return (
@@ -154,10 +179,23 @@ export function SchemaFeuille({
           const vide = q.page === null;
           const pg = pageDe(q.page);
           const fontSize = Math.max(8, Math.min(16, Math.min(w, h) / 3));
+          // Livret : la pose est coupée au pli, ses fonds perdus ne recouvrent pas la page d'en face.
+          const pli = q.pli ? ((q.pli === 'droite' ? q.x + q.largeur : q.x) - (q.decalage_x ?? 0)) * k : null;
+          const clipPli = pli === null ? undefined : `${uid}-pli-${i}`;
           return (
-            <g key={i} className="imp-schema__pose" data-vide={vide || undefined}>
+            <g key={i} className="imp-schema__pose" data-vide={vide || undefined} clipPath={clipPli ? `url(#${clipPli})` : undefined}>
+              {clipPli && pli !== null && (
+                <defs>
+                  <clipPath id={clipPli}>
+                    {q.pli === 'droite' ? <rect x={x - fp - 4} y={y - fp - 4} width={pli - (x - fp - 4)} height={h + 2 * fp + 8} /> : <rect x={pli} y={y - fp - 4} width={x + w + fp + 4 - pli} height={h + 2 * fp + 8} />}
+                  </clipPath>
+                </defs>
+              )}
               {affichage.fonds && fp > 0 && <rect x={x - fp} y={y - fp} width={w + 2 * fp} height={h + 2 * fp} className="imp-schema__fonds-fond" />}
-              {pg ? <Visuel pg={pg} x={x} y={y} w={w} h={h} fp={fp} methode={methode} sourceAvecFonds={sourceAvecFonds} i={i} afficherFonds={affichage.fonds} unis={unisDe?.(pg.numero) ?? null} /> : <rect x={x} y={y} width={w} height={h} className="imp-schema__fini" />}
+              {pg ? <Visuel pg={pg} x={x} y={y} w={w} h={h} fp={fp} methode={methode} sourceAvecFonds={sourceAvecFonds} id={`${uid}-p${i}-${pg.numero}`} afficherFonds={affichage.fonds} unis={unisDe?.(pg.numero) ?? null} cadre={cadreDe(pg.numero)} /> : <rect x={x} y={y} width={w} height={h} className="imp-schema__fini" />}
+              {vide && plan.operation === 'livret' && !affichage.numeros && (
+                <text x={x + w / 2} y={y + h / 2} className="imp-schema__blanche" fontSize={Math.max(8, Math.min(14, w / 10))} textAnchor="middle" dominantBaseline="central">Page blanche</text>
+              )}
               {affichage.fonds && fp > 0 && <rect x={x - fp} y={y - fp} width={w + 2 * fp} height={h + 2 * fp} className="imp-schema__fonds" />}
               {affichage.zone_finie && <rect x={x} y={y} width={w} height={h} className="imp-schema__trait-fini" />}
               {affichage.numeros && (!pg || q.numero) && (

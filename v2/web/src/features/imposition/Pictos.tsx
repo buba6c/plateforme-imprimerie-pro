@@ -51,3 +51,20 @@ export function PictoOperation({ op }: { op: 'poses' | 'livret' | 'fonds_perdus'
   if (op === 'livret') return <svg {...base}><path d="M24 5v26" strokeDasharray="3 2" /><rect x="5" y="5" width="19" height="26" rx="1" fill="currentColor" fillOpacity="0.25" /><rect x="24" y="5" width="19" height="26" rx="1" fill="currentColor" fillOpacity="0.15" /><text x="14" y="21" fontSize="8" textAnchor="middle" fill="currentColor" stroke="none">8</text><text x="33" y="21" fontSize="8" textAnchor="middle" fill="currentColor" stroke="none">1</text></svg>;
   return <svg {...base}><rect x="8" y="4" width="32" height="28" rx="1" strokeDasharray="3 2" /><rect x="14" y="9" width="20" height="18" fill="currentColor" fillOpacity="0.3" /><path d="M14 3v3M34 3v3M14 33v-3M34 33v-3M5 9h3M5 27h3M43 9h-3M43 27h-3" strokeWidth="1.2" /></svg>;
 }
+
+/** Mise au format : visuel (trait plein) et format fini (pointillé). */
+export function PictoAjustement({ mode }: { mode: 'auto' | 'centrer' | 'adapter' | 'remplir' | 'etirer' }) {
+  const fini = <rect x="14" y="6" width="20" height="24" rx="1" strokeDasharray="3 2" />;
+  if (mode === 'adapter') return <svg {...base}>{fini}<rect x="14" y="10" width="20" height="16" fill="currentColor" fillOpacity="0.3" /><path d="M14 6v4M34 6v4M14 26v4M34 26v4" strokeWidth="1" strokeOpacity="0.5" /></svg>;
+  if (mode === 'remplir') return <svg {...base}>{fini}<rect x="9" y="6" width="30" height="24" fill="currentColor" fillOpacity="0.14" strokeOpacity="0.4" /><rect x="14" y="6" width="20" height="24" fill="currentColor" fillOpacity="0.25" stroke="none" /></svg>;
+  if (mode === 'etirer') return <svg {...base}>{fini}<rect x="14" y="6" width="20" height="24" fill="currentColor" fillOpacity="0.3" stroke="none" /><path d="M8 18h3M37 18h3M24 2v2M24 32v2" /><path d="M9 15l-2 3 2 3M39 15l2 3-2 3" /></svg>;
+  if (mode === 'centrer') return <svg {...base}>{fini}<rect x="10" y="9" width="28" height="18" fill="currentColor" fillOpacity="0.3" stroke="none" /><path d="M24 4v28M8 18h32" strokeWidth="0.8" strokeDasharray="2 2" /></svg>;
+  return <svg {...base}>{fini}<rect x="14" y="9" width="20" height="18" fill="currentColor" fillOpacity="0.3" stroke="none" /><path d="M42 3l1.2 2.6L46 6.8l-2.8 1.2L42 11l-1.2-3L38 6.8l2.8-1.2z" fill="currentColor" stroke="none" /></svg>;
+}
+
+/** Planches : page double laissée telle quelle, séparée en deux, ou couverture à plat. */
+export function PictoPlanches({ mode }: { mode: 'non' | 'simple' | 'couverture' }) {
+  if (mode === 'non') return <svg {...base}><rect x="6" y="7" width="36" height="22" rx="1" fill="currentColor" fillOpacity="0.2" /><path d="M11 13h26M11 17h26M11 21h18" /></svg>;
+  if (mode === 'simple') return <svg {...base}><rect x="6" y="7" width="17" height="22" rx="1" fill="currentColor" fillOpacity="0.25" /><rect x="25" y="7" width="17" height="22" rx="1" fill="currentColor" fillOpacity="0.25" /><path d="M24 4v28" strokeDasharray="3 2" /><text x="14.5" y="21" fontSize="8" textAnchor="middle" fill="currentColor" stroke="none">2</text><text x="33.5" y="21" fontSize="8" textAnchor="middle" fill="currentColor" stroke="none">3</text></svg>;
+  return <svg {...base}><rect x="6" y="7" width="17" height="22" rx="1" fill="currentColor" fillOpacity="0.15" /><rect x="25" y="7" width="17" height="22" rx="1" fill="currentColor" fillOpacity="0.35" /><path d="M24 4v28" strokeDasharray="3 2" /><text x="14.5" y="21" fontSize="7" textAnchor="middle" fill="currentColor" stroke="none">4e</text><text x="33.5" y="21" fontSize="7" textAnchor="middle" fill="currentColor" stroke="none">1re</text></svg>;
+}

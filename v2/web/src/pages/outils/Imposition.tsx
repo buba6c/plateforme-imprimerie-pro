@@ -15,14 +15,15 @@ import { useDossier } from '../../features/dossiers/hooks';
 import { DialogueDossier, genreDe } from '../../features/imposition/DialogueDossier';
 import { extension } from '../../features/fichiers/ListeFichiers';
 import { useStatutIA } from '../../features/ia/hooks';
-import { useAnalyse, useGenerer, useModelesImposition, useModelesMutations, usePlan, useProposerIA, useRattacher, useTeleverserLibre } from '../../features/imposition/hooks';
+import { useAnalyse, useCatalogueImposition, useGenerer, useModelesImposition, useModelesMutations, usePlan, useProposerIA, useRattacher, useTeleverserLibre } from '../../features/imposition/hooks';
 import { useDossiers } from '../../features/dossiers/hooks';
 import { OptionCartes } from '../../features/imposition/OptionCartes';
-import { PictoFondsPerdus, PictoMode, PictoOperation, PictoOrientation, PictoTraits } from '../../features/imposition/Pictos';
+import { PictoAjustement, PictoFondsPerdus, PictoMode, PictoOperation, PictoOrientation, PictoPlanches, PictoTraits } from '../../features/imposition/Pictos';
 import { SchemaFeuille, type AffichageSchema } from '../../features/imposition/SchemaFeuille';
-import { reglagesPour, resumeAuto, rolesAuto } from '../../features/imposition/auto';
+import { ListeFeuilles, PagesDocument } from '../../features/imposition/VuePages';
+import { reglagesPour, resumeAuto, rolesAuto, texteAdaptation } from '../../features/imposition/auto';
 import { useApercuPage } from '../../features/imposition/rendu';
-import { FOURNISSEUR_LABELS_IA, METHODE_LABELS, MODE_LABELS, OPERATION_LABELS, type Feuille, type ModeleImposition, type Operation, type ParamsImposition, type Piece, type PieceAnalysee, type Plan, type PropositionImposition, type ReponseAnalyse, type ResultatGeneration, type RolePiece } from '../../features/imposition/types';
+import { AJUSTEMENT_LABELS, BLANCHES_LABELS, FOURNISSEUR_LABELS_IA, METHODE_LABELS, MODE_LABELS, OPERATION_LABELS, PLANCHES_LABELS, type Dimension, type Feuille, type ModeAjustement, type ModeBlanches, type ModeleImposition, type ModePlanches, type Operation, type ParamsImposition, type Piece, type PieceAnalysee, type Plan, type PropositionImposition, type ReponseAnalyse, type ResultatGeneration, type RolePiece } from '../../features/imposition/types';
 import '../../features/imposition/imposition.css';
 import { apercuUrl, fichierUrl, messageErreur } from '../../lib/api';
 import { Alert, Button, Checkbox, ConfirmDialog, Dialog, MachineChip, PageHeader, Ref, SelectField, Skeleton, TextField, TextareaField, useToast } from '../../ui';
@@ -73,8 +74,52 @@ function ChipsPiece({ a }: { a: PieceAnalysee }) {
 // ---------------------------------------------------------------------------
 // Réglages
 
-function Reglages({ p, onChange, nbPages, analyse }: { p: ParamsImposition; onChange: (p: ParamsImposition) => void; nbPages: number; analyse?: ReponseAnalyse }) {
+const memeDim = (a: Dimension, b: Dimension) => Math.abs(a.largeur - b.largeur) < 0.05 && Math.abs(a.hauteur - b.hauteur) < 0.05;
+/** Format standard orienté comme le visuel reçu (une carte livrée en portrait reste en portrait). */
+function orienterComme(f: Dimension, source: Dimension | undefined): Dimension {
+  const paysageSource = !!source && source.largeur > source.hauteur;
+  const [petit, grand] = [Math.min(f.largeur, f.hauteur), Math.max(f.largeur, f.hauteur)];
+  return paysageSource ? { largeur: grand, hauteur: petit } : { largeur: petit, hauteur: grand };
+}
+
+/** Choix du format fini : taille du fichier, format standard le plus proche, catalogue, ou valeurs libres. */
+function ChoixFormat({ p, maj, analyse }: { p: ParamsImposition; maj: (patch: Partial<ParamsImposition>) => void; analyse?: ReponseAnalyse }) {
+  const catalogue = useCatalogueImposition();
+  const formats = catalogue.data?.formats ?? [];
+  const fichier = analyse?.analyse.fini;
+  const proche = analyse?.format_proche ?? null;
+  const code = fichier && memeDim(p.fini, fichier) ? 'fichier' : (formats.find((f) => memeDim(p.fini, f) || memeDim(p.fini, { largeur: f.hauteur, hauteur: f.largeur }))?.code ?? 'personnalise');
+  const options = [
+    ...(fichier ? [{ value: 'fichier', label: `Taille du fichier · ${fichier.largeur} × ${fichier.hauteur} mm${analyse?.analyse.format ? ` (${analyse.analyse.format.libelle.replace(/ \d+ × \d+ mm.*$/, '')})` : ''}` }] : []),
+    ...formats.map((f) => ({ value: f.code, label: `${f.libelle}${proche && proche.code === f.code ? ' · le plus proche du fichier' : ''}` })),
+    { value: 'personnalise', label: 'Personnalisé (saisir ci-dessous)' },
+  ];
+  return (
+    <div className="ws__section">
+      <p className="ws__section-titre">Format fini</p>
+      <SelectField label="Format" value={code} options={options}
+        onChange={(e) => {
+          const v = e.target.value;
+          if (v === 'fichier' && fichier) maj({ fini: { largeur: fichier.largeur, hauteur: fichier.hauteur } });
+          else {
+            const f = formats.find((x) => x.code === v);
+            if (f) maj({ fini: orienterComme(f, fichier) });
+          }
+        }}
+        help={proche && code === 'fichier' ? `Format non standard : « ${proche.libelle} » est le plus proche. Choisissez-le pour mettre le fichier au format.` : undefined}
+      />
+      <div className="imp-ligne">
+        <Nombre label="Largeur" value={p.fini.largeur} onChange={(v) => maj({ fini: { ...p.fini, largeur: v } })} min={10} />
+        <Nombre label="Hauteur" value={p.fini.hauteur} onChange={(v) => maj({ fini: { ...p.fini, hauteur: v } })} min={10} />
+      </div>
+    </div>
+  );
+}
+
+function Reglages({ p, onChange, nbPages, analyse, plan }: { p: ParamsImposition; onChange: (p: ParamsImposition) => void; nbPages: number; analyse?: ReponseAnalyse; plan?: Plan }) {
   const maj = (patch: Partial<ParamsImposition>) => onChange({ ...p, ...patch });
+  const adaptation = plan?.adaptation ?? null;
+  const planches = analyse?.planches;
   const num = p.numerotation ?? null;
   const majNum = (patch: Partial<NonNullable<ParamsImposition['numerotation']>>) => maj({ numerotation: { ...(num ?? { debut: 1, chiffres: 4, prefixe: '', position: 'bas_droite', taille_pt: 12, verso: false }), ...patch } });
   return (
@@ -90,14 +135,19 @@ function Reglages({ p, onChange, nbPages, analyse }: { p: ParamsImposition; onCh
       {p.operation === 'assembler' && (
         <p className="ev-help" style={{ margin: 0 }}>Les pièces sont réunies dans l’ordre de l’étape 1 (recto 1, verso 1, recto 2…), sans modification des pages. Utile pour envoyer un seul PDF à l’imprimeur.</p>
       )}
-      {p.operation !== 'assembler' && (
-      <div className="ws__section">
-        <p className="ws__section-titre">Format fini</p>
-        <div className="imp-ligne">
-          <Nombre label="Largeur" value={p.fini.largeur} onChange={(v) => maj({ fini: { ...p.fini, largeur: v } })} min={10} />
-          <Nombre label="Hauteur" value={p.fini.hauteur} onChange={(v) => maj({ fini: { ...p.fini, hauteur: v } })} min={10} />
+      {planches && (planches.detection || planches.separees > 0) && (
+        <OptionCartes<ModePlanches> name="imp-planches" label="Pages doubles (planches)" tone="violet" compact value={p.planches ?? 'non'} onChange={(planches) => maj({ planches })}
+          options={(Object.keys(PLANCHES_LABELS) as ModePlanches[]).map((m) => ({ value: m, label: PLANCHES_LABELS[m].label, aide: PLANCHES_LABELS[m].aide, picto: <PictoPlanches mode={m} /> }))}
+        />
+      )}
+      {p.operation !== 'assembler' && <ChoixFormat p={p} maj={maj} analyse={analyse} />}
+      {p.operation !== 'assembler' && adaptation && (
+        <div className="ws__section">
+          <OptionCartes<ModeAjustement> name="imp-ajustement" label="Le fichier n’a pas cette taille : mise au format" tone="orange" compact value={p.ajustement ?? 'auto'} onChange={(ajustement) => maj({ ajustement })}
+            options={(Object.keys(AJUSTEMENT_LABELS) as ModeAjustement[]).map((m) => ({ value: m, label: AJUSTEMENT_LABELS[m].label, aide: AJUSTEMENT_LABELS[m].aide, picto: <PictoAjustement mode={m} /> }))}
+          />
+          <p className="ev-help" style={{ margin: 0 }}>{texteAdaptation(adaptation, p.fini)}</p>
         </div>
-      </div>
       )}
 
       {p.operation !== 'fonds_perdus' && p.operation !== 'assembler' && (
@@ -190,7 +240,10 @@ function Reglages({ p, onChange, nbPages, analyse }: { p: ParamsImposition; onCh
           />
           <Checkbox label="Couverture à part (pages 1, 2, avant-dernière et dernière sur une feuille séparée, papier plus épais)" checked={!!p.couverture_separee} onChange={(couverture_separee) => maj({ couverture_separee })} />
           {p.reliure !== 'dos_carre' && <Nombre label="Chasse (décalage des feuilles intérieures)" value={p.chasse_mm ?? 0} onChange={(v) => maj({ chasse_mm: v })} max={10} step={0.1} help="0 pour une brochure fine ; environ 0,1 mm par feuille au-delà de 40 pages." />}
-          <SelectField label="Pages blanches ajoutées" value={p.blanches} onChange={(e) => maj({ blanches: e.target.value as ParamsImposition['blanches'] })} options={[{ value: 'fin', label: 'À la fin' }, { value: 'avant_derniere', label: 'Avant la dernière page (4e de couverture gardée)' }]} />
+          <SelectField label={`Pages blanches${plan?.pages_blanches ? ` (${plan.pages_blanches} ajoutée${plan.pages_blanches > 1 ? 's' : ''} pour un multiple de 4)` : ''}`} value={p.blanches} onChange={(e) => maj({ blanches: e.target.value as ModeBlanches })} options={(Object.keys(BLANCHES_LABELS) as ModeBlanches[]).map((m) => ({ value: m, label: BLANCHES_LABELS[m].label }))} help={BLANCHES_LABELS[p.blanches]?.aide} />
+          {p.blanches === 'positions' && (p.blanches_apres?.length ?? 0) > 0 && (
+            <p className="ev-help" style={{ margin: 0 }}>{p.blanches_apres!.length} blanche{p.blanches_apres!.length > 1 ? 's' : ''} placée{p.blanches_apres!.length > 1 ? 's' : ''} à la main (vue « Pages »). <button type="button" className="ev-btn ev-btn--ghost ev-btn--sm" onClick={() => maj({ blanches: 'avant_derniere', blanches_apres: [] })}>Tout retirer</button></p>
+          )}
           <Nombre label="Exemplaires" value={p.quantite ?? 0} onChange={(v) => maj({ quantite: v > 0 ? Math.round(v) : undefined })} min={0} max={100000} step={1} addon="ex." help="Pour compter les feuilles à imprimer." />
         </div>
       )}
@@ -209,6 +262,7 @@ function Modeles({ params, onAppliquer }: { params: ParamsImposition | null; onA
   const [enregistrer, setEnregistrer] = useState(false);
   const [nom, setNom] = useState('');
   const [description, setDescription] = useState('');
+  const [finiImpose, setFiniImpose] = useState(false);
   const [aSupprimer, setASupprimer] = useState<ModeleImposition | null>(null);
   const items = q.data?.items ?? [];
   const admin = user.role === 'admin';
@@ -239,11 +293,11 @@ function Modeles({ params, onAppliquer }: { params: ParamsImposition | null; onA
         </div>
       )}
       {enregistrer && params && (
-        <Dialog open onClose={() => setEnregistrer(false)} title="Enregistrer un modèle d’imposition" description="Les réglages actuels seront proposés d’un clic aux préparateurs. Le format fini du fichier est conservé à l’application."
+        <Dialog open onClose={() => setEnregistrer(false)} title="Enregistrer un modèle d’imposition" description="Les réglages actuels seront proposés d’un clic aux préparateurs. Sauf demande ci-dessous, le format fini du fichier est conservé à l’application."
           footer={
             <>
               <Button onClick={() => setEnregistrer(false)}>Annuler</Button>
-              <Button variant="primary" busy={creer.isPending} disabled={!nom.trim()} onClick={() => creer.mutate({ nom: nom.trim(), description: description.trim() || null, params }, { onSuccess: () => (setEnregistrer(false), setNom(''), setDescription(''), toast.success('Modèle enregistré', nom.trim())), onError: (e) => toast.error('Modèle non enregistré', messageErreur(e)) })}>
+              <Button variant="primary" busy={creer.isPending} disabled={!nom.trim()} onClick={() => creer.mutate({ nom: nom.trim(), description: description.trim() || null, params: { ...params, fini_impose: finiImpose } }, { onSuccess: () => (setEnregistrer(false), setNom(''), setDescription(''), toast.success('Modèle enregistré', nom.trim())), onError: (e) => toast.error('Modèle non enregistré', messageErreur(e)) })}>
                 Enregistrer
               </Button>
             </>
@@ -251,6 +305,7 @@ function Modeles({ params, onAppliquer }: { params: ParamsImposition | null; onA
         >
           <TextField label="Nom" required value={nom} onChange={(e) => setNom(e.target.value)} placeholder="Ex. Cartes de visite SRA3, 21 poses" data-autofocus />
           <TextareaField label="Description" value={description} onChange={(e) => setDescription(e.target.value)} rows={2} placeholder="Quand l’utiliser, ce qu’il faut vérifier…" />
+          <Checkbox label={`Imposer aussi le format fini ${params.fini.largeur} × ${params.fini.hauteur} mm : un fichier d’une autre taille sera mis à ce format (adapté, rempli ou étiré selon le réglage).`} checked={finiImpose} onChange={setFiniImpose} />
         </Dialog>
       )}
       <ConfirmDialog open={!!aSupprimer} onClose={() => setASupprimer(null)} title={`Supprimer le modèle « ${aSupprimer?.nom} » ?`} description="Les impositions déjà générées ne sont pas concernées." confirmLabel="Supprimer" danger busy={supprimer.isPending}
@@ -264,15 +319,38 @@ function Modeles({ params, onAppliquer }: { params: ParamsImposition | null; onA
 // Rapport d'analyse, en haut de l'écran d'imposition : ce qui a été trouvé, ce qui a été réglé tout seul,
 // ce qu'il faut vérifier, et l'avis de l'assistant IA.
 
-type Ligne = { ton: 'ok' | 'auto' | 'attention' | 'alerte' | 'info'; texte: string };
+type Ligne = { ton: 'ok' | 'auto' | 'attention' | 'alerte' | 'info'; texte: string; choix?: { label: string; patch: Partial<ParamsImposition> }[] };
 
 function lignesRapport(r: ReponseAnalyse, p: ParamsImposition, plan: Plan | undefined): Ligne[] {
   const a = r.analyse;
   const l: Ligne[] = [];
   const f = a.format;
+  const proche = r.format_proche;
+  const finiEstFichier = Math.abs(p.fini.largeur - a.fini.largeur) < 0.05 && Math.abs(p.fini.hauteur - a.fini.hauteur) < 0.05;
   l.push(f
     ? { ton: 'ok', texte: `${a.nb_pages} page${a.nb_pages > 1 ? 's' : ''} reconnue${a.nb_pages > 1 ? 's' : ''} : ${f.libelle.replace(/\s*\(.*\)$/, '')}${f.paysage ? ', en paysage' : ''}.` }
-    : { ton: 'attention', texte: `${a.nb_pages} page${a.nb_pages > 1 ? 's' : ''} de ${a.largeur} × ${a.hauteur} mm : format non reconnu, format fini pris à ${p.fini.largeur} × ${p.fini.hauteur} mm. Vérifiez-le.` });
+    : {
+        ton: 'attention',
+        texte: `${a.nb_pages} page${a.nb_pages > 1 ? 's' : ''} de ${a.largeur} × ${a.hauteur} mm : format non reconnu, format fini pris à ${p.fini.largeur} × ${p.fini.hauteur} mm.${proche && finiEstFichier ? ` Le plus proche : ${proche.libelle}.` : ' Vérifiez-le.'}`,
+        choix: proche && finiEstFichier && p.operation !== 'assembler' ? [{ label: `Mettre au format ${proche.largeur} × ${proche.hauteur} mm`, patch: { fini: orienterComme(proche, a.fini) } }] : undefined,
+      });
+  if (r.planches?.separees) l.push({ ton: 'auto', texte: `Planches séparées : ${r.planches.separees} page${r.planches.separees > 1 ? 's' : ''} double${r.planches.separees > 1 ? 's' : ''} coupée${r.planches.separees > 1 ? 's' : ''} en deux (${a.nb_pages} pages)${p.planches === 'couverture' ? ', couverture à plat (la 4e de couverture passe à la fin)' : ''}.`, choix: [...(p.planches !== 'couverture' ? [{ label: 'Couverture à plat (4e | 1re)', patch: { planches: 'couverture' as const } }] : [{ label: 'Planches simples', patch: { planches: 'simple' as const } }]), { label: 'Ne pas séparer', patch: { planches: 'non' as const } }] });
+  else if (r.planches?.detection) {
+    const d = r.planches.detection;
+    l.push({
+      ton: d.confiance === 'forte' ? 'attention' : 'info',
+      texte: d.confiance === 'forte'
+        ? `${d.pages_doubles} page${d.pages_doubles > 1 ? 's' : ''} double${d.pages_doubles > 1 ? 's' : ''} (deux pages côte à côte${d.format_page ? `, ${d.format_page.replace(/ \d+ × \d+ mm.*$/, '')} chacune` : ''})${d.couverture_seule ? ', couverture seule en tête : export en planches' : ''}. À séparer avant d’imposer.`
+        : `Pages en paysage : si ce sont des planches (deux pages côte à côte), séparez-les avant d’imposer.`,
+      choix: [{ label: 'Séparer en pages', patch: { planches: 'simple' } }, { label: 'Couverture à plat (4e | 1re)', patch: { planches: 'couverture' } }],
+    });
+  }
+  if (plan?.adaptation && p.operation !== 'assembler') {
+    const ad = plan.adaptation;
+    const perte = ad.marges.x > 1 || ad.marges.y > 1 || ad.rognage.x > 1 || ad.rognage.y > 1;
+    const autres = (['adapter', 'remplir', 'etirer', 'centrer'] as const).filter((m) => m !== ad.mode).map((m) => ({ label: AJUSTEMENT_LABELS[m].label, patch: { ajustement: m } as Partial<ParamsImposition> }));
+    l.push({ ton: ad.pivote ? 'auto' : perte ? 'attention' : 'auto', texte: `${texteAdaptation(ad, p.fini)}${ad.auto && !ad.pivote ? ` (mise au format « ${AJUSTEMENT_LABELS[ad.mode].label.toLowerCase()} » choisie automatiquement)` : ''}`, choix: ad.pivote ? undefined : [...autres, ...(!finiEstFichier ? [{ label: `Garder ${a.fini.largeur} × ${a.fini.hauteur} mm`, patch: { fini: { largeur: a.fini.largeur, hauteur: a.fini.hauteur } } as Partial<ParamsImposition> }] : [])] });
+  }
   if (r.paires?.some((x) => x.verso !== null)) l.push({ ton: 'ok', texte: `Recto et verso séparés appariés : ${r.paires.filter((x) => x.verso !== null).length} paire${r.paires.filter((x) => x.verso !== null).length > 1 ? 's' : ''}.` });
   if (r.paires?.some((x) => x.verso === null) && r.paires.some((x) => x.verso !== null)) l.push({ ton: 'attention', texte: 'Il y a plus de rectos que de versos : certains versos seront vides.' });
   if (!a.uniforme) l.push({ ton: 'attention', texte: 'Les pages n’ont pas toutes la même taille : elles sont adaptées à la première.' });
@@ -299,7 +377,7 @@ function lignesRapport(r: ReponseAnalyse, p: ParamsImposition, plan: Plan | unde
   return l;
 }
 
-function Rapport({ r, p, plan, ia, iaEnCours, iaErreur, onRedemander }: { r: ReponseAnalyse; p: ParamsImposition; plan?: Plan; ia: PropositionImposition | null; iaEnCours: boolean; iaErreur: string | null; onRedemander?: () => void }) {
+function Rapport({ r, p, plan, ia, iaEnCours, iaErreur, onRedemander, onParams }: { r: ReponseAnalyse; p: ParamsImposition; plan?: Plan; ia: PropositionImposition | null; iaEnCours: boolean; iaErreur: string | null; onRedemander?: () => void; onParams?: (patch: Partial<ParamsImposition>) => void }) {
   const lignes = lignesRapport(r, p, plan);
   const alertes = lignes.filter((x) => x.ton === 'alerte' || x.ton === 'attention').length;
   return (
@@ -313,7 +391,14 @@ function Rapport({ r, p, plan, ia, iaEnCours, iaErreur, onRedemander }: { r: Rep
           <li key={i} data-ton={x.ton}>
             <span className="rapport__puce" aria-hidden="true" />
             {x.ton === 'auto' && <span className="rapport__auto">Auto</span>}
-            {x.texte}
+            <span className="rapport__texte">
+              {x.texte}
+              {x.choix && onParams && (
+                <span className="rapport__choix">
+                  {x.choix.map((c) => <button key={c.label} type="button" onClick={() => onParams(c.patch)}>{c.label}</button>)}
+                </span>
+              )}
+            </span>
           </li>
         ))}
       </ul>
@@ -619,6 +704,13 @@ export default function Imposition() {
   });
   const [face, setFace] = useState<'recto' | 'verso'>('recto');
   const [feuilleVue, setFeuilleVue] = useState(0);
+  // Vue du centre : une feuille (zoom), toutes les feuilles à la verticale, ou les pages du document.
+  const [vue, setVue] = useState<'feuille' | 'feuilles' | 'pages'>('feuille');
+  const allerFeuille = (index: number, cote: 'recto' | 'verso') => {
+    setFeuilleVue(index);
+    setFace(cote);
+    setVue('feuille');
+  };
   const [resultat, setResultat] = useState<ResultatGeneration | null>(null);
   const [rattache, setRattache] = useState<{ id: number; numero: string; client_nom: string } | null>(null);
   const dossier = useDossier(dossierId ?? undefined);
@@ -635,7 +727,7 @@ export default function Imposition() {
     }
   }, [fichierParam, dossier.data]);
 
-  const analyse = useAnalyse(pieces, params?.fini, params?.fonds_perdus_mm);
+  const analyse = useAnalyse(pieces, params?.fini, params?.fonds_perdus_mm, { planches: params?.planches, lecture: params?.lecture });
   // Deux fichiers d'une page de même format : recto et verso détectés (nom du fichier, sinon ordre).
   useEffect(() => {
     const an = analyse.data?.pieces;
@@ -649,18 +741,27 @@ export default function Imposition() {
   }, [analyse.data, analyse.isPlaceholderData]);
   const clePieces = pieces.map((p) => `${p.libre ?? p.fichier_id}:${p.role}`).join('|');
   const derniereCle = useRef('');
+  // Planches séparées : le document change (deux fois plus de pages, moitié moins larges) ; le format
+  // fini est repris de la nouvelle analyse, le reste des réglages est gardé.
+  const clePlanches = `${params?.planches ?? 'non'}`;
+  const dernieresPlanches = useRef(clePlanches);
   useEffect(() => {
     if (!analyse.data || analyse.isPlaceholderData) return;
+    const d = analyse.data;
     if (derniereCle.current !== clePieces) {
       derniereCle.current = clePieces;
-      const d = analyse.data;
+      dernieresPlanches.current = clePlanches;
       const fam = d.analyse.format?.famille;
       const op: Operation = (fam === 'page' || !fam) && d.analyse.nb_pages > 2 && !d.paires ? 'livret' : 'poses';
       setParams((prev) => reglagesPour(prev?.operation ?? op, d, d.params_defaut));
       setFeuilleVue(0);
       setFace('recto');
+    } else if (dernieresPlanches.current !== clePlanches && (d.planches?.separees ?? 0) >= 0) {
+      dernieresPlanches.current = clePlanches;
+      setParams((prev) => (prev ? reglagesPour(prev.operation, d, { ...prev, fini: { largeur: 0, hauteur: 0 } }) : prev));
+      setFeuilleVue(0);
     }
-  }, [analyse.data, analyse.isPlaceholderData, clePieces]);
+  }, [analyse.data, analyse.isPlaceholderData, clePieces, clePlanches]);
   useEffect(() => {
     if (pieces.length === 0) {
       setParams(null);
@@ -712,6 +813,21 @@ export default function Imposition() {
   const nbPages = analyse.data?.analyse.nb_pages ?? 0;
   const feuille = planData?.feuilles[Math.min(feuilleVue, Math.max(0, (planData?.feuilles.length ?? 1) - 1))];
   const faceVue = feuille ? (face === 'verso' && feuille.verso ? feuille.verso : feuille.recto) : null;
+  const dimsDe = (n: number): Dimension | null => {
+    const pg = analyse.data?.analyse.pages[n - 1];
+    return pg ? { largeur: pg.largeur, hauteur: pg.hauteur } : null;
+  };
+  const patchParams = (patch: Partial<ParamsImposition>) => setParams((prev) => (prev ? { ...prev, ...patch } : prev));
+  // Pages blanches placées à la main (vue « Pages ») : après la k-ième page du document.
+  const insererBlanche = (k: number) => setParams((prev) => (prev ? { ...prev, blanches: 'positions', blanches_apres: [...(prev.blanches_apres ?? []), k] } : prev));
+  const retirerBlanche = (k: number) =>
+    setParams((prev) => {
+      if (!prev) return prev;
+      const liste = [...(prev.blanches_apres ?? [])];
+      const i = liste.indexOf(k);
+      if (i >= 0) liste.splice(i, 1);
+      return { ...prev, blanches_apres: liste };
+    });
   const stats = useMemo(() => {
     if (!planData) return [] as { t: string; fort?: boolean }[];
     const l: { t: string; fort?: boolean }[] = [];
@@ -775,7 +891,7 @@ export default function Imposition() {
           </div>
           <div className="ws ws--2">
             <section className="ws__centre" aria-label="Prévisualisation">
-              {analyse.data && <Rapport r={analyse.data} p={params} plan={planData} ia={ia} iaEnCours={proposerIA.isPending} iaErreur={iaErreur} onRedemander={statutIA.data?.actif ? demanderIA : undefined} />}
+              {analyse.data && <Rapport r={analyse.data} p={params} plan={planData} ia={ia} iaEnCours={proposerIA.isPending} iaErreur={iaErreur} onRedemander={statutIA.data?.actif ? demanderIA : undefined} onParams={patchParams} />}
               {fondsAFabriquer ? (
                 <div className="alerte-fonds">
                   <span>Ce fichier n’a pas de fonds perdus. Après la coupe, un filet blanc risque d’apparaître sur les bords.</span>
@@ -792,7 +908,14 @@ export default function Imposition() {
                 <div className="ws__barre">
                   <ul className="imp-stats">{stats.map((x) => <li key={x.t} data-fort={x.fort || undefined}>{x.t}</li>)}</ul>
                   <div className="ws__outils-droite">
-                    {feuille?.verso && (
+                    {planData && (planData.feuilles.length > 1 || planData.operation === 'livret') && (
+                      <div className="ws__vues" role="group" aria-label="Vue">
+                        <button type="button" aria-pressed={vue === 'feuille'} onClick={() => setVue('feuille')}>Feuille</button>
+                        <button type="button" aria-pressed={vue === 'feuilles'} onClick={() => setVue('feuilles')}>Toutes ({planData.feuilles.length})</button>
+                        <button type="button" aria-pressed={vue === 'pages'} onClick={() => setVue('pages')}>Pages ({planData.ordre?.length ?? pages.length})</button>
+                      </div>
+                    )}
+                    {vue === 'feuille' && feuille?.verso && (
                       <div className="ws__faces" role="group" aria-label="Face">
                         <button type="button" aria-pressed={face === 'recto'} onClick={() => setFace('recto')}>Recto</button>
                         <button type="button" aria-pressed={face === 'verso'} onClick={() => setFace('verso')}>Verso</button>
@@ -805,19 +928,21 @@ export default function Imposition() {
                         ))}
                       </div>
                     )}
-                    {planData && planData.feuilles.length > 1 && (
+                    {vue === 'feuille' && planData && planData.feuilles.length > 1 && (
                       <div className="imp-nav">
                         <Button size="sm" variant="ghost" icon={<ChevronLeft />} disabled={feuilleVue === 0} onClick={() => setFeuilleVue((v) => v - 1)} aria-label="Feuille précédente" />
                         {feuille?.libelle ? `${feuille.libelle} · ` : ''}{feuilleVue + 1} / {planData.feuilles.length}
                         <Button size="sm" variant="ghost" icon={<ChevronRight />} disabled={feuilleVue >= planData.feuilles.length - 1} onClick={() => setFeuilleVue((v) => v + 1)} aria-label="Feuille suivante" />
                       </div>
                     )}
+                    {vue !== 'pages' && (
                     <div className="ws__zoom" role="group" aria-label="Zoom">
                       <Button size="sm" variant="ghost" icon={<Minus />} aria-label="Zoom arrière" onClick={() => setZoom((z) => Math.max(0.4, Math.round((z - 0.2) * 10) / 10))} />
                       <span>{Math.round(zoom * 100)} %</span>
                       <Button size="sm" variant="ghost" icon={<Plus />} aria-label="Zoom avant" onClick={() => setZoom((z) => Math.min(4, Math.round((z + 0.2) * 10) / 10))} />
                       <Button size="sm" variant="ghost" icon={<RotateCcw />} aria-label="Taille d’origine" onClick={() => setZoom(1)} />
                     </div>
+                    )}
                   </div>
                 </div>
                 {plan.isError ? (
@@ -835,20 +960,30 @@ export default function Imposition() {
                         </label>
                       ))}
                     </div>
-                    <div className="ws__scene" ref={scene}>
-                      <div className="ws__scene-int">
-                        <SchemaFeuille plan={planData} face={faceVue} pages={pages} methode={params.methode_fonds_perdus} sourceAvecFonds={sourceAvecFonds} unisDe={(n) => analyse.data?.analyse.pages[n - 1]?.bords_unis ?? null} affichage={affichage} largeur={Math.round((planData.feuille.largeur > planData.feuille.hauteur ? 640 : 460) * zoom)} />
+                    {vue === 'pages' ? (
+                      <div className="ws__scene" style={{ padding: 16 }}>
+                        <PagesDocument plan={planData} pages={pages} dimsDe={dimsDe} lecture={params.lecture} blanchesManuelles={planData.blanches_manuelles ?? []} onInsererBlanche={planData.operation === 'livret' ? insererBlanche : undefined} onRetirerBlanche={retirerBlanche} onAller={allerFeuille} />
                       </div>
-                    </div>
-                    <p className="ev-help" style={{ margin: 0 }}>Ctrl + molette pour zoomer. Trait bleu : format fini. Pointillé rose : fonds perdus. Traits noirs : coupe.</p>
+                    ) : vue === 'feuilles' ? (
+                      <div className="ws__scene" ref={scene}>
+                        <ListeFeuilles plan={planData} pages={pages} methode={params.methode_fonds_perdus} sourceAvecFonds={sourceAvecFonds} unisDe={(n) => analyse.data?.analyse.pages[n - 1]?.bords_unis ?? null} dimsDe={dimsDe} affichage={affichage} largeur={Math.round((planData.feuille.largeur > planData.feuille.hauteur ? 420 : 300) * zoom)} onChoisir={allerFeuille} />
+                      </div>
+                    ) : (
+                      <div className="ws__scene" ref={scene}>
+                        <div className="ws__scene-int">
+                          <SchemaFeuille plan={planData} face={faceVue} pages={pages} methode={params.methode_fonds_perdus} sourceAvecFonds={sourceAvecFonds} unisDe={(n) => analyse.data?.analyse.pages[n - 1]?.bords_unis ?? null} dimsDe={dimsDe} affichage={affichage} largeur={Math.round((planData.feuille.largeur > planData.feuille.hauteur ? 640 : 460) * zoom)} />
+                        </div>
+                      </div>
+                    )}
+                    <p className="ev-help" style={{ margin: 0 }}>{vue === 'pages' ? 'Chaque page du document avec la feuille où elle est imposée. Les pages blanches ajoutées sont hachurées.' : 'Ctrl + molette pour zoomer. Trait bleu : format fini. Pointillé rose : fonds perdus. Traits noirs : coupe.'}</p>
                   </>
                 )}
               </div>
             </section>
             <aside className="ws__panneau ws__droite" aria-label="Réglages">
               <h2 className="ws__titre">Réglages</h2>
-              <Modeles params={params} onAppliquer={(m) => (setParams({ ...m.params, fini: params.fini, recto_verso: m.params.operation === 'livret' ? true : params.recto_verso }), toast.success(`Modèle appliqué : ${m.nom}`, 'Le format fini et le recto-verso du fichier sont conservés.'))} />
-              <Reglages p={params} onChange={setParams} nbPages={nbPages} analyse={analyse.data} />
+              <Modeles params={params} onAppliquer={(m) => (setParams({ ...m.params, fini: m.params.fini_impose ? m.params.fini : params.fini, recto_verso: m.params.operation === 'livret' ? true : params.recto_verso }), toast.success(`Modèle appliqué : ${m.nom}`, m.params.fini_impose ? `Format fini du modèle : ${m.params.fini.largeur} × ${m.params.fini.hauteur} mm, le fichier y est mis au format.` : 'Le format fini et le recto-verso du fichier sont conservés.'))} />
+              <Reglages p={params} onChange={setParams} nbPages={nbPages} analyse={analyse.data} plan={planData} />
             </aside>
           </div>
           <div className="ecran__pied">

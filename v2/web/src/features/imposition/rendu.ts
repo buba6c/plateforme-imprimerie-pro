@@ -8,7 +8,22 @@ export interface SourcePage {
   libre?: string;
   page: number;
   genre: 'pdf' | 'image';
+  /** Moitié d'une planche (deux pages côte à côte) : l'aperçu est recadré sur cette moitié. */
+  demi?: 'gauche' | 'droite';
+  /** Cadre à extraire (fractions de la page rendue, origine en haut à gauche ; peut déborder : complété en blanc), après rotation éventuelle. */
+  cadre?: Cadre;
 }
+
+export interface Cadre {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+  /** Quart de tour horaire avant le recadrage (visuel pivoté). */
+  rotation?: 0 | 90;
+}
+
+const cleCadre = (c?: Cadre) => (c ? `${c.rotation ?? 0}:${c.x.toFixed(4)},${c.y.toFixed(4)},${c.w.toFixed(4)},${c.h.toFixed(4)}` : '');
 
 const urlApercu = (s: SourcePage, largeur: number) =>
   s.libre ? `/api/imposition/libre/${s.libre}/apercu?page=${s.page}&largeur=${largeur}` : `/api/fichiers/${s.fichier_id}/apercu?page=${s.page}&largeur=${largeur}`;
@@ -83,12 +98,66 @@ async function rendreServeur(s: SourcePage, largeur: number): Promise<string> {
   return URL.createObjectURL(await res.blob());
 }
 
+/** Moitié gauche ou droite d'une image de planche, recadrée dans le navigateur. */
+async function recadrerMoitie(url: string, demi: 'gauche' | 'droite'): Promise<string> {
+  const img = new Image();
+  img.decoding = 'async';
+  img.src = url;
+  await img.decode();
+  const w = Math.floor(img.naturalWidth / 2);
+  const canvas = document.createElement('canvas');
+  canvas.width = w;
+  canvas.height = img.naturalHeight;
+  const ctx = canvas.getContext('2d');
+  if (!ctx) throw new Error('canvas');
+  ctx.drawImage(img, demi === 'droite' ? img.naturalWidth - w : 0, 0, w, img.naturalHeight, 0, 0, w, img.naturalHeight);
+  return canvas.toDataURL('image/jpeg', 0.88);
+}
+
+/** Cadre d'une image (fractions), pivoté d'un quart de tour au besoin, complété en blanc hors de l'image. */
+async function recadrer(url: string, c: Cadre, largeurVoulue: number): Promise<string> {
+  const img = new Image();
+  img.decoding = 'async';
+  img.src = url;
+  await img.decode();
+  const pivote = c.rotation === 90;
+  const PW = pivote ? img.naturalHeight : img.naturalWidth;
+  const PH = pivote ? img.naturalWidth : img.naturalHeight;
+  const sx = c.x * PW;
+  const sy = c.y * PH;
+  const sw = Math.max(1, c.w * PW);
+  const sh = Math.max(1, c.h * PH);
+  const k = Math.min(1, largeurVoulue / sw);
+  const canvas = document.createElement('canvas');
+  canvas.width = Math.max(1, Math.round(sw * k));
+  canvas.height = Math.max(1, Math.round(sh * k));
+  const ctx = canvas.getContext('2d');
+  if (!ctx) throw new Error('canvas');
+  ctx.fillStyle = '#ffffff';
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  ctx.scale(k, k);
+  ctx.translate(-sx, -sy);
+  if (pivote) {
+    // Quart de tour horaire : le coin haut-gauche de l'image tournée est le coin bas-gauche de l'image d'origine.
+    ctx.translate(PW, 0);
+    ctx.rotate(Math.PI / 2);
+  }
+  ctx.drawImage(img, 0, 0);
+  return canvas.toDataURL('image/jpeg', 0.88);
+}
+
 /** Image (URL) de la page demandée ; jamais rejetée deux fois pour la même clé après un échec. */
 export function apercuPage(s: SourcePage, largeur: number): Promise<string> {
-  const cle = `${cleSource(s)}|${s.page}|${largeur}`;
+  const cle = `${cleSource(s)}|${s.page}|${largeur}|${s.demi ?? ''}|${cleCadre(s.cadre)}`;
   let p = images.get(cle);
   if (!p) {
     p = (async () => {
+      if (s.cadre) {
+        // Base rendue assez large pour que le cadre ait la largeur voulue (bornée à 1 600 px).
+        const base = Math.min(1600, Math.round(largeur / Math.max(0.1, Math.min(1, s.cadre.w))));
+        return recadrer(await apercuPage({ ...s, cadre: undefined }, base), s.cadre, largeur);
+      }
+      if (s.demi) return recadrerMoitie(await apercuPage({ ...s, demi: undefined }, largeur * 2), s.demi);
       if (s.genre === 'image') {
         try {
           return await rendreServeur(s, largeur);
@@ -114,7 +183,7 @@ export function apercuPage(s: SourcePage, largeur: number): Promise<string> {
 
 export function useApercuPage(s: SourcePage | null, largeur: number): { url: string | null; etat: 'chargement' | 'pret' | 'erreur' } {
   const [etat, setEtat] = useState<{ url: string | null; etat: 'chargement' | 'pret' | 'erreur' }>({ url: null, etat: 'chargement' });
-  const cle = s ? `${cleSource(s)}|${s.page}|${s.genre}` : '';
+  const cle = s ? `${cleSource(s)}|${s.page}|${s.genre}|${s.demi ?? ''}|${cleCadre(s.cadre)}` : '';
   useEffect(() => {
     if (!s) return;
     let actif = true;
