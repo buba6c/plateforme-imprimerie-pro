@@ -1,6 +1,7 @@
 // Rendu lisible des spécifications d'un dossier (ou d'un devis), pour l'atelier comme pour le bureau.
 
 import { formatDecimal, formatEntier, formatFCFA, type LigneRoland, type LigneXerox, type Machine, type Specs } from '@evocom/shared';
+import { SpecsAnciennes } from './SpecsAnciennes';
 import './dossiers-ui.css';
 
 type Libelle = (machine: Machine, code: string) => string;
@@ -23,7 +24,7 @@ export function SpecsLecture({ machine, specs, libelle, voirRemise, importe }: {
   const remise = specs?.remise ?? null;
 
   if (!lignes.length && importe && specs?.legacy) {
-    return <DonneesAnciennes legacy={specs.legacy} />;
+    return <SpecsAnciennes machine={machine} legacy={specs.legacy} />;
   }
   if (!lignes.length && !forfaits.length) {
     return <p className="ev-muted" style={{ margin: 0 }}>Aucune spécification détaillée. Voir la description et les fichiers.</p>;
@@ -118,43 +119,6 @@ function LigneXeroxLue({ l, i, libelle }: { l: LigneXerox; i: number; libelle: L
       </div>
       <Extras machine="xerox" l={l} libelle={libelle} />
       {l.description && <p className="fd-spec__desc">{l.description}</p>}
-    </div>
-  );
-}
-
-function valeurLisible(v: unknown): string {
-  if (v === null || v === undefined || v === '') return '—';
-  if (typeof v === 'boolean') return v ? 'Oui' : 'Non';
-  if (Array.isArray(v)) return v.map(valeurLisible).join(', ') || '—';
-  if (typeof v === 'object') {
-    return Object.entries(v as Record<string, unknown>)
-      .filter(([, x]) => x !== null && x !== undefined && x !== '')
-      .map(([k, x]) => `${cleLisible(k)} : ${valeurLisible(x)}`)
-      .join(' · ') || '—';
-  }
-  return String(v);
-}
-
-function cleLisible(k: string): string {
-  const s = k.replace(/_/g, ' ').trim();
-  return s.charAt(0).toUpperCase() + s.slice(1);
-}
-
-/** Données d'origine d'un dossier repris de l'ancienne plateforme. */
-function DonneesAnciennes({ legacy }: { legacy: unknown }) {
-  const entrees = legacy && typeof legacy === 'object' && !Array.isArray(legacy) ? Object.entries(legacy as Record<string, unknown>) : [['Données', legacy] as const];
-  const utiles = entrees.filter(([, v]) => v !== null && v !== undefined && v !== '' && !(Array.isArray(v) && !v.length));
-  return (
-    <div className="stack-sm">
-      <p className="ev-help" style={{ margin: 0 }}>Dossier repris de l’ancienne plateforme : spécifications telles qu’elles avaient été saisies.</p>
-      <dl className="fd-kv">
-        {utiles.map(([k, v]) => (
-          <div key={String(k)} style={{ display: 'contents' }}>
-            <dt>{cleLisible(String(k))}</dt>
-            <dd>{valeurLisible(v)}</dd>
-          </div>
-        ))}
-      </dl>
     </div>
   );
 }

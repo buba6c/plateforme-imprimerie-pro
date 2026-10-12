@@ -10,6 +10,7 @@ import {
   dossierUpdateSchema,
   isStatut,
   machineOfRole,
+  resumeAncien,
   resumeLigne,
   situationPaiement,
   specsSchemaFor,
@@ -74,7 +75,7 @@ export async function libellesTarifs(db?: Db): Promise<Libelles> {
 /** Résumé lisible des spécifications : « Bâche standard · 300 × 200 cm · 1 ex. · +1 ligne ». */
 export function resumeSpecs(machine: Machine, specs: any, description: string | null, libelles: Libelles): string {
   const lignes = (specs?.lignes ?? []) as (LigneRoland | LigneXerox)[];
-  if (!lignes.length) return description ?? '';
+  if (!lignes.length) return resumeAncien(machine, specs?.legacy) ?? description ?? '';
   const first = lignes[0]!;
   const lib = libelles.get(`${machine}:${first.support}`) ?? libelles.get(`global:${first.support}`) ?? first.support;
   const base = resumeLigne(machine, first, lib);

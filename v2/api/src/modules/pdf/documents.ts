@@ -15,6 +15,8 @@ import {
   type Statut,
   type Tarif,
   detailsLigne,
+  formulairesAnciens,
+  sectionAncienneTexte,
 } from '@evocom/shared';
 import type { Parametres } from '../../lib/params';
 import { dateHeureFr, jourFr } from '../commun/dates';
@@ -281,7 +283,7 @@ export interface BonDeTravailPdf {
   description: string | null;
   consignes: string | null;
   commentaire_revision: string | null;
-  specs: { lignes?: unknown[]; forfaits?: { code: string; quantite?: number }[] } | null;
+  specs: { lignes?: unknown[]; forfaits?: { code: string; quantite?: number }[]; legacy?: unknown } | null;
   date_promise: string | null;
   created_at: string | Date;
   date_validation: string | Date | null;
@@ -380,7 +382,23 @@ export async function pdfBonDeTravail(d: BonDeTravailPdf, params: Parametres, ta
   const lignes = (d.specs?.lignes ?? []) as (LigneRoland | LigneXerox)[];
   doc.font(POLICE_GRAS).fontSize(12).fillColor(COULEURS.titre).text(t('Travaux à réaliser'), x, place(doc, y, 60));
   y = doc.y + 6;
-  if (!lignes.length) {
+  const anciens = lignes.length ? [] : formulairesAnciens(d.machine, d.specs?.legacy);
+  if (anciens.length) {
+    // Dossier repris de l'ancienne plateforme : le formulaire d'origine, section par section.
+    const f = anciens[0]!;
+    doc.font(POLICE).fontSize(9).fillColor(COULEURS.discret).text(t(`Formulaire de l'ancienne plateforme${f.date_saisie ? ` (saisi le ${jourFr(f.date_saisie, tz)})` : ''}`), x, y, { width: largeur });
+    y = doc.y + 6;
+    y = tableau(
+      doc,
+      y,
+      [
+        { titre: 'Sujet', largeur: 130 },
+        { titre: 'À faire', largeur: 0 },
+      ],
+      f.sections.map((s) => ({ cellules: [s.titre, sectionAncienneTexte(s)], detail: null })),
+      {},
+    );
+  } else if (!lignes.length) {
     doc
       .font(POLICE)
       .fontSize(9.5)

@@ -1,0 +1,115 @@
+/* Formulaire d'origine d'un dossier repris de l'ancienne plateforme, dans la présentation de
+   l'ancienne version : bandeau de la machine, puis des sections empilées (titre souligné de sa
+   couleur), des tuiles « petit libellé / grande valeur » et des pastilles pleines pour les
+   finitions, le façonnage et le conditionnement. Couleurs pleines, sans dégradé. */
+
+:root {
+  --sa-violet: #7c3aed; --sa-violet-soft: #f3eefe; --sa-violet-line: #d9c9fb;
+  --sa-cyan: #0891b2; --sa-cyan-soft: #e6f7fb; --sa-cyan-line: #b6e6f1;
+  --sa-emerald: #059669; --sa-emerald-soft: #e5f7ef; --sa-emerald-line: #b0e6cc;
+  --sa-orange: #ea580c; --sa-orange-soft: #fff1e7; --sa-orange-line: #fbcfae;
+  --sa-rose: #e11d48; --sa-rose-soft: #ffe9ee; --sa-rose-line: #fbbfcd;
+  --sa-purple: #6d28d9; --sa-purple-soft: #f1ecfd; --sa-purple-line: #d4c2fa;
+  --sa-teal: #0d9488; --sa-teal-soft: #e3f6f4; --sa-teal-line: #a9e3dc;
+  --sa-slate: #475569; --sa-slate-soft: #f1f4f8; --sa-slate-line: #cbd5e1;
+  --sa-indigo: #4f46e5; --sa-indigo-soft: #eceefe; --sa-indigo-line: #c7cbfb;
+  --sa-blanc: #ffffff;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --sa-violet: #a78bfa; --sa-violet-soft: #251b45; --sa-violet-line: #4c3a86;
+    --sa-cyan: #38bdf8; --sa-cyan-soft: #0f2a3a; --sa-cyan-line: #1f5670;
+    --sa-emerald: #34d399; --sa-emerald-soft: #0f2e24; --sa-emerald-line: #1f5a45;
+    --sa-orange: #fb923c; --sa-orange-soft: #352011; --sa-orange-line: #6b3f1d;
+    --sa-rose: #fb7185; --sa-rose-soft: #3a1620; --sa-rose-line: #6f2a3b;
+    --sa-purple: #a78bfa; --sa-purple-soft: #231a45; --sa-purple-line: #4a3a86;
+    --sa-teal: #2dd4bf; --sa-teal-soft: #0f2f2c; --sa-teal-line: #1d5a54;
+    --sa-slate: #94a3b8; --sa-slate-soft: #1e293b; --sa-slate-line: #334155;
+    --sa-indigo: #818cf8; --sa-indigo-soft: #1c1f45; --sa-indigo-line: #3b3f86;
+    --sa-blanc: #0b1220;
+  }
+}
+:root[data-theme="dark"] {
+  --sa-violet: #a78bfa; --sa-violet-soft: #251b45; --sa-violet-line: #4c3a86;
+  --sa-cyan: #38bdf8; --sa-cyan-soft: #0f2a3a; --sa-cyan-line: #1f5670;
+  --sa-emerald: #34d399; --sa-emerald-soft: #0f2e24; --sa-emerald-line: #1f5a45;
+  --sa-orange: #fb923c; --sa-orange-soft: #352011; --sa-orange-line: #6b3f1d;
+  --sa-rose: #fb7185; --sa-rose-soft: #3a1620; --sa-rose-line: #6f2a3b;
+  --sa-purple: #a78bfa; --sa-purple-soft: #231a45; --sa-purple-line: #4a3a86;
+  --sa-teal: #2dd4bf; --sa-teal-soft: #0f2f2c; --sa-teal-line: #1d5a54;
+  --sa-slate: #94a3b8; --sa-slate-soft: #1e293b; --sa-slate-line: #334155;
+  --sa-indigo: #818cf8; --sa-indigo-soft: #1c1f45; --sa-indigo-line: #3b3f86;
+  --sa-blanc: #0b1220;
+}
+
+.sa { display: grid; gap: var(--space-4); }
+.sa__formulaire { border: 2px solid var(--line); border-radius: var(--radius-lg, 14px); overflow: hidden; background: var(--surface); }
+.sa__formulaire[data-ancien] { opacity: 0.8; }
+
+/* Bandeau de la machine */
+.sa__entete { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); padding: 10px 16px; color: #fff; }
+.sa__entete[data-machine="xerox"] { background: var(--xerox); }
+.sa__entete[data-machine="roland"] { background: var(--roland); }
+.sa__entete h3 { display: flex; align-items: center; gap: 8px; margin: 0; font-size: 15px; font-weight: 700; color: inherit; }
+.sa__entete h3 svg { width: 18px; height: 18px; }
+.sa__pastille { padding: 3px 10px; border-radius: 999px; background: rgb(255 255 255 / 0.22); font-size: 11px; font-weight: 700; white-space: nowrap; }
+
+.sa__corps { display: grid; gap: var(--space-5); padding: 18px 20px 20px; }
+
+/* Une section : titre souligné de sa couleur, puis son contenu */
+.sa-section { --sa-c: var(--sa-violet); --sa-c-soft: var(--sa-violet-soft); --sa-c-line: var(--sa-violet-line); display: grid; gap: 10px; }
+.sa-section[data-tone="violet"] { --sa-c: var(--sa-violet); --sa-c-soft: var(--sa-violet-soft); --sa-c-line: var(--sa-violet-line); }
+.sa-section[data-tone="cyan"] { --sa-c: var(--sa-cyan); --sa-c-soft: var(--sa-cyan-soft); --sa-c-line: var(--sa-cyan-line); }
+.sa-section[data-tone="emerald"] { --sa-c: var(--sa-emerald); --sa-c-soft: var(--sa-emerald-soft); --sa-c-line: var(--sa-emerald-line); }
+.sa-section[data-tone="orange"] { --sa-c: var(--sa-orange); --sa-c-soft: var(--sa-orange-soft); --sa-c-line: var(--sa-orange-line); }
+.sa-section[data-tone="rose"] { --sa-c: var(--sa-rose); --sa-c-soft: var(--sa-rose-soft); --sa-c-line: var(--sa-rose-line); }
+.sa-section[data-tone="purple"] { --sa-c: var(--sa-purple); --sa-c-soft: var(--sa-purple-soft); --sa-c-line: var(--sa-purple-line); }
+.sa-section[data-tone="teal"] { --sa-c: var(--sa-teal); --sa-c-soft: var(--sa-teal-soft); --sa-c-line: var(--sa-teal-line); }
+.sa-section[data-tone="slate"] { --sa-c: var(--sa-slate); --sa-c-soft: var(--sa-slate-soft); --sa-c-line: var(--sa-slate-line); }
+.sa-section[data-tone="indigo"] { --sa-c: var(--sa-indigo); --sa-c-soft: var(--sa-indigo-soft); --sa-c-line: var(--sa-indigo-line); }
+
+.sa-section__titre {
+  display: flex; align-items: center; gap: 8px; margin: 0; padding-bottom: 6px;
+  border-bottom: 2px solid var(--sa-c-line);
+  font-size: 13px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: var(--text);
+}
+.sa-section__titre::before { content: ''; width: 4px; height: 18px; border-radius: 999px; background: var(--sa-c); }
+
+/* Tuiles : petit libellé en couleur, valeur en gras */
+.sa-tuiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; }
+.sa-tuile { --t-c: var(--sa-c); --t-soft: var(--sa-c-soft); --t-line: var(--sa-c-line); padding: 10px 12px; border-radius: 10px; background: var(--t-soft); border: 1px solid var(--t-line); min-width: 0; }
+.sa-tuile[data-tone="emerald"] { --t-c: var(--sa-emerald); --t-soft: var(--sa-emerald-soft); --t-line: var(--sa-emerald-line); }
+.sa-tuile[data-tone="slate"] { --t-c: var(--sa-slate); --t-soft: var(--sa-slate-soft); --t-line: var(--sa-slate-line); }
+.sa-tuile[data-tone="teal"] { --t-c: var(--sa-teal); --t-soft: var(--sa-teal-soft); --t-line: var(--sa-teal-line); }
+.sa-tuile__libelle { margin: 0 0 3px; font-size: 10px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: var(--t-c); }
+.sa-tuile__valeur { margin: 0; font-size: 15px; font-weight: 700; color: var(--text); overflow-wrap: anywhere; }
+.sa-tuile__valeur--grande { font-size: 18px; font-weight: 800; }
+.sa-tuile--icone { display: flex; align-items: center; gap: 12px; padding: 14px 16px; }
+.sa-tuile__icone { display: inline-grid; place-items: center; width: 40px; height: 40px; border-radius: 10px; background: var(--t-c); color: #fff; flex: none; }
+.sa-tuile__icone svg { width: 22px; height: 22px; }
+.sa-tuile--large { grid-column: 1 / -1; }
+
+/* Pastilles pleines (finitions, façonnage, conditionnement) */
+.sa-chips { display: flex; flex-wrap: wrap; gap: 8px; margin: 0; padding: 0; list-style: none; }
+.sa-chip { display: inline-flex; align-items: center; min-height: 34px; padding: 6px 14px; border-radius: 10px; background: var(--sa-c); color: #fff; font-size: 14px; font-weight: 700; box-shadow: 0 1px 2px rgb(0 0 0 / 0.12); }
+.sa-chip--petite { min-height: 28px; padding: 4px 10px; font-size: 12px; border-radius: 8px; }
+.sa-chips--teal .sa-chip { background: var(--sa-teal); }
+.sa-vide { margin: 0; padding: 8px 12px; border-radius: 10px; background: var(--surface-sunken); border: 1px dashed var(--line-strong); font-size: 13px; color: var(--text-muted); }
+
+/* Dimensions Roland : largeur × hauteur en grand, surface et quantité dessous */
+.sa-dims { padding: 16px; border-radius: 12px; background: var(--sa-c-soft); border: 2px solid var(--sa-c-line); text-align: center; }
+.sa-dims__ligne { display: flex; align-items: center; justify-content: center; gap: 24px; }
+.sa-dims__cote { display: grid; gap: 2px; }
+.sa-dims__cote small { font-size: 11px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: var(--sa-c); }
+.sa-dims__cote strong { font-size: 32px; line-height: 1.05; font-weight: 800; color: var(--sa-c); }
+.sa-dims__cote span { font-size: 12px; color: var(--text-muted); }
+.sa-dims__fois { font-size: 34px; font-weight: 700; color: var(--line-strong); }
+.sa-dims__pied { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; margin-top: 14px; padding-top: 14px; border-top: 2px solid var(--sa-c-line); }
+.sa-dims__pied .sa-tuile { text-align: left; }
+
+.sa__saisie { margin: 0; padding: 8px 20px 12px; font-size: 12px; color: var(--text-muted); }
+
+@media print {
+  .sa-chip { box-shadow: none; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  .sa-section { break-inside: avoid; }
+}

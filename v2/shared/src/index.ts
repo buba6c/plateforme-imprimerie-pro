@@ -4,3 +4,4 @@ export * from './format';
 export * from './schemas';
 export * from './pricing';
 export * from './tarifs-defaut';
+export * from './specs-anciennes';

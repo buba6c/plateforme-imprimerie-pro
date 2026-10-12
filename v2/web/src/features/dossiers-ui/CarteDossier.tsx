@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { formatDate, formatFCFA, resumeLigne, type LigneRoland, type LigneXerox, type Machine } from '@evocom/shared';
+import { formatDate, formatFCFA, resumeLigne, type LigneRoland, type LigneXerox, type Machine, resumeAncien } from '@evocom/shared';
 import type { DossierResume } from '../../lib/types';
 import { MachineChip, PaymentBadge, Ref, StatusBadge, UrgentTag } from '../../ui';
 import { DossierActions } from '../dossiers/DossierActions';
@@ -13,7 +13,7 @@ type Libelle = (machine: Machine, code: string) => string;
 /** « Bâche standard · 300 × 200 cm · 1 ex. · +1 ligne », avec les libellés de la grille. */
 export function resumeSpecs(d: Pick<DossierResume, 'machine' | 'specs' | 'description'>, libelle: Libelle): string {
   const lignes = (d.specs?.lignes ?? []) as (LigneRoland | LigneXerox)[];
-  if (!lignes.length) return d.description ?? 'Spécifications à voir dans la fiche';
+  if (!lignes.length) return resumeAncien(d.machine, d.specs?.legacy) ?? d.description ?? 'Spécifications à voir dans la fiche';
   const l0 = lignes[0]!;
   const first = resumeLigne(d.machine, l0, libelle(d.machine, l0.support));
   return lignes.length > 1 ? `${first} · +${lignes.length - 1} ligne${lignes.length > 2 ? 's' : ''}` : first;
