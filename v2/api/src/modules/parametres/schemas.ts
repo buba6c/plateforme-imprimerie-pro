@@ -72,6 +72,7 @@ export const fichiersSchema = () => {
         .array(extension, { invalid_type_error: 'Extensions : liste attendue' })
         .max(60, 'Extensions : 60 au maximum')
         .transform((l) => [...new Set(l)].sort()),
+      traitement_auto: z.boolean({ invalid_type_error: 'Traitement automatique : oui ou non' }),
     })
     .partial();
 };

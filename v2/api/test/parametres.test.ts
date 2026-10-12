@@ -92,7 +92,7 @@ describe('lecture et validation des paramètres', () => {
       ['documents', 'entreprise', 'fichiers', 'fuseau', 'livreur_jours_historique', 'notifications', 'prix', 'securite'].sort(),
     );
     expect(admin.body.securite).toEqual({ session_heures: 12, echecs_avant_blocage: 5, blocage_minutes: 15, mdp_longueur_min: 8 });
-    expect(admin.body.fichiers).toEqual({ taille_max_mo: 4096, extensions: [] });
+    expect(admin.body.fichiers).toEqual({ taille_max_mo: 4096, extensions: [], traitement_auto: true });
     expect(admin.body.documents.devis_validite_jours).toBe(15);
     expect(Object.keys(admin.body.notifications).sort()).toEqual([...TYPES_NOTIFICATION].sort());
 
@@ -102,7 +102,7 @@ describe('lecture et validation des paramètres', () => {
     const regles = await A.livreur.get('/api/parametres/regles');
     expect(regles.status).toBe(200);
     expect(regles.body).toEqual({
-      fichiers: { taille_max_mo: 4096, extensions: [], plafond_serveur_mo: 4096 },
+      fichiers: { taille_max_mo: 4096, extensions: [], traitement_auto: true, plafond_serveur_mo: 4096 },
       securite: { mdp_longueur_min: 8 },
       documents: { devis_validite_jours: 15 },
     });
@@ -141,7 +141,7 @@ describe('lecture et validation des paramètres', () => {
     expect(r.body.fichiers.extensions).toEqual(['pdf', 'tiff']);
     expect((await A.prep.get('/api/parametres/regles')).body.fichiers.extensions).toEqual(['pdf', 'tiff']);
     const j = await A.admin.get('/api/journal?action=parametres_modifies');
-    expect(j.body.items[0].data.fichiers).toEqual({ avant: { taille_max_mo: 4096, extensions: [] }, apres: { taille_max_mo: 4096, extensions: ['pdf', 'tiff'] } });
+    expect(j.body.items[0].data.fichiers).toEqual({ avant: { taille_max_mo: 4096, extensions: [], traitement_auto: true }, apres: { taille_max_mo: 4096, extensions: ['pdf', 'tiff'], traitement_auto: true } });
     await A.admin.put('/api/parametres').send({ fichiers: { extensions: [] } }).expect(200);
   });
 });

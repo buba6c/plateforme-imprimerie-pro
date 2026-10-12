@@ -17,12 +17,14 @@ import type { AuthUser } from '../../types';
 import { cheminSous } from '../commun/disque';
 import { chargerDossier, evenement, peutDeposer, resumeSpecs, libellesTarifs } from '../dossiers/service';
 import { peutVoirFichiers } from '../dossiers/access';
-import { apercu, ApercuIndisponible, genreApercu } from '../fichiers/apercu';
+import { apercu, ApercuIndisponible, genreApercu, popplerPresent } from '../fichiers/apercu';
+import { gsPresent, qpdfPresent } from '../traitement/outils';
 import { contentDisposition } from '../fichiers/routes';
 import { ErreurIA, type StatutAppel } from '../ia/erreurs';
 import { appelerAvecSecours, type TentativeIA } from '../ia/fournisseurs';
 import { accesIA, noterTentativesIA, noterUsageIA } from '../ia/routes';
 import { analyserPdf, type AnalysePdf } from './analyse';
+import { planifierTraitement } from '../traitement/file';
 import { assembler, type Assemblage, type FichierPiece, type PieceEntree } from './sources';
 import { CODES_FEUILLE, FEUILLES, FORMATS_FINIS, type Feuille } from './formats';
 import { genererPdf } from './generer';
@@ -44,7 +46,7 @@ export const paramsSchema = z.object({
   orientation: z.enum(['auto', 'portrait', 'paysage']).default('auto'),
   fini: dim,
   fonds_perdus_mm: z.number().min(0).max(20).default(3),
-  methode_fonds_perdus: z.enum(['source', 'miroir', 'etirer', 'blanc']).default('source'),
+  methode_fonds_perdus: z.enum(['source', 'intelligent', 'prolonger', 'miroir', 'etirer', 'blanc']).default('source'),
   gouttiere_mm: z.number().min(0).max(50).default(0),
   marge_mm: z.number().min(0).max(100).default(10),
   traits_de_coupe: z.boolean().default(true),
@@ -56,13 +58,17 @@ export const paramsSchema = z.object({
   ajustement: z.enum(['centrer', 'adapter', 'remplir']).default('centrer'),
   chasse_mm: z.number().min(0).max(10).optional(),
   blanches: z.enum(['fin', 'avant_derniere']).default('fin'),
+  reliure: z.enum(['piqure', 'dos_carre']).optional(),
+  cahier_feuilles: z.number().int().min(1).max(16).optional(),
+  couverture_separee: z.boolean().optional(),
+  lecture: z.enum(['gauche_droite', 'droite_gauche']).optional(),
 });
 
-type FichierRow = { id: number; dossier_id: number; nom_original: string; chemin: string; mime: string | null; taille: number; sha256: string | null };
+type FichierRow = { id: number; dossier_id: number; nom_original: string; chemin: string; chemin_traite: string | null; mime: string | null; taille: number; sha256: string | null };
 
 async function fichierVisible(user: AuthUser, fichierId: number): Promise<{ f: FichierRow; abs: string }> {
   if (!peutVoirFichiers(user)) throw new HttpError(403, 'Vous ne pouvez pas accéder aux fichiers.');
-  const f = await one<FichierRow>(`SELECT id, dossier_id, nom_original, chemin, mime, taille, sha256 FROM fichiers WHERE id = $1 AND deleted_at IS NULL AND purge_at IS NULL`, [fichierId]);
+  const f = await one<FichierRow>(`SELECT id, dossier_id, nom_original, chemin, chemin_traite, mime, taille, sha256 FROM fichiers WHERE id = $1 AND deleted_at IS NULL AND purge_at IS NULL`, [fichierId]);
   if (!f) throw notFound('Fichier introuvable.');
   await chargerDossier(user, f.dossier_id); // 404 si le dossier n'est pas visible
   if (genreApercu(f) === null) throw badRequest(`« ${f.nom_original} » n'est ni un PDF ni une image : il ne peut pas être imposé.`);
@@ -120,6 +126,9 @@ export function impositionRouter(config: Config) {
   router.use(requireAuth, requireRole('admin', 'preparateur'));
 
   const resoudre = (f: FichierRow) => {
+    // La version traitée (réparée, optimisée) si elle existe, sinon l'original.
+    const traite = f.chemin_traite ? cheminSous(racine, f.chemin_traite) : null;
+    if (traite && fs.existsSync(traite)) return traite;
     const abs = cheminSous(racine, f.chemin);
     if (!abs || !fs.existsSync(abs)) throw notFound('Le fichier n’est plus sur le serveur.');
     return abs;
@@ -243,6 +252,7 @@ export function impositionRouter(config: Config) {
       throw e;
     });
     signalDossier({ ...d, ancien_statut: d.statut });
+    planifierTraitement(nouveau);
     res.status(201).json({ fichier: { id: nouveau, nom: l.nom, taille: octets.byteLength, dossier_id: d.id }, dossier: { id: d.id, numero: d.numero, client_nom: d.client_nom } });
   });
 
@@ -323,6 +333,13 @@ export function impositionRouter(config: Config) {
     }
     return out;
   }
+
+  /** Ce que le serveur sait faire : aperçus PDF (Poppler), traitement (Ghostscript, qpdf). */
+  router.get('/capacites', async (_req, res) => {
+    const [poppler, gs, qpdf] = await Promise.all([popplerPresent(), gsPresent(), qpdfPresent()]);
+    res.setHeader('Cache-Control', 'private, max-age=300');
+    res.json({ apercus_pdf: poppler, optimisation: gs, reparation: qpdf || gs });
+  });
 
   router.get('/catalogue', (_req, res) => {
     res.json({
@@ -409,7 +426,7 @@ export function impositionRouter(config: Config) {
         copies.forEach((pg) => out.addPage(pg));
         octets = await out.save({ useObjectStreams: true });
       } else {
-        octets = (await genererPdf(source, plan, params, f.nom_original)).octets;
+        octets = (await genererPdf(source, plan, params, f.nom_original, analyse.pages.map((pg) => pg.bords_unis), assemblage.chemin)).octets;
       }
     } catch (e) {
       throw new HttpError(502, `La génération a échoué : ${e instanceof Error ? e.message : 'erreur inconnue'}.`);
@@ -462,6 +479,7 @@ export function impositionRouter(config: Config) {
       throw e;
     });
     signalDossier({ ...d, ancien_statut: d.statut });
+    planifierTraitement(nouveau);
     res.status(201).json({ fichier: { id: nouveau, nom, taille: octets.byteLength, dossier_id: dossierId }, plan });
   });
 
@@ -568,6 +586,10 @@ export function impositionRouter(config: Config) {
     points_de_vigilance: z.array(z.string()),
   });
 
+  // Propositions de l'assistant gardées 12 h par travail (fichiers + question) : redemander ne coûte rien.
+  const cacheIA = new Map<string, { at: number; reponse: unknown }>();
+  const CACHE_IA_MS = 12 * 3600_000;
+
   router.post('/ia', async (req, res) => {
     const body = (req.body ?? {}) as Record<string, unknown>;
     const { question } = iaSchema.parse(body);
@@ -575,12 +597,18 @@ export function impositionRouter(config: Config) {
     const user = me(req);
     const { fichiers, assemblage, analyse: a, dossierId } = await preparer(user, pieces);
     const f = fichiers[0]!;
+    const cleIA = `${assemblage.signature}|${dossierId ?? 0}|${(question ?? '').trim().toLowerCase()}`;
+    const enCache = body.forcer === true ? undefined : cacheIA.get(cleIA);
+    if (enCache && Date.now() - enCache.at < CACHE_IA_MS) {
+      res.json({ ...(enCache.reponse as object), depuis_cache: true });
+      return;
+    }
     const [d, libelles] = await Promise.all([dossierId !== null ? chargerDossier(user, dossierId) : Promise.resolve(null), libellesTarifs()]);
     const { principal, secours } = await accesIA();
     const quantite = (d?.specs?.lignes ?? []).reduce((t: number, l: { quantite?: number }) => t + (Number(l.quantite) || 0), 0) || null;
     const contexte = {
       dossier: d ? { numero: d.numero, machine: d.machine, description: d.description, specs: resumeSpecs(d.machine, d.specs, d.description, libelles), quantite_totale: quantite } : null,
-      fichier: { nom: fichiers.length > 1 ? fichiers.map((x) => `${x.nom_original} (${assemblage.pages.find((pg) => pg.fichier_id === x.id)?.role ?? 'pages'})`).join(' + ') : f.nom_original, pieces: fichiers.length, recto_verso_separes: !!assemblage.paires?.some((x) => x.verso !== null), pages: a.nb_pages, page_mm: { largeur: a.largeur, hauteur: a.hauteur }, format_reconnu: a.format ? { libelle: a.format.libelle, famille: a.format.famille, paysage: a.format.paysage } : null, fonds_perdus: a.fonds_perdus, fonds_perdus_mm: a.fonds_perdus_mm, fini_propose_mm: a.fini, visuel_jusqu_au_bord: a.pages.some((p) => p.jusqu_au_bord === true), marge_blanche_min_mm: a.pages[0]?.marge_blanche ? Math.min(...Object.values(a.pages[0].marge_blanche)) : null, avertissements: a.avertissements },
+      fichier: { nom: fichiers.length > 1 ? fichiers.map((x) => `${x.nom_original} (${assemblage.pages.find((pg) => pg.fichier_id === x.id)?.role ?? 'pages'})`).join(' + ') : f.nom_original, pieces: fichiers.length, recto_verso_separes: !!assemblage.paires?.some((x) => x.verso !== null), pages: a.nb_pages, page_mm: { largeur: a.largeur, hauteur: a.hauteur }, format_reconnu: a.format ? { libelle: a.format.libelle, famille: a.format.famille, paysage: a.format.paysage } : null, fonds_perdus: a.fonds_perdus, fonds_perdus_mm: a.fonds_perdus_mm, fini_propose_mm: a.fini, visuel_jusqu_au_bord: a.pages.some((p) => p.jusqu_au_bord === true), marge_blanche_min_mm: a.pages[0]?.marge_blanche ? Math.min(...Object.values(a.pages[0].marge_blanche)) : null, avertissements: a.avertissements.map((m) => m.slice(0, 160)).slice(0, 4), bords_unis: a.pages[0]?.bords_unis ?? null },
       feuilles_disponibles: Object.entries(FEUILLES).filter(([c]) => c !== 'personnalisee').map(([code, x]) => ({ code, largeur: x.largeur, hauteur: x.hauteur })),
       question: question ?? null,
     };
@@ -604,7 +632,7 @@ export function impositionRouter(config: Config) {
     ];
     let resultat;
     try {
-      resultat = await appelerAvecSecours(principal, secours, { messages, schema: schemaPlanIA, maxJetons: 900 });
+      resultat = await appelerAvecSecours(principal, secours, { messages, schema: schemaPlanIA, maxJetons: 600 });
     } catch (e) {
       const tentatives = (e as { tentatives?: TentativeIA[] }).tentatives;
       if (tentatives) await noterTentativesIA(req, 'imposition', tentatives, `${f.nom_original}${d ? ` · ${d.numero}` : ''}`);
@@ -650,7 +678,10 @@ export function impositionRouter(config: Config) {
     } catch (e) {
       erreurPlan = e instanceof Error ? e.message : 'Plan impossible';
     }
-    res.json({ params, plan, erreur_plan: erreurPlan, type_document: p.type_document, confiance: p.confiance, explication: p.explication, points_de_vigilance: p.points_de_vigilance, fournisseur: resultat.fournisseur, modele: resultat.modele, secours: resultat.secours });
+    const reponse = { params, plan, erreur_plan: erreurPlan, type_document: p.type_document, confiance: p.confiance, explication: p.explication, points_de_vigilance: p.points_de_vigilance, fournisseur: resultat.fournisseur, modele: resultat.modele, secours: resultat.secours, jetons: (resultat.reponse.jetons_entree ?? 0) + (resultat.reponse.jetons_sortie ?? 0) };
+    cacheIA.set(cleIA, { at: Date.now(), reponse });
+    if (cacheIA.size > 500) cacheIA.delete(cacheIA.keys().next().value!);
+    res.json({ ...reponse, depuis_cache: false });
   });
 
   return router;

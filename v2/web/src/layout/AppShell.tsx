@@ -1,5 +1,5 @@
 import { useNouveauxTravaux } from '../features/atelier/vus';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { useIsFetching, useIsMutating, useQuery } from '@tanstack/react-query';
 import { KeyRound, LogOut, Menu, Moon, Search, Sun, SunMoon, Wifi, WifiOff } from 'lucide-react';
@@ -12,6 +12,8 @@ import { onConnexion } from '../lib/realtime';
 import { abonnerApparence, changerPreferences, getPreferences, type Theme } from '../lib/theme';
 import { NotificationBell } from './NotificationBell';
 import { navigationPour } from './nav';
+import { GardeErreur } from '../ui/GardeErreur';
+import { nouvelleVersionDisponible, recharger, surNouvelleVersion } from '../lib/version';
 
 function initiales(nom: string) {
   return nom
@@ -45,6 +47,15 @@ export function AppShell() {
   useEffect(() => onConnexion(setOnline), []);
   useEffect(() => abonnerApparence(() => setTheme(getPreferences().theme)), []);
   useEffect(() => setOpen(false), [loc.pathname]);
+  // Nouvelle version déployée : bandeau, et rechargement au prochain changement de page.
+  const [maj, setMaj] = useState(nouvelleVersionDisponible());
+  useEffect(() => surNouvelleVersion(() => setMaj(true)), []);
+  const premierChemin = useRef(loc.pathname);
+  useEffect(() => {
+    if (premierChemin.current === loc.pathname) return;
+    premierChemin.current = loc.pathname;
+    if (nouvelleVersionDisponible()) recharger('version');
+  }, [loc.pathname]);
 
   const compteurs = useQuery({
     queryKey: ['paiements', 'compteur'],
@@ -152,10 +163,18 @@ export function AppShell() {
         <div className="ev-chargement" data-actif={chargement > 0} aria-hidden="true" />
         <main className="ev-page" id="contenu">
           <div key={loc.pathname} className="ev-page-entree">
-            <Outlet />
+            <GardeErreur cle={loc.pathname}>
+              <Outlet />
+            </GardeErreur>
           </div>
         </main>
       </div>
+      {maj && (
+        <div className="maj-bandeau" role="status">
+          Nouvelle version disponible
+          <button type="button" onClick={() => recharger('bandeau')}>Mettre à jour</button>
+        </div>
+      )}
       {mobileItems.length > 1 && (
         <nav className="ev-tabbar" aria-label="Navigation rapide">
           {mobileItems.map((i) => (

@@ -338,3 +338,12 @@
 @keyframes imp-pulse { 50% { fill: #e2e8f0; } }
 .pc__tourne { width: 18px; height: 18px; color: var(--accent); animation: gen-tour 0.9s linear infinite; }
 @media (prefers-reduced-motion: reduce) { .imp-schema__charge rect, .pc__tourne { animation: none; } }
+
+/* Imposition rapide (fiche dossier) */
+.rapide { display: grid; grid-template-columns: minmax(0, 1fr) 280px; gap: var(--space-4); align-items: start; }
+@media (max-width: 760px) { .rapide { grid-template-columns: minmax(0, 1fr); } }
+.rapide__apercu { display: grid; gap: 8px; justify-items: center; min-width: 0; }
+.rapide__infos { display: grid; gap: 10px; }
+.rapide__choix { display: grid; gap: 6px; }
+.rapide__choix button { padding: 8px 12px; border-radius: 10px; border: 1.5px solid var(--line); background: var(--surface); font: inherit; font-size: 13px; font-weight: 600; text-align: left; color: var(--text); cursor: pointer; }
+.rapide__choix button[aria-checked="true"] { border-color: var(--accent); background: var(--accent-soft); color: var(--accent-ink); }

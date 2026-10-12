@@ -1,3 +1,4 @@
+import { configurerTraitement, reprendreTraitements } from './modules/traitement/file';
 import http from 'node:http';
 import fs from 'node:fs';
 import pino from 'pino';
@@ -41,6 +42,9 @@ async function main() {
   server.listen(config.port, config.host, () => log.info(`Evocom Print API sur http://${config.host}:${config.port}`));
   // WhatsApp client : reprend la connexion si l'appareil est déjà lié ; jamais bloquant.
   await demarrerWhatsApp(config, log);
+  // Traitement des fichiers déposés (réparation qpdf, optimisation Ghostscript) : file en arrière-plan.
+  configurerTraitement({ storageDir: config.storageDir, log: log.child({ module: 'traitement' }) });
+  reprendreTraitements().catch((e) => log.error({ err: e }, 'Reprise des traitements de fichiers en échec'));
 
   const stop = async (signal: string) => {
     log.info(`${signal} reçu, arrêt propre`);

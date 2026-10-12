@@ -13,9 +13,9 @@ export interface AffichageSchema {
   numeros: boolean;
 }
 
-function Image({ href, x, y, w, h, clip, sx = 1, sy = 1, onError }: { href: string; x: number; y: number; w: number; h: number; clip: string; sx?: 1 | -1; sy?: 1 | -1; onError: () => void }) {
-  // Miroir : on retourne l'image autour de son propre centre.
-  const t = sx === 1 && sy === 1 ? undefined : `translate(${x + w / 2} ${y + h / 2}) scale(${sx} ${sy}) translate(${-(x + w / 2)} ${-(y + h / 2)})`;
+function Image({ href, x, y, w, h, clip, sx = 1, sy = 1, onError, t: tForce }: { href: string; x: number; y: number; w: number; h: number; clip: string; sx?: 1 | -1; sy?: 1 | -1; onError: () => void; t?: string }) {
+  // Miroir : on retourne l'image autour de son propre centre. Prolonger : transformée fournie.
+  const t = tForce ?? (sx === 1 && sy === 1 ? undefined : `translate(${x + w / 2} ${y + h / 2}) scale(${sx} ${sy}) translate(${-(x + w / 2)} ${-(y + h / 2)})`);
   return (
     <g clipPath={`url(#${clip})`}>
       <image href={href} x={x} y={y} width={w} height={h} preserveAspectRatio="none" transform={t} onError={onError} />
@@ -23,7 +23,7 @@ function Image({ href, x, y, w, h, clip, sx = 1, sy = 1, onError }: { href: stri
   );
 }
 
-function Visuel({ pg, x, y, w, h, fp, methode, sourceAvecFonds, i, afficherFonds }: { pg: PageVirtuelle; x: number; y: number; w: number; h: number; fp: number; methode: MethodeFondsPerdus; sourceAvecFonds: boolean; i: number; afficherFonds: boolean }) {
+function Visuel({ pg, x, y, w, h, fp, methode, sourceAvecFonds, i, afficherFonds, unis }: { pg: PageVirtuelle; x: number; y: number; w: number; h: number; fp: number; methode: MethodeFondsPerdus; sourceAvecFonds: boolean; i: number; afficherFonds: boolean; unis?: { haut: boolean; bas: boolean; gauche: boolean; droite: boolean } | null }) {
   const [ko, setKo] = useState(false);
   const rendu = useApercuPage({ fichier_id: pg.libre ? undefined : pg.fichier_id, libre: pg.libre, page: pg.page_source, genre: pg.genre }, 360);
   const id = `p${i}-${pg.numero}`;
@@ -63,8 +63,37 @@ function Visuel({ pg, x, y, w, h, fp, methode, sourceAvecFonds, i, afficherFonds
   const err = () => setKo(true);
   // Le fichier a ses fonds perdus : la page rendue couvre fini + fonds perdus.
   if (methode === 'source' && sourceAvecFonds) return <g>{zones}<Image href={href} x={bx} y={by} w={bw} h={bh} clip={`${id}-tout`} onError={err} /></g>;
-  if (!fonds || methode === 'blanc' || methode === 'source') return <g>{zones}<Image href={href} x={x} y={y} w={w} h={h} clip={`${id}-fini`} onError={err} /></g>;
+  // Fichier sans fonds perdus en mode « du fichier » : le serveur les fabrique bord par bord (intelligent).
+  if (!fonds || methode === 'blanc') return <g>{zones}<Image href={href} x={x} y={y} w={w} h={h} clip={`${id}-fini`} onError={err} /></g>;
   if (methode === 'etirer') return <g>{zones}<Image href={href} x={bx} y={by} w={bw} h={bh} clip={`${id}-tout`} onError={err} /></g>;
+  if (methode === 'prolonger' || methode === 'intelligent' || methode === 'source') {
+    // Chaque bord : prolongé (bande de 0,5 mm étirée) ou miroir, comme dans le PDF généré.
+    const m = (u: boolean | undefined) => (methode === 'prolonger' || u !== false ? 'p' : 'm');
+    const g = m(unis?.gauche), d = m(unis?.droite), hh = m(unis?.haut), bb = m(unis?.bas);
+    const sw = Math.max(0.6, Math.min(w, h) * 0.006);
+    const f = fp / sw;
+    // Prolonger : transformée « étire la bande du bord sur fp » ; miroir : image retournée de l'autre côté.
+    const bandeG = g === 'p' ? <Image href={href} x={x} y={y} w={w} h={h} clip={`${id}-g`} onError={err} t={`translate(${x - fp} 0) scale(${f} 1) translate(${-x} 0)`} /> : <Image href={href} x={x - w} y={y} w={w} h={h} sx={-1} clip={`${id}-g`} onError={err} />;
+    const bandeD = d === 'p' ? <Image href={href} x={x} y={y} w={w} h={h} clip={`${id}-d`} onError={err} t={`translate(${x + w} 0) scale(${f} 1) translate(${-(x + w - sw)} 0)`} /> : <Image href={href} x={x + w} y={y} w={w} h={h} sx={-1} clip={`${id}-d`} onError={err} />;
+    const bandeH = hh === 'p' ? <Image href={href} x={x} y={y} w={w} h={h} clip={`${id}-h`} onError={err} t={`translate(0 ${y - fp}) scale(1 ${f}) translate(0 ${-y})`} /> : <Image href={href} x={x} y={y - h} w={w} h={h} sy={-1} clip={`${id}-h`} onError={err} />;
+    const bandeB = bb === 'p' ? <Image href={href} x={x} y={y} w={w} h={h} clip={`${id}-b`} onError={err} t={`translate(0 ${y + h}) scale(1 ${f}) translate(0 ${-(y + h - sw)})`} /> : <Image href={href} x={x} y={y + h} w={w} h={h} sy={-1} clip={`${id}-b`} onError={err} />;
+    const coin = (cx: 'g' | 'd', cy: 'h' | 'b', clip: string) => {
+      const mx = cx === 'g' ? g : d;
+      const my = cy === 'h' ? hh : bb;
+      if (mx === 'm' || my === 'm') return <Image href={href} x={cx === 'g' ? x - w : x + w} y={cy === 'h' ? y - h : y + h} w={w} h={h} sx={-1} sy={-1} clip={clip} onError={err} />;
+      const tx = cx === 'g' ? `translate(${x - fp} 0) scale(${f} 1) translate(${-x} 0)` : `translate(${x + w} 0) scale(${f} 1) translate(${-(x + w - sw)} 0)`;
+      const ty = cy === 'h' ? `translate(0 ${y - fp}) scale(1 ${f}) translate(0 ${-y})` : `translate(0 ${y + h}) scale(1 ${f}) translate(0 ${-(y + h - sw)})`;
+      return <Image href={href} x={x} y={y} w={w} h={h} clip={clip} onError={err} t={`${ty} ${tx}`} />;
+    };
+    return (
+      <g>
+        {zones}
+        <Image href={href} x={x} y={y} w={w} h={h} clip={`${id}-fini`} onError={err} />
+        {bandeG}{bandeD}{bandeH}{bandeB}
+        {coin('g', 'h', `${id}-c1`)}{coin('d', 'h', `${id}-c2`)}{coin('g', 'b', `${id}-c3`)}{coin('d', 'b', `${id}-c4`)}
+      </g>
+    );
+  }
   // Miroir : le visuel au centre, puis les bandes retournées sur chaque bord et dans les coins.
   return (
     <g>
@@ -90,6 +119,7 @@ export function SchemaFeuille({
   titre,
   methode = 'source',
   sourceAvecFonds = false,
+  unisDe,
   affichage = { fonds: true, traits: true, zone_finie: true, numeros: true },
 }: {
   plan: Plan;
@@ -99,6 +129,8 @@ export function SchemaFeuille({
   titre?: string;
   methode?: MethodeFondsPerdus;
   sourceAvecFonds?: boolean;
+  /** Bords unis de chaque page (analyse) : décide prolonger ou miroir en mode intelligent. */
+  unisDe?: (numero: number) => { haut: boolean; bas: boolean; gauche: boolean; droite: boolean } | null;
   affichage?: AffichageSchema;
 }) {
   const W = plan.feuille.largeur;
@@ -125,7 +157,7 @@ export function SchemaFeuille({
           return (
             <g key={i} className="imp-schema__pose" data-vide={vide || undefined}>
               {affichage.fonds && fp > 0 && <rect x={x - fp} y={y - fp} width={w + 2 * fp} height={h + 2 * fp} className="imp-schema__fonds-fond" />}
-              {pg ? <Visuel pg={pg} x={x} y={y} w={w} h={h} fp={fp} methode={methode} sourceAvecFonds={sourceAvecFonds} i={i} afficherFonds={affichage.fonds} /> : <rect x={x} y={y} width={w} height={h} className="imp-schema__fini" />}
+              {pg ? <Visuel pg={pg} x={x} y={y} w={w} h={h} fp={fp} methode={methode} sourceAvecFonds={sourceAvecFonds} i={i} afficherFonds={affichage.fonds} unis={unisDe?.(pg.numero) ?? null} /> : <rect x={x} y={y} width={w} height={h} className="imp-schema__fini" />}
               {affichage.fonds && fp > 0 && <rect x={x - fp} y={y - fp} width={w + 2 * fp} height={h + 2 * fp} className="imp-schema__fonds" />}
               {affichage.zone_finie && <rect x={x} y={y} width={w} height={h} className="imp-schema__trait-fini" />}
               {affichage.numeros && (!pg || q.numero) && (

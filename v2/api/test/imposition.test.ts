@@ -97,6 +97,29 @@ describe('imposition : formats et plans (sans serveur)', () => {
     expect(pages(1, 'verso')).toEqual([4, 5]);
   });
 
+  it('livret : couverture séparée, dos carré en cahiers avec repères, lecture de droite à gauche', () => {
+    const livret = { ...base, operation: 'livret' as const, feuille: 'sra3' as const, fini: { largeur: 210, hauteur: 297 }, fonds_perdus_mm: 3, mode: 'sequence' as const };
+    // 40 pages, couverture séparée : 36 pages intérieures (9 feuilles) + 1 feuille de couverture.
+    const c = calculerPlan({ ...livret, couverture_separee: true }, 40);
+    expect(c.feuilles[0]!.libelle).toBe('Couverture');
+    expect(c.feuilles[0]!.recto.poses.map((q) => q.page)).toEqual([40, 1]);
+    expect(c.feuilles[0]!.verso!.poses.map((q) => q.page)).toEqual([2, 39]);
+    expect(c.feuilles[1]!.recto.poses.map((q) => q.page)).toEqual([38, 3]);
+    expect(c.nb_feuilles).toBe(10);
+    // 48 pages, dos carré par cahiers de 4 feuilles : 3 cahiers de 16 pages, repère sur la 1re feuille de chacun.
+    const d = calculerPlan({ ...livret, reliure: 'dos_carre', cahier_feuilles: 4 }, 48);
+    expect(d.nb_feuilles).toBe(12);
+    expect(d.feuilles[0]!.recto.poses.map((q) => q.page)).toEqual([16, 1]);
+    expect(d.feuilles[4]!.recto.poses.map((q) => q.page)).toEqual([32, 17]);
+    expect(d.feuilles[4]!.libelle).toBe('Cahier 2 · feuille 1/4');
+    const reperes = d.feuilles.filter((f) => f.recto.marques?.length).map((f) => f.recto.marques![0]!.y);
+    expect(reperes).toHaveLength(3);
+    expect(reperes[0]! > reperes[1]! && reperes[1]! > reperes[2]!).toBe(true);
+    // Droite à gauche : chaque face inversée.
+    const r = calculerPlan({ ...livret, lecture: 'droite_gauche' }, 8);
+    expect(r.feuilles[0]!.recto.poses.map((q) => q.page)).toEqual([1, 8]);
+  });
+
   it('refuse une pose qui ne tient pas sur la feuille', () => {
     expect(() => calculerPlan({ ...base, feuille: 'a4', fini: { largeur: 300, hauteur: 300 } }, 1)).toThrow(/Aucune pose/);
   });
@@ -124,7 +147,7 @@ describe('imposition : routes', () => {
     const r = await A.prep.post('/api/imposition/analyser').send({ fichier_id: carteId });
     expect(r.status, JSON.stringify(r.body)).toBe(200);
     expect(r.body.analyse).toMatchObject({ nb_pages: 2, uniforme: true, fonds_perdus: 'absents', format: { code: 'carte_visite_85x55' }, fini: { largeur: 85, hauteur: 55 } });
-    expect(r.body.params_defaut).toMatchObject({ operation: 'poses', recto_verso: true, methode_fonds_perdus: 'miroir', fonds_perdus_mm: 3 });
+    expect(r.body.params_defaut).toMatchObject({ operation: 'poses', recto_verso: true, methode_fonds_perdus: 'intelligent', fonds_perdus_mm: 3 });
     const b = await A.prep.post('/api/imposition/analyser').send({ fichier_id: brochureId });
     expect(b.body.analyse).toMatchObject({ nb_pages: 6, fonds_perdus: 'declares', fonds_perdus_mm: 3, format: { code: 'a5' } });
     expect(b.body.params_defaut.methode_fonds_perdus).toBe('source');

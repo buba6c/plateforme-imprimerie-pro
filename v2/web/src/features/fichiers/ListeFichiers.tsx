@@ -1,11 +1,12 @@
 // Liste des fichiers d'impression d'un dossier : aperçu, téléchargement, marquage
 // « à réimprimer », suppression tant que le dossier est modifiable.
 
+import { ImpositionRapide, imposable } from '../imposition/ImpositionRapide';
 import { ApercuPdf } from './ApercuPdf';
 import { MiniatureServeur } from './MiniatureServeur';
 import { useEffect, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
-import { Download, Eye, ExternalLink, RotateCcw, Trash2 } from 'lucide-react';
+import { Download, Eye, ExternalLink, RotateCcw, Trash2, LayoutGrid } from 'lucide-react';
 import { formatDateHeure, formatTaille } from '@evocom/shared';
 import { api, fichierUrl, messageErreur } from '../../lib/api';
 import type { Fichier } from '../../lib/types';
@@ -26,12 +27,15 @@ function typeApercu(f: Fichier): 'pdf' | 'image' | null {
   return null;
 }
 
-export function ListeFichiers({ dossierId, fichiers, peutMarquer, peutSupprimer }: {
+export function ListeFichiers({ dossierId, fichiers, peutMarquer, peutSupprimer, peutImposer = false }: {
   dossierId: number;
   fichiers: Fichier[];
   peutMarquer: boolean;
   peutSupprimer: boolean;
+  /** Bouton « Imposer » (préparateur et administrateur, dossier qui accepte des fichiers). */
+  peutImposer?: boolean;
 }) {
+  const [aImposer, setAImposer] = useState<Fichier | null>(null);
   const qc = useQueryClient();
   const toast = useToast();
   const [apercu, setApercu] = useState<Fichier | null>(null);
@@ -99,8 +103,14 @@ export function ListeFichiers({ dossierId, fichiers, peutMarquer, peutSupprimer 
                   {f.uploaded_by_nom ? ` · ${f.uploaded_by_nom}` : ''} · {formatDateHeure(f.created_at)}
                 </span>
                 {f.a_reimprimer && <span className="fi-tag-reimp">À réimprimer</span>}
+                <Traitement f={f} />
               </div>
               <div className="fi-carte__actions">
+                {peutImposer && imposable(f) && (
+                  <button type="button" className="ev-btn ev-btn--sm fi-imposer" onClick={() => setAImposer(f)} title="Imposition automatique avec prévisualisation">
+                    <LayoutGrid aria-hidden="true" /> Imposer
+                  </button>
+                )}
                 <a className="ev-icon-btn ev-icon-btn--sm" href={fichierUrl(f.id, true)} download aria-label={`Télécharger ${f.nom_original}`} title="Télécharger">
                   <Download />
                 </a>
@@ -127,6 +137,7 @@ export function ListeFichiers({ dossierId, fichiers, peutMarquer, peutSupprimer 
         })}
       </ul>
 
+      {aImposer && <ImpositionRapide dossierId={dossierId} fichier={aImposer} onClose={() => setAImposer(null)} />}
       {apercu && <ApercuFichier fichier={apercu} onClose={() => setApercu(null)} />}
 
       <ConfirmDialog
@@ -213,4 +224,22 @@ export function ApercuFichier({ fichier, onClose }: { fichier: Fichier; onClose:
       </div>
     </Dialog>
   );
+}
+
+/** État du traitement automatique (réparation, optimisation pour l'impression) d'un fichier. */
+function Traitement({ f }: { f: Fichier }) {
+  const t = f.traitement;
+  const pdf = (f.mime ?? '').toLowerCase() === 'application/pdf' || /\.pdf$/i.test(f.nom_original);
+  if (!pdf) return null;
+  if (!t) return <span className="fi-trait" data-etat="attente" title="Contrôle et optimisation pour l’impression en cours">Traitement…</span>;
+  const alertes = [...(t.avertissements ?? [])];
+  const titre = alertes.length ? alertes.join('\n') : undefined;
+  if (t.statut === 'optimise' && t.taille_avant && t.taille_apres) {
+    const gain = Math.round((1 - t.taille_apres / t.taille_avant) * 100);
+    return <span className="fi-trait" data-etat={alertes.length ? 'attention' : 'ok'} title={titre ?? 'Version optimisée pour l’impression, servie par défaut (l’original est conservé).'}>Optimisé −{gain} % · {formatTaille(t.taille_apres)}</span>;
+  }
+  if (t.statut === 'repare') return <span className="fi-trait" data-etat="attention" title={titre ?? 'Le PDF était abîmé : la version réparée est servie (l’original est conservé).'}>Réparé</span>;
+  if (t.statut === 'illisible') return <span className="fi-trait" data-etat="alerte" title={titre}>PDF illisible</span>;
+  if (t.statut === 'inchange') return <span className="fi-trait" data-etat={alertes.length ? 'attention' : 'ok'} title={titre ?? 'Contrôlé : déjà optimal.'}>{alertes.length ? 'À vérifier' : 'Contrôlé'}</span>;
+  return null;
 }

@@ -20,7 +20,7 @@ import { useDossiers } from '../../features/dossiers/hooks';
 import { OptionCartes } from '../../features/imposition/OptionCartes';
 import { PictoFondsPerdus, PictoMode, PictoOperation, PictoOrientation, PictoTraits } from '../../features/imposition/Pictos';
 import { SchemaFeuille, type AffichageSchema } from '../../features/imposition/SchemaFeuille';
-import { reglagesPour, resumeAuto } from '../../features/imposition/auto';
+import { reglagesPour, resumeAuto, rolesAuto } from '../../features/imposition/auto';
 import { useApercuPage } from '../../features/imposition/rendu';
 import { FOURNISSEUR_LABELS_IA, METHODE_LABELS, MODE_LABELS, OPERATION_LABELS, type Feuille, type ModeleImposition, type Operation, type ParamsImposition, type Piece, type PieceAnalysee, type Plan, type PropositionImposition, type ReponseAnalyse, type ResultatGeneration, type RolePiece } from '../../features/imposition/types';
 import '../../features/imposition/imposition.css';
@@ -172,8 +172,24 @@ function Reglages({ p, onChange, nbPages, analyse }: { p: ParamsImposition; onCh
 
       {p.operation === 'livret' && (
         <div className="ws__section">
-          <p className="ws__section-titre">Livret</p>
-          <Nombre label="Chasse (cahiers intérieurs)" value={p.chasse_mm ?? 0} onChange={(v) => maj({ chasse_mm: v })} max={10} step={0.1} help="0 pour un livret fin ; 0,2 à 0,5 mm par cahier au-delà de 40 pages." />
+          <p className="ws__section-titre">Brochure</p>
+          <OptionCartes name="imp-reliure" label="Reliure" tone="violet" compact value={p.reliure ?? 'piqure'} onChange={(reliure) => maj({ reliure, chasse_mm: reliure === 'dos_carre' ? 0 : p.chasse_mm })}
+            options={[
+              { value: 'piqure' as const, label: 'Piqûre à cheval', aide: 'Agrafée au pli, jusqu’à 64 pages', picto: <PictoOperation op="livret" /> },
+              { value: 'dos_carre' as const, label: 'Dos carré collé', aide: 'Cahiers empilés puis collés, pour les gros volumes', picto: <svg viewBox="0 0 48 36" width="48" height="36" fill="none" stroke="currentColor" strokeWidth="1.6" aria-hidden="true"><rect x="8" y="5" width="32" height="26" rx="1" fill="currentColor" fillOpacity="0.15" /><path d="M8 5v26M11 5v26M14 5v26" /><rect x="5" y="5" width="3" height="26" fill="currentColor" fillOpacity="0.5" /></svg> },
+            ]}
+          />
+          {p.reliure === 'dos_carre' && (
+            <Nombre label="Feuilles par cahier" value={p.cahier_feuilles ?? 4} onChange={(v) => maj({ cahier_feuilles: Math.round(v) })} min={1} max={16} step={1} addon="" help={`${(p.cahier_feuilles ?? 4) * 4} pages par cahier. 4 feuilles (16 pages) est le plus courant.`} />
+          )}
+          <OptionCartes name="imp-lecture" label="Sens de lecture" tone="teal" compact value={p.lecture ?? 'gauche_droite'} onChange={(lecture) => maj({ lecture })}
+            options={[
+              { value: 'gauche_droite' as const, label: 'Gauche → droite', aide: 'Français, anglais', picto: <svg viewBox="0 0 48 36" width="48" height="36" fill="none" stroke="currentColor" strokeWidth="1.6" aria-hidden="true"><path d="M10 18h26" /><path d="M31 13l5 5-5 5" /></svg> },
+              { value: 'droite_gauche' as const, label: 'Droite → gauche', aide: 'Arabe : la couverture est à droite', picto: <svg viewBox="0 0 48 36" width="48" height="36" fill="none" stroke="currentColor" strokeWidth="1.6" aria-hidden="true"><path d="M38 18H12" /><path d="M17 13l-5 5 5 5" /></svg> },
+            ]}
+          />
+          <Checkbox label="Couverture à part (pages 1, 2, avant-dernière et dernière sur une feuille séparée, papier plus épais)" checked={!!p.couverture_separee} onChange={(couverture_separee) => maj({ couverture_separee })} />
+          {p.reliure !== 'dos_carre' && <Nombre label="Chasse (décalage des feuilles intérieures)" value={p.chasse_mm ?? 0} onChange={(v) => maj({ chasse_mm: v })} max={10} step={0.1} help="0 pour une brochure fine ; environ 0,1 mm par feuille au-delà de 40 pages." />}
           <SelectField label="Pages blanches ajoutées" value={p.blanches} onChange={(e) => maj({ blanches: e.target.value as ParamsImposition['blanches'] })} options={[{ value: 'fin', label: 'À la fin' }, { value: 'avant_derniere', label: 'Avant la dernière page (4e de couverture gardée)' }]} />
           <Nombre label="Exemplaires" value={p.quantite ?? 0} onChange={(v) => maj({ quantite: v > 0 ? Math.round(v) : undefined })} min={0} max={100000} step={1} addon="ex." help="Pour compter les feuilles à imprimer." />
         </div>
@@ -263,6 +279,11 @@ function lignesRapport(r: ReponseAnalyse, p: ParamsImposition, plan: Plan | unde
   if (p.operation !== 'assembler') {
     if (a.fonds_perdus === 'declares') l.push({ ton: 'ok', texte: `Fonds perdus présents dans le fichier (${a.fonds_perdus_mm} mm) : utilisés tels quels.` });
     else if (a.fonds_perdus === 'incertains') l.push({ ton: 'ok', texte: `Le fichier mesure le format fini plus ${a.fonds_perdus_mm} mm de chaque côté : fonds perdus pris dans le fichier.` });
+    else if (p.methode_fonds_perdus === 'intelligent') {
+      const u = a.pages.find((pg) => pg.bords_unis)?.bords_unis;
+      const detail = u ? ` : ${(['haut', 'bas', 'gauche', 'droite'] as const).map((b) => `${b} ${u[b] ? 'prolongé' : 'en miroir'}`).join(', ')}` : ' (bords prolongés)';
+      l.push({ ton: 'auto', texte: `Pas de fonds perdus dans le fichier : ${p.fonds_perdus_mm} mm générés bord par bord${detail}.` });
+    } else if (p.methode_fonds_perdus === 'prolonger') l.push({ ton: 'auto', texte: `Pas de fonds perdus dans le fichier : bords prolongés de ${p.fonds_perdus_mm} mm.` });
     else if (p.methode_fonds_perdus === 'miroir') l.push({ ton: 'auto', texte: `Pas de fonds perdus dans le fichier : ${p.fonds_perdus_mm} mm générés automatiquement en miroir des bords (visibles en rose sur la feuille).` });
     else if (p.methode_fonds_perdus === 'etirer') l.push({ ton: 'auto', texte: `Pas de fonds perdus dans le fichier : visuel agrandi de ${p.fonds_perdus_mm} mm pour les créer.` });
     else if (p.methode_fonds_perdus === 'blanc') l.push({ ton: 'info', texte: 'Pas de fonds perdus, mais le visuel a une marge blanche : aucun ajout nécessaire.' });
@@ -296,6 +317,15 @@ function Rapport({ r, p, plan, ia, iaEnCours, iaErreur, onRedemander }: { r: Rep
           </li>
         ))}
       </ul>
+      {!ia && !iaEnCours && !iaErreur && onRedemander && (
+        <div className="rapport__ia">
+          <span className="rapport__ia-tete">
+            <Sparkles aria-hidden="true" /> Assistant IA non sollicité
+            <Button size="sm" variant="ghost" onClick={onRedemander}>Demander son avis</Button>
+          </span>
+          <span className="ev-muted">L’analyse locale est sûre : aucun jeton consommé.</span>
+        </div>
+      )}
       {(ia || iaEnCours || iaErreur) && (
         <div className="rapport__ia">
           <span className="rapport__ia-tete">
@@ -311,7 +341,7 @@ function Rapport({ r, p, plan, ia, iaEnCours, iaErreur, onRedemander }: { r: Rep
             <>
               <span><strong>{ia.type_document}</strong> · {ia.explication}</span>
               {ia.points_de_vigilance.length > 0 && <ul>{ia.points_de_vigilance.map((x, i) => <li key={i}>{x}</li>)}</ul>}
-              <span className="ev-help">{FOURNISSEUR_LABELS_IA[ia.fournisseur] ?? ia.fournisseur} · {ia.modele}{ia.secours ? ' · par le secours' : ''}</span>
+              <span className="ev-help">{FOURNISSEUR_LABELS_IA[ia.fournisseur] ?? ia.fournisseur} · {ia.modele}{ia.secours ? ' · par le secours' : ''}{ia.depuis_cache ? ' · réponse déjà connue, aucun jeton consommé' : ia.jetons ? ` · ${ia.jetons} jetons` : ''}</span>
             </>
           ) : null}
         </div>
@@ -525,13 +555,13 @@ function EcranFichiers({ pieces, setPieces, analyses, dossierId, setDossierId, e
                   <MiniPiece p={p} analyse={a} />
                   <span style={{ minWidth: 0 }}>
                     <span className="pc__nom" title={p.nom}>{p.nom}</span>
-                    <span className="pc__meta">{p.libre ? 'déposé sans dossier · ' : ''}{formatTaille(p.taille)}</span>
+                    <span className="pc__meta">{p.libre ? 'déposé sans dossier · ' : ''}{formatTaille(p.taille)}{p.roleAuto ? ` · ${p.role === 'recto' ? 'recto' : 'verso'} détecté automatiquement` : ''}</span>
                     {a ? <ChipsPiece a={a} /> : enAnalyse ? <span className="pc__meta">Analyse…</span> : null}
                     {a?.avertissements.filter((m) => !/Poppler/.test(m)).slice(0, 1).map((m, k) => <span key={k} className="ev-help" style={{ display: 'block', margin: '3px 0 0' }}>{m}</span>)}
                   </span>
                   <span className="pc__roles" role="radiogroup" aria-label={`Rôle de ${p.nom}`}>
                     {(['pages', 'recto', 'verso'] as RolePiece[]).map((r) => (
-                      <button key={r} type="button" role="radio" aria-checked={p.role === r} data-role={r} onClick={() => setPieces(pieces.map((x) => (x.cle === p.cle ? { ...x, role: r } : x)))}>
+                      <button key={r} type="button" role="radio" aria-checked={p.role === r} data-role={r} onClick={() => setPieces(pieces.map((x) => (x.cle === p.cle ? { ...x, role: r, roleAuto: false } : x)))}>
                         {r === 'pages' ? 'Pages' : r === 'recto' ? 'Recto' : 'Verso'}
                       </button>
                     ))}
@@ -606,6 +636,17 @@ export default function Imposition() {
   }, [fichierParam, dossier.data]);
 
   const analyse = useAnalyse(pieces, params?.fini, params?.fonds_perdus_mm);
+  // Deux fichiers d'une page de même format : recto et verso détectés (nom du fichier, sinon ordre).
+  useEffect(() => {
+    const an = analyse.data?.pieces;
+    if (!an || analyse.isPlaceholderData) return;
+    const r = rolesAuto(pieces, (p) => {
+      const x = an.find((a) => (p.libre ? a.libre === p.libre : a.fichier_id === p.fichier_id));
+      return x ? { pages: x.pages, largeur: x.largeur, hauteur: x.hauteur } : undefined;
+    });
+    if (r) setPieces(r);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [analyse.data, analyse.isPlaceholderData]);
   const clePieces = pieces.map((p) => `${p.libre ?? p.fichier_id}:${p.role}`).join('|');
   const derniereCle = useRef('');
   useEffect(() => {
@@ -654,13 +695,17 @@ export default function Imposition() {
       onError: (e) => setIaErreur(messageErreur(e)),
     });
   };
+  // Économie de jetons : l'assistant n'est appelé tout seul que si l'analyse locale a un doute
+  // (format inconnu, fonds perdus incertains, pages de tailles différentes, plusieurs fichiers sans
+  // appariement clair). Sinon, un bouton permet de le solliciter ; ses réponses sont gardées 12 h.
+  const doute = !!analyse.data && (!analyse.data.analyse.format || analyse.data.analyse.fonds_perdus === 'incertains' || !analyse.data.analyse.uniforme || (pieces.length > 1 && !analyse.data.paires && pieces.every((p) => p.role === 'pages')));
   useEffect(() => {
-    if (ecran === 2 && statutIA.data?.actif && params && iaPour.current !== clePieces && !proposerIA.isPending) {
+    if (ecran === 2 && statutIA.data?.actif && params && doute && iaPour.current !== clePieces && !proposerIA.isPending) {
       setIa(null);
       demanderIA();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [ecran, statutIA.data?.actif, clePieces, params !== null]);
+  }, [ecran, statutIA.data?.actif, clePieces, params !== null, doute]);
   const generer = useGenerer();
   const planData = plan.data?.plan;
   const pages = analyse.data?.pages ?? [];
@@ -681,7 +726,7 @@ export default function Imposition() {
   const max: Ecran = pieces.length && params ? 2 : 1;
   const [affichage, setAffichage] = useState<AffichageSchema>({ fonds: true, traits: true, zone_finie: true, numeros: false });
   const sourceAvecFonds = analyse.data ? analyse.data.analyse.fonds_perdus !== 'absents' : false;
-  const fondsAFabriquer = !!analyse.data && params?.operation !== 'assembler' && analyse.data.analyse.fonds_perdus === 'absents' && (params?.methode_fonds_perdus === 'source' || params?.methode_fonds_perdus === 'blanc' || (params?.fonds_perdus_mm ?? 0) === 0);
+  const fondsAFabriquer = !!analyse.data && params?.operation !== 'assembler' && analyse.data.analyse.fonds_perdus === 'absents' && analyse.data.analyse.pages.some((pg) => pg.jusqu_au_bord !== false) && (params?.methode_fonds_perdus === 'blanc' || (params?.fonds_perdus_mm ?? 0) === 0);
   const destination = analyse.data?.sans_dossier ? 'Sans dossier : le PDF sera proposé au téléchargement (gardé 6 h).' : analyse.data?.fichier.dossier_id ? `Le PDF sera ajouté au dossier de ${dossier.data && dossier.data.id === analyse.data.fichier.dossier_id ? `${dossier.data.numero} (${dossier.data.client_nom})` : 'la première pièce'}.` : '';
   const lancer = () =>
     params &&
@@ -734,13 +779,13 @@ export default function Imposition() {
               {fondsAFabriquer ? (
                 <div className="alerte-fonds">
                   <span>Ce fichier n’a pas de fonds perdus. Après la coupe, un filet blanc risque d’apparaître sur les bords.</span>
-                  <Button size="sm" variant="primary" icon={<Wand2 />} onClick={() => (setParams({ ...params, fonds_perdus_mm: params.fonds_perdus_mm || 3, methode_fonds_perdus: 'miroir' }), setAffichage((a) => ({ ...a, fonds: true })), toast.success('Fonds perdus générés en miroir', 'Visibles en rose sur la feuille. Changez la méthode dans les réglages si besoin.'))}>
+                  <Button size="sm" variant="primary" icon={<Wand2 />} onClick={() => (setParams({ ...params, fonds_perdus_mm: params.fonds_perdus_mm || 3, methode_fonds_perdus: 'intelligent' }), setAffichage((a) => ({ ...a, fonds: true })), toast.success('Fonds perdus générés', 'Bord par bord : aplats prolongés, motifs en miroir. Visibles en rose sur la feuille.'))}>
                     Générer les fonds perdus
                   </Button>
                 </div>
               ) : analyse.data && params.operation !== 'assembler' && params.fonds_perdus_mm > 0 && params.methode_fonds_perdus !== 'blanc' ? (
                 <div className="alerte-fonds" data-ok>
-                  <span>Fonds perdus : {params.fonds_perdus_mm} mm, {params.methode_fonds_perdus === 'source' ? 'pris dans le fichier' : params.methode_fonds_perdus === 'miroir' ? 'générés en miroir des bords' : 'par étirement du visuel'}.</span>
+                  <span>Fonds perdus : {params.fonds_perdus_mm} mm, {params.methode_fonds_perdus === 'source' ? 'pris dans le fichier' : params.methode_fonds_perdus === 'intelligent' ? 'générés bord par bord (aplats prolongés, motifs en miroir)' : params.methode_fonds_perdus === 'prolonger' ? 'bords prolongés' : params.methode_fonds_perdus === 'miroir' ? 'générés en miroir des bords' : 'par étirement du visuel'}.</span>
                 </div>
               ) : null}
               <div className="ws__panneau">
@@ -763,7 +808,7 @@ export default function Imposition() {
                     {planData && planData.feuilles.length > 1 && (
                       <div className="imp-nav">
                         <Button size="sm" variant="ghost" icon={<ChevronLeft />} disabled={feuilleVue === 0} onClick={() => setFeuilleVue((v) => v - 1)} aria-label="Feuille précédente" />
-                        {feuilleVue + 1} / {planData.feuilles.length}
+                        {feuille?.libelle ? `${feuille.libelle} · ` : ''}{feuilleVue + 1} / {planData.feuilles.length}
                         <Button size="sm" variant="ghost" icon={<ChevronRight />} disabled={feuilleVue >= planData.feuilles.length - 1} onClick={() => setFeuilleVue((v) => v + 1)} aria-label="Feuille suivante" />
                       </div>
                     )}
@@ -792,7 +837,7 @@ export default function Imposition() {
                     </div>
                     <div className="ws__scene" ref={scene}>
                       <div className="ws__scene-int">
-                        <SchemaFeuille plan={planData} face={faceVue} pages={pages} methode={params.methode_fonds_perdus} sourceAvecFonds={sourceAvecFonds} affichage={affichage} largeur={Math.round((planData.feuille.largeur > planData.feuille.hauteur ? 640 : 460) * zoom)} />
+                        <SchemaFeuille plan={planData} face={faceVue} pages={pages} methode={params.methode_fonds_perdus} sourceAvecFonds={sourceAvecFonds} unisDe={(n) => analyse.data?.analyse.pages[n - 1]?.bords_unis ?? null} affichage={affichage} largeur={Math.round((planData.feuille.largeur > planData.feuille.hauteur ? 640 : 460) * zoom)} />
                       </div>
                     </div>
                     <p className="ev-help" style={{ margin: 0 }}>Ctrl + molette pour zoomer. Trait bleu : format fini. Pointillé rose : fonds perdus. Traits noirs : coupe.</p>

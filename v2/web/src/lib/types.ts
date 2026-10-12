@@ -70,6 +70,9 @@ export interface Fichier {
   a_reimprimer: boolean;
   created_at: string;
   uploaded_by_nom: string | null;
+  /** Version optimisée pour l'impression (taille) et rapport du traitement. */
+  taille_traitee?: number | null;
+  traitement?: { statut: 'optimise' | 'repare' | 'inchange' | 'illisible' | 'ignore' | 'erreur'; taille_avant?: number; taille_apres?: number | null; avertissements?: string[]; polices_non_incorporees?: string[]; dpi_min?: number | null; outils?: string[] } | null;
 }
 
 export interface Evenement {

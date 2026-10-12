@@ -41,6 +41,8 @@ export interface PageAnalysee {
   bords: Bords | null;
   /** Marge blanche mesurée (mm) sur chaque bord, ou null sans rendu. */
   marge_blanche: Bords | null;
+  /** Bord uni (aplat ou dégradé doux) sur 2 mm : prolongeable sans défaut. null sans rendu. */
+  bords_unis: { haut: boolean; bas: boolean; gauche: boolean; droite: boolean } | null;
   /** Le visuel touche au moins un bord. */
   jusqu_au_bord: boolean | null;
 }
@@ -71,15 +73,37 @@ function boites(page: PDFPage) {
   return { media: lire(media), trim, bleed };
 }
 
-async function rendreEtMesurer(abs: string, numero: number, largeurMm: number, hauteurMm: number): Promise<{ bords: Bords; marge: Bords } | null> {
+async function rendreEtMesurer(abs: string, numero: number, largeurMm: number, hauteurMm: number): Promise<{ bords: Bords; marge: Bords; unis: { haut: boolean; bas: boolean; gauche: boolean; droite: boolean } } | null> {
   const px = Math.max(60, Math.min(900, Math.round(largeurMm * 2)));
   const temp = path.join(os.tmpdir(), `evocom-imposition-${process.pid}-${Date.now()}-${numero}`);
   try {
-    await exec('pdftoppm', ['-f', String(numero), '-l', String(numero), '-scale-to-x', String(px), '-scale-to-y', '-1', '-gray', '-png', '-singlefile', abs, temp], { timeout: 60000, maxBuffer: 1024 * 1024 });
+    await exec('pdftoppm', ['-f', String(numero), '-l', String(numero), '-scale-to-x', String(px), '-scale-to-y', '-1', '-png', '-singlefile', abs, temp], { timeout: 60000, maxBuffer: 1024 * 1024 });
     const sharp = (await import('sharp')).default;
+    const { data: rgb, info: infoRgb } = await sharp(`${temp}.png`).flatten({ background: '#ffffff' }).removeAlpha().raw().toBuffer({ resolveWithObject: true });
     const { data, info } = await sharp(`${temp}.png`).flatten({ background: '#ffffff' }).grayscale().raw().toBuffer({ resolveWithObject: true });
     const w = info.width;
     const h = info.height;
+    // Uniformité d'une bande : écart-type des trois couches de couleur et variation le long du bord.
+    const uni = (x0: number, y0: number, x1: number, y1: number) => {
+      const c = infoRgb.channels;
+      let n = 0;
+      const somme: [number, number, number] = [0, 0, 0];
+      const carres: [number, number, number] = [0, 0, 0];
+      for (let y = y0; y < y1; y++) {
+        for (let x = x0; x < x1; x++) {
+          const i = (y * infoRgb.width + x) * c;
+          for (let k = 0 as 0 | 1 | 2; k < 3; k = (k + 1) as 0 | 1 | 2) {
+            const v = rgb[i + k]!;
+            somme[k] += v;
+            carres[k] += v * v;
+          }
+          n++;
+        }
+      }
+      if (!n) return true;
+      const ecart = Math.max(...[0, 1, 2].map((k) => Math.sqrt(Math.max(0, carres[k]! / n - (somme[k]! / n) ** 2))));
+      return ecart < 9; // ~3,5 % : aplat ou dégradé très doux
+    };
     const pxParMm = w / largeurMm;
     const bande = Math.max(1, Math.round(1.5 * pxParMm));
     const sombre = (x: number, y: number) => data[y * w + x]! < 235;
@@ -103,8 +127,10 @@ async function rendreEtMesurer(abs: string, numero: number, largeurMm: number, h
     let gauche = 0; while (gauche < w / 2 && colonneVide(gauche)) gauche++;
     let droite = 0; while (droite < w / 2 && colonneVide(w - 1 - droite)) droite++;
     const marge: Bords = { haut: arrondi(haut / pxParMm), bas: arrondi(bas / pxParMm), gauche: arrondi(gauche / pxParMm), droite: arrondi(droite / pxParMm) };
+    const b2 = Math.max(2, Math.round(2 * pxParMm));
+    const unis = { haut: uni(0, 0, w, b2), bas: uni(0, h - b2, w, h), gauche: uni(0, 0, b2, h), droite: uni(w - b2, 0, w, h) };
     void hauteurMm;
-    return { bords, marge };
+    return { bords, marge, unis };
   } catch {
     return null;
   } finally {
@@ -122,6 +148,10 @@ export async function chargerPdf(octets: Uint8Array): Promise<PDFDocument> {
 export async function analyserPdf(abs: string): Promise<AnalysePdf> {
   const octets = await fs.promises.readFile(abs);
   const doc = await chargerPdf(octets);
+  return analyserDocument(abs, doc);
+}
+
+async function analyserDocument(abs: string, doc: PDFDocument): Promise<AnalysePdf> {
   const pages = doc.getPages();
   const avertissements: string[] = [];
   const rendu = await popplerPresent();
@@ -151,15 +181,17 @@ export async function analyserPdf(abs: string): Promise<AnalysePdf> {
     }
     let bords: Bords | null = null;
     let marge: Bords | null = null;
+    let unis: PageAnalysee['bords_unis'] = null;
     if (rendu && aRendre.has(i)) {
       const r = await rendreEtMesurer(abs, i + 1, largeur, hauteur);
       if (r) {
         bords = { haut: arrondi(r.bords.haut, 3), bas: arrondi(r.bords.bas, 3), gauche: arrondi(r.bords.gauche, 3), droite: arrondi(r.bords.droite, 3) };
         marge = r.marge;
+        unis = r.unis;
       }
     }
     const jusquAuBord = bords ? Object.values(bords).some((v) => v > 0.04) : null;
-    analysees.push({ numero: i + 1, largeur, hauteur, rotation, trim: trimMm, fonds_perdus_declares: fondsDeclares, format, bords, marge_blanche: marge, jusqu_au_bord: jusquAuBord });
+    analysees.push({ numero: i + 1, largeur, hauteur, rotation, trim: trimMm, fonds_perdus_declares: fondsDeclares, format, bords, marge_blanche: marge, bords_unis: unis, jusqu_au_bord: jusquAuBord });
   }
 
   const p0 = analysees[0]!;

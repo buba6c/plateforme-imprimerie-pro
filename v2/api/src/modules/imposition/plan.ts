@@ -11,7 +11,7 @@ import { FEUILLES, FONDS_PERDUS_STANDARD, type Dimension, type Feuille } from '.
 
 export type Operation = 'poses' | 'livret' | 'fonds_perdus' | 'assembler';
 export type ModePoses = 'repetition' | 'sequence' | 'coupe_empile';
-export type MethodeFondsPerdus = 'source' | 'miroir' | 'etirer' | 'blanc';
+export type MethodeFondsPerdus = 'source' | 'intelligent' | 'prolonger' | 'miroir' | 'etirer' | 'blanc';
 export type Retournement = 'bord_long' | 'bord_court';
 export type Orientation = 'auto' | 'portrait' | 'paysage';
 export type Ajustement = 'centrer' | 'adapter' | 'remplir';
@@ -55,6 +55,14 @@ export interface ParamsImposition {
   blanches: 'fin' | 'avant_derniere';
   /** Appariement recto/verso des pages du document assemblé (posé par le serveur), sinon pages alternées. */
   paires?: { recto: number; verso: number | null }[] | null;
+  /** Livret : piqûre à cheval (un seul cahier) ou dos carré collé (cahiers empilés). */
+  reliure?: 'piqure' | 'dos_carre';
+  /** Livret dos carré : feuilles par cahier (4 feuilles = 16 pages). */
+  cahier_feuilles?: number;
+  /** Livret : couverture (pages 1, 2, avant-dernière, dernière) sur une feuille à part (autre papier). */
+  couverture_separee?: boolean;
+  /** Livret : sens de lecture (droite à gauche pour l'arabe). */
+  lecture?: 'gauche_droite' | 'droite_gauche';
 }
 
 export interface Pose {
@@ -79,12 +87,16 @@ export interface Face {
   poses: Pose[];
   /** Traits de pli (livret), en x (mm). */
   plis: number[];
+  /** Repères de dos (dos carré) : petits rectangles pleins sur le pli, décalés d'un cahier à l'autre. */
+  marques?: { x: number; y: number; largeur: number; hauteur: number }[];
 }
 
 export interface FeuillePlan {
   numero: number;
   recto: Face;
   verso: Face | null;
+  /** Livret : « Couverture », « Cahier 2 · feuille 1 »… */
+  libelle?: string;
 }
 
 export interface Plan {
@@ -262,7 +274,15 @@ export function planPoses(p: ParamsImposition, nbPages: number): Plan {
   };
 }
 
-/** Plan « livret » (piqûre à cheval) : 2 pages par face, feuille choisie, ordre recalculé. */
+/**
+ * Plan « livret ». Deux pages par face, pliées au milieu.
+ *  - piqûre à cheval : un seul cahier, les feuilles s'emboîtent ; chasse répartie de l'extérieur vers l'intérieur ;
+ *  - dos carré collé : cahiers de N feuilles empilés, chacun imposé comme un petit livret, repères de dos
+ *    décalés pour vérifier l'ordre des cahiers ;
+ *  - couverture séparée : pages 1, 2, avant-dernière et dernière sur une feuille à part (papier plus épais) ;
+ *  - lecture de droite à gauche : pages miroir sur chaque face (livres en arabe).
+ * Pages blanches ajoutées pour atteindre un multiple de 4.
+ */
 export function planLivret(p: ParamsImposition, nbPagesTotal: number): Plan {
   const avertissements: string[] = [];
   // Avec des pièces recto/verso appariées, le livret suit l'ordre recto1, verso1, recto2, verso2…
@@ -270,8 +290,6 @@ export function planLivret(p: ParamsImposition, nbPagesTotal: number): Plan {
   const nbPages = ordrePages ? ordrePages.length : nbPagesTotal;
   const base = dimensionFeuille(p);
   const fini = p.fini;
-  // La feuille se met dans le sens où deux pages côte à côte tiennent (A5 × 2 = A4 : aucune marge exigée ;
-  // les fonds perdus sont réduits à ce qui reste si la feuille est juste).
   const tient = (f: Dimension) => f.largeur + 0.5 >= 2 * fini.largeur && f.hauteur + 0.5 >= fini.hauteur;
   const portrait = base;
   const paysage = { largeur: base.hauteur, hauteur: base.largeur };
@@ -291,48 +309,73 @@ export function planLivret(p: ParamsImposition, nbPagesTotal: number): Plan {
       : `La feuille a exactement la taille de deux pages : aucun fond perdu ni trait de coupe possible. Pour en avoir, prenez une feuille plus grande (SRA4 pour un A5, SRA3 pour un A4).`);
   }
 
-  let total = nbPages;
-  const reste = total % 4;
-  const blanches = reste === 0 ? 0 : 4 - reste;
-  total += blanches;
-  if (blanches) avertissements.push(`${blanches} page${blanches > 1 ? 's' : ''} blanche${blanches > 1 ? 's' : ''} ajoutée${blanches > 1 ? 's' : ''} pour obtenir un multiple de 4 (${total} pages).`);
-  // Ordre logique des pages du livret (1-based), avec les blanches à la fin ou avant la dernière page.
-  const ordre: (number | null)[] = ordrePages ? [...ordrePages] : Array.from({ length: nbPages }, (_, i) => i + 1);
-  if (p.blanches === 'avant_derniere' && nbPages >= 1) ordre.splice(nbPages - 1, 0, ...Array(blanches).fill(null));
-  else ordre.push(...Array(blanches).fill(null));
+  const pages: (number | null)[] = ordrePages ? [...ordrePages] : Array.from({ length: nbPages }, (_, i) => i + 1);
+  const dosCarre = p.reliure === 'dos_carre';
+  const feuillesParCahier = dosCarre ? Math.min(16, Math.max(1, Math.round(p.cahier_feuilles ?? 4))) : Infinity;
+  const couvSeparee = !!p.couverture_separee && nbPages >= 4;
 
-  const nbFeuilles = total / 4;
+  let couverture: (number | null)[] | null = null;
+  let interieur = pages;
+  if (couvSeparee) {
+    couverture = [pages[0]!, pages[1]!, pages[pages.length - 2]!, pages[pages.length - 1]!];
+    interieur = pages.slice(2, pages.length - 2);
+  }
+  const reste = interieur.length % 4;
+  const blanches = reste === 0 ? 0 : 4 - reste;
+  if (blanches) {
+    if (p.blanches === 'avant_derniere' && !couvSeparee && interieur.length >= 1) interieur = [...interieur.slice(0, -1), ...Array(blanches).fill(null), interieur[interieur.length - 1]!];
+    else interieur = [...interieur, ...Array(blanches).fill(null)];
+    avertissements.push(`${blanches} page${blanches > 1 ? 's' : ''} blanche${blanches > 1 ? 's' : ''} ajoutée${blanches > 1 ? 's' : ''} pour obtenir un multiple de 4 (${interieur.length + (couverture ? 4 : 0)} pages).`);
+  }
+
+  const cahiers: (number | null)[][] = [];
+  const pagesParCahier = Number.isFinite(feuillesParCahier) ? feuillesParCahier * 4 : Math.max(4, interieur.length);
+  for (let i = 0; i < interieur.length; i += pagesParCahier) cahiers.push(interieur.slice(i, i + pagesParCahier));
+
   const x0 = arr((feuille.largeur - 2 * fini.largeur) / 2);
   const y0 = arr((feuille.hauteur - fini.hauteur) / 2);
   const chasseTotale = Math.max(0, p.chasse_mm ?? 0);
+  const droiteGauche = p.lecture === 'droite_gauche';
+  const pli = arr(feuille.largeur / 2);
   const feuilles: FeuillePlan[] = [];
-  for (let s = 0; s < nbFeuilles; s++) {
-    // Feuille s (0-based) : recto = [dernière - 2s | première + 2s], verso = [première + 2s + 1 | dernière - 2s - 1].
-    const g1 = total - 1 - 2 * s;
-    const d1 = 2 * s;
-    const g2 = 2 * s + 1;
-    const d2 = total - 2 - 2 * s;
-    // Chasse : le cahier extérieur (s = 0) ne bouge pas, les intérieurs s'écartent vers l'extérieur.
-    const dec = nbFeuilles > 1 ? arr((chasseTotale * s) / (nbFeuilles - 1)) : 0;
-    const pose = (logique: number, gauche: boolean, rang: number): Pose => ({
-      page: ordre[logique] ?? null,
+
+  const face = (cote: 'recto' | 'verso', gauche: number | null, droite: number | null, dec: number, marques?: Face['marques']): Face => {
+    const [g, d] = droiteGauche ? [droite, gauche] : [gauche, droite];
+    const pose = (page: number | null, aGauche: boolean): Pose => ({
+      page,
       numero: null,
-      x: arr(gauche ? x0 - dec : x0 + fini.largeur + dec),
+      x: arr(aGauche ? x0 - dec : x0 + fini.largeur + dec),
       y: y0,
       largeur: fini.largeur,
       hauteur: fini.hauteur,
-      decalage_x: gauche ? -dec : dec,
-      rang,
-      colonne: gauche ? 0 : 1,
+      decalage_x: aGauche ? -dec : dec,
+      rang: 0,
+      colonne: aGauche ? 0 : 1,
     });
-    const pli = arr(feuille.largeur / 2);
-    feuilles.push({
-      numero: s + 1,
-      recto: { cote: 'recto', poses: [pose(g1, true, 0), pose(d1, false, 0)], plis: [pli] },
-      verso: { cote: 'verso', poses: [pose(g2, true, 0), pose(d2, false, 0)], plis: [pli] },
-    });
+    return { cote, poses: [pose(g, true), pose(d, false)], plis: [pli], ...(marques ? { marques } : {}) };
+  };
+
+  if (couverture) {
+    feuilles.push({ numero: 1, libelle: 'Couverture', recto: face('recto', couverture[3]!, couverture[0]!, 0), verso: face('verso', couverture[1]!, couverture[2]!, 0) });
   }
+  cahiers.forEach((c, ci) => {
+    const n = c.length;
+    const nbF = n / 4;
+    for (let s2 = 0; s2 < nbF; s2++) {
+      const dec = nbF > 1 ? arr((chasseTotale * s2) / (nbF - 1)) : 0;
+      const crans = Math.max(1, Math.floor((fini.hauteur - 16) / 5));
+      const marques = dosCarre && s2 === 0 ? [{ x: arr(pli - 1.5), y: arr(feuille.hauteur - y0 - 8 - (ci % crans) * 5 - 5), largeur: 3, hauteur: 5 }] : undefined;
+      feuilles.push({
+        numero: feuilles.length + 1,
+        libelle: cahiers.length > 1 || couverture ? `Cahier ${ci + 1} · feuille ${s2 + 1}/${nbF}` : `Feuille ${s2 + 1}/${nbF}`,
+        recto: face('recto', c[n - 1 - 2 * s2] ?? null, c[2 * s2] ?? null, dec, marques),
+        verso: face('verso', c[2 * s2 + 1] ?? null, c[n - 2 - 2 * s2] ?? null, dec),
+      });
+    }
+  });
+  if (dosCarre && cahiers.length > 1) avertissements.push(`Dos carré collé : ${cahiers.length} cahiers de ${feuillesParCahier} feuille${feuillesParCahier > 1 ? 's' : ''} (le dernier peut être plus court). Les repères noirs sur le dos doivent former un escalier une fois les cahiers empilés.`);
   if (p.recto_verso === false) avertissements.push('Un livret est toujours recto-verso : les deux faces de chaque feuille sont générées.');
+  const nbFeuilles = feuilles.length;
   return {
     operation: 'livret',
     feuille,
@@ -422,7 +465,7 @@ export function paramsParDefaut(analyse: { fini: Dimension; fonds_perdus: string
     orientation: 'auto',
     fini: { largeur: analyse.fini.largeur, hauteur: analyse.fini.hauteur },
     fonds_perdus_mm: fpPresents ? analyse.fonds_perdus_mm || FONDS_PERDUS_STANDARD : FONDS_PERDUS_STANDARD,
-    methode_fonds_perdus: fpPresents ? 'source' : 'miroir',
+    methode_fonds_perdus: fpPresents ? 'source' : 'intelligent',
     gouttiere_mm: 0,
     marge_mm: 10,
     traits_de_coupe: true,

@@ -30,6 +30,8 @@ export interface ReglesFichiers {
   taille_max_mo: number;
   /** Extensions acceptées, en minuscules et sans point ; liste vide = toutes. */
   extensions: string[];
+  /** Traitement automatique des PDF déposés (réparation, optimisation pour l'impression). Activé par défaut. */
+  traitement_auto: boolean;
 }
 
 /** Devis et factures (modules devis et pdf). */
@@ -100,7 +102,7 @@ export const PARAMETRES_DEFAUT: Parametres = {
     blocage_minutes: 15,
     mdp_longueur_min: 8,
   },
-  fichiers: { taille_max_mo: plafondsServeur().taille_max_mo, extensions: [] },
+  fichiers: { taille_max_mo: plafondsServeur().taille_max_mo, extensions: [], traitement_auto: true },
   documents: { devis_validite_jours: 15, mentions_devis: '', conditions_paiement: '' },
   notifications: Object.fromEntries(TYPES_NOTIFICATION.map((t) => [t, true])) as ReglesNotifications,
 };
@@ -122,7 +124,7 @@ export async function getParametres(db?: Db): Promise<Parametres> {
     fuseau: String(map.fuseau ?? d.fuseau),
     securite: { ...d.securite, ...objet(map.securite) },
     // Le plafond du serveur l'emporte s'il a été abaissé après l'enregistrement du réglage.
-    fichiers: { taille_max_mo: Math.min(Number(fichiers.taille_max_mo), plafondsServeur().taille_max_mo), extensions: Array.isArray(fichiers.extensions) ? fichiers.extensions : [] },
+    fichiers: { taille_max_mo: Math.min(Number(fichiers.taille_max_mo), plafondsServeur().taille_max_mo), extensions: Array.isArray(fichiers.extensions) ? fichiers.extensions : [], traitement_auto: fichiers.traitement_auto !== false },
     documents: { ...d.documents, ...objet(map.documents) },
     notifications: { ...d.notifications, ...objet(map.notifications) } as ReglesNotifications,
   };

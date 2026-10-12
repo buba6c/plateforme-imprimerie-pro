@@ -19,7 +19,7 @@ export function fondsAuto(a: AnalysePdf): Pick<ParamsImposition, 'fonds_perdus_m
   if (a.fonds_perdus !== 'absents') return { fonds_perdus_mm: a.fonds_perdus_mm || 3, methode_fonds_perdus: 'source' };
   const touche = a.pages.some((p) => p.jusqu_au_bord === true);
   const inconnu = a.pages.every((p) => p.jusqu_au_bord === null);
-  return touche || inconnu ? { fonds_perdus_mm: 3, methode_fonds_perdus: 'miroir' } : { fonds_perdus_mm: 3, methode_fonds_perdus: 'blanc' };
+  return touche || inconnu ? { fonds_perdus_mm: 3, methode_fonds_perdus: 'intelligent' } : { fonds_perdus_mm: 3, methode_fonds_perdus: 'blanc' };
 }
 
 /** Livret : la plus petite feuille qui loge deux pages côte à côte avec fonds perdus et traits (A5 → SRA4, A4 → SRA3). */
@@ -47,10 +47,27 @@ export function reglagesPour(op: Operation, r: ReponseAnalyse, courant: ParamsIm
   const famille = a.format?.famille;
   const base: ParamsImposition = { ...courant, operation: op, fini, ...fonds, orientation: 'auto', gouttiere_mm: 0, traits_de_coupe: true };
   if (op === 'livret') {
-    return { ...base, feuille: feuilleLivret(fini, fonds.fonds_perdus_mm), recto_verso: true, mode: 'sequence', marge_mm: 5, blanches: a.nb_pages % 4 === 0 ? 'fin' : 'avant_derniere', chasse_mm: a.nb_pages > 40 ? Math.round((a.nb_pages / 4) * 0.1 * 10) / 10 : 0, numerotation: null };
+    // Brochure : piqûre jusqu'à 64 pages (au-delà, le dos ne ferme plus), sinon dos carré collé en
+    // cahiers de 4 feuilles. Chasse seulement en piqûre (≈ 0,1 mm par feuille au-delà de 40 pages).
+    const nb = r.paires ? r.paires.reduce((t, x) => t + (x.verso !== null ? 2 : 1), 0) : a.nb_pages;
+    const dosCarre = nb > 64;
+    return {
+      ...base,
+      feuille: feuilleLivret(fini, fonds.fonds_perdus_mm),
+      recto_verso: true,
+      mode: 'sequence',
+      marge_mm: 5,
+      reliure: dosCarre ? 'dos_carre' : 'piqure',
+      cahier_feuilles: 4,
+      couverture_separee: courant.couverture_separee ?? false,
+      lecture: courant.lecture ?? 'gauche_droite',
+      blanches: nb % 4 === 0 ? 'fin' : 'avant_derniere',
+      chasse_mm: !dosCarre && nb > 40 ? Math.round((nb / 4) * 0.1 * 10) / 10 : 0,
+      numerotation: null,
+    };
   }
   if (op === 'fonds_perdus') {
-    return { ...base, methode_fonds_perdus: fonds.methode_fonds_perdus === 'blanc' ? 'miroir' : fonds.methode_fonds_perdus, recto_verso: false, numerotation: null };
+    return { ...base, methode_fonds_perdus: fonds.methode_fonds_perdus === 'blanc' ? 'intelligent' : fonds.methode_fonds_perdus, recto_verso: false, numerotation: null };
   }
   if (op === 'assembler') {
     return { ...base, recto_verso: false, numerotation: null };
@@ -73,10 +90,51 @@ export function reglagesPour(op: Operation, r: ReponseAnalyse, courant: ParamsIm
 /** Explication courte de ce que le réglage automatique a choisi. */
 export function resumeAuto(p: ParamsImposition): string {
   const feuille = p.feuille === 'personnalisee' ? 'feuille personnalisée' : p.feuille.toUpperCase().replace('_PLUS', '+').replace('BANNIERE_330', 'bannière 330 × 660');
-  const fonds = p.methode_fonds_perdus === 'source' ? `fonds perdus du fichier (${p.fonds_perdus_mm} mm)` : p.methode_fonds_perdus === 'miroir' ? `fonds perdus générés en miroir (${p.fonds_perdus_mm} mm)` : p.methode_fonds_perdus === 'etirer' ? 'fonds perdus par étirement' : 'sans fonds perdus (marge blanche)';
-  if (p.operation === 'livret') return `Livret sur ${feuille}, recto-verso, ${fonds}.`;
+  const fonds = p.methode_fonds_perdus === 'source' ? `fonds perdus du fichier (${p.fonds_perdus_mm} mm)` : p.methode_fonds_perdus === 'intelligent' ? `fonds perdus générés bord par bord (${p.fonds_perdus_mm} mm)` : p.methode_fonds_perdus === 'prolonger' ? `bords prolongés (${p.fonds_perdus_mm} mm)` : p.methode_fonds_perdus === 'miroir' ? `fonds perdus en miroir (${p.fonds_perdus_mm} mm)` : p.methode_fonds_perdus === 'etirer' ? 'fonds perdus par étirement' : 'sans fonds perdus (marge blanche)';
+  if (p.operation === 'livret') return `Livret ${p.reliure === 'dos_carre' ? `dos carré collé (cahiers de ${p.cahier_feuilles ?? 4} feuilles)` : 'piqûre à cheval'} sur ${feuille}${p.couverture_separee ? ', couverture à part' : ''}${p.lecture === 'droite_gauche' ? ', lecture de droite à gauche' : ''}, ${fonds}.`;
   if (p.operation === 'fonds_perdus') return `Une page par page, ${fonds}, traits de coupe.`;
   if (p.operation === 'assembler') return 'Pièces réunies dans l’ordre, pages inchangées.';
   const mode = p.mode === 'repetition' ? 'même visuel sur toutes les poses' : p.mode === 'sequence' ? 'visuels à la suite' : 'coupe & empile';
   return `${feuille}, ${mode}${p.recto_verso ? ', recto-verso' : ''}, ${fonds}${p.numerotation ? ', numérotation' : ''}.`;
+}
+
+const RECTO_RE = /(^|[^a-z])(recto|face|avant|front|devant|r)([^a-z]|$)|(^|[^0-9])1([^0-9]|$)/i;
+const VERSO_RE = /(^|[^a-z])(verso|dos|arriere|arrière|back|derriere|derrière|v)([^a-z]|$)|(^|[^0-9])2([^0-9]|$)/i;
+
+/**
+ * Rôles déduits des fichiers : deux fichiers d'une page de même format = un recto et un verso
+ * (d'après leur nom s'il le dit, sinon dans l'ordre). Les rôles choisis à la main ne sont jamais touchés.
+ */
+export function rolesAuto<T extends { cle: string; nom: string; role: 'recto' | 'verso' | 'pages'; roleAuto?: boolean; genre: 'pdf' | 'image' }>(
+  pieces: T[],
+  pagesDe: (p: T) => { pages: number; largeur: number | null; hauteur: number | null } | undefined,
+): T[] | null {
+  const libres = pieces.filter((p) => p.role === 'pages' || p.roleAuto);
+  if (libres.length !== pieces.length || pieces.length !== 2) {
+    // Plus de deux fichiers : on n'appaire que si les noms le disent clairement.
+    if (pieces.length > 2 && pieces.every((p) => p.role === 'pages' || p.roleAuto)) {
+      const nom = (p: T) => p.nom.replace(/\.[a-z0-9]+$/i, '');
+      const rectos = pieces.filter((p) => /recto|face|front|avant/i.test(nom(p)));
+      const versos = pieces.filter((p) => /verso|dos|back|arri/i.test(nom(p)));
+      if (rectos.length && rectos.length === versos.length && rectos.length + versos.length === pieces.length) {
+        return pieces.map((p) => ({ ...p, role: rectos.includes(p) ? 'recto' : 'verso', roleAuto: true }));
+      }
+    }
+    return null;
+  }
+  const [a, b] = pieces as [T, T];
+  const ia = pagesDe(a);
+  const ib = pagesDe(b);
+  if (!ia || !ib || ia.pages !== 1 || ib.pages !== 1) return null;
+  if (ia.largeur && ib.largeur && ia.hauteur && ib.hauteur) {
+    const meme = (Math.abs(ia.largeur - ib.largeur) < 2 && Math.abs(ia.hauteur - ib.hauteur) < 2) || (Math.abs(ia.largeur - ib.hauteur) < 2 && Math.abs(ia.hauteur - ib.largeur) < 2);
+    if (!meme) return null;
+  }
+  const na = a.nom.replace(/\.[a-z0-9]+$/i, '');
+  const nb = b.nom.replace(/\.[a-z0-9]+$/i, '');
+  const aVerso = VERSO_RE.test(na) && !RECTO_RE.test(na);
+  const bRecto = RECTO_RE.test(nb) && !VERSO_RE.test(nb);
+  const [recto, verso] = aVerso || bRecto ? [b, a] : [a, b];
+  if (recto.role === 'recto' && verso.role === 'verso') return null;
+  return pieces.map((p) => ({ ...p, role: p === recto ? 'recto' : 'verso', roleAuto: true }));
 }

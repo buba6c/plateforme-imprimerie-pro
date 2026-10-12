@@ -2,6 +2,7 @@
 // Les fichiers ne sont jamais servis en accès libre : chaque lecture passe par la
 // vérification des droits sur le dossier.
 
+import { planifierTraitement } from '../traitement/file';
 import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -139,6 +140,7 @@ export function mountUploads(app: Express, config: Config) {
         throw err;
       });
       signalDossier({ ...row.d, ancien_statut: row.d.statut });
+      planifierTraitement(row.fichierId);
       return { status_code: 204, headers: { 'X-Fichier-Id': String(row.fichierId) } };
     },
     async onResponseError(_req, err) {
@@ -161,8 +163,8 @@ export function fichiersRouter(config: Config) {
 
   async function fichierAccessible(user: AuthUser, id: number) {
     if (!peutVoirFichiers(user)) throw forbidden("Votre rôle n'a pas accès aux fichiers d'impression.");
-    const f = await one<{ id: number; dossier_id: number; nom_original: string; chemin: string; mime: string | null; taille: number }>(
-      `SELECT id, dossier_id, nom_original, chemin, mime, taille FROM fichiers WHERE id = $1 AND deleted_at IS NULL`,
+    const f = await one<{ id: number; dossier_id: number; nom_original: string; chemin: string; chemin_traite: string | null; mime: string | null; taille: number }>(
+      `SELECT id, dossier_id, nom_original, chemin, chemin_traite, mime, taille FROM fichiers WHERE id = $1 AND deleted_at IS NULL`,
       [id],
     );
     if (!f) throw notFound('Fichier introuvable.');
@@ -170,9 +172,13 @@ export function fichiersRouter(config: Config) {
     return { f, d };
   }
 
+  // Contenu : la version traitée (réparée, optimisée pour l'impression) si elle existe, sinon l'original.
+  // ?version=originale force le fichier tel que déposé.
   router.get('/:id/contenu', async (req, res) => {
     const { f } = await fichierAccessible(me(req), intParam(req));
-    const abs = path.resolve(config.storageDir, f.chemin);
+    const traite = req.query.version !== 'originale' && (f as { chemin_traite?: string | null }).chemin_traite ? (f as { chemin_traite: string }).chemin_traite : null;
+    const absTraite = traite ? path.resolve(config.storageDir, traite) : null;
+    const abs = absTraite && absTraite.startsWith(path.resolve(config.storageDir) + path.sep) && fs.existsSync(absTraite) ? absTraite : path.resolve(config.storageDir, f.chemin);
     if (!abs.startsWith(path.resolve(config.storageDir) + path.sep) || !fs.existsSync(abs)) {
       throw notFound('Le fichier est enregistré mais introuvable sur le disque. Prévenez l\'administrateur.');
     }

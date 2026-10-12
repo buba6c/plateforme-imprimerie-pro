@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { formatEntier } from '@evocom/shared';
-import { Card, TextField } from '../../../ui';
+import { Card, Checkbox, TextField } from '../../../ui';
 import { useRegles } from '../api';
 import { entier, SectionForm, useBrouillon, useSignalerModifie, type SectionProps } from '../form';
 
@@ -18,7 +18,7 @@ export function SectionFichiers({ p, onModifie }: SectionProps) {
   const regles = useRegles();
   const plafond = regles.data?.fichiers.plafond_serveur_mo;
   const { f, setF, modifie, annuler } = useBrouillon(
-    () => ({ taille_max_mo: String(p.fichiers.taille_max_mo), extensions: p.fichiers.extensions.join(', ') }),
+    () => ({ taille_max_mo: String(p.fichiers.taille_max_mo), extensions: p.fichiers.extensions.join(', '), traitement_auto: p.fichiers.traitement_auto !== false }),
     [p.fichiers],
   );
   const [erreurs, setErreurs] = useState<Record<string, string>>({});
@@ -32,7 +32,7 @@ export function SectionFichiers({ p, onModifie }: SectionProps) {
     if (ext.invalides.length) e['fichiers.extensions'] = `Extension invalide : ${ext.invalides.join(', ')}. Lettres et chiffres uniquement, 10 au plus.`;
     else if (ext.liste.length > 60) e['fichiers.extensions'] = '60 extensions au maximum.';
     if (Object.keys(e).length) return { erreurs: e };
-    return { body: { fichiers: { taille_max_mo: taille as number, extensions: ext.liste } } };
+    return { body: { fichiers: { taille_max_mo: taille as number, extensions: ext.liste, traitement_auto: f.traitement_auto } } };
   };
 
   const erreurExtensions = erreurs['fichiers.extensions'] ?? Object.entries(erreurs).find(([k]) => k.startsWith('fichiers.extensions.'))?.[1];
@@ -73,6 +73,20 @@ export function SectionFichiers({ p, onModifie }: SectionProps) {
             {ext.liste.length ? `Seuls les fichiers ${ext.liste.map((x) => `.${x}`).join(', ')} sont acceptés` : 'Tous les types de fichiers sont acceptés'}
             {nombreOuRien(f.taille_max_mo) ? `, jusqu’à ${formatEntier(nombreOuRien(f.taille_max_mo)!)} Mo chacun.` : '.'}
           </div>
+        </div>
+      </Card>
+      <Card title="Traitement automatique des PDF">
+        <div className="stack">
+          <Checkbox
+            label="Réparer et optimiser automatiquement chaque PDF déposé"
+            checked={f.traitement_auto}
+            onChange={(traitement_auto) => setF({ ...f, traitement_auto })}
+          />
+          <p className="adm-explain">
+            Activé, chaque PDF déposé dans un dossier (et chaque PDF imposé) est contrôlé en arrière-plan : réparé s’il est abîmé, polices incorporées, images
+            gardées à 300 ppp au moins, fichier allégé sans perte visible. L’original est toujours conservé ; l’imprimeur reçoit la version optimisée. Désactivé,
+            les fichiers sont servis tels qu’ils ont été déposés (les fichiers déjà traités le restent).
+          </p>
         </div>
       </Card>
     </SectionForm>

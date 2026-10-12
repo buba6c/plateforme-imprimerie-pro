@@ -1,7 +1,7 @@
 // Types de l'imposition (miroir de api/src/modules/imposition).
 export type Operation = 'poses' | 'livret' | 'fonds_perdus' | 'assembler';
 export type ModePoses = 'repetition' | 'sequence' | 'coupe_empile';
-export type MethodeFondsPerdus = 'source' | 'miroir' | 'etirer' | 'blanc';
+export type MethodeFondsPerdus = 'source' | 'intelligent' | 'prolonger' | 'miroir' | 'etirer' | 'blanc';
 export type Feuille = 'sra3' | 'a3' | 'a3_plus' | 'sra4' | 'a4' | 'a5' | 'banniere_330' | 'personnalisee';
 
 export interface Dimension {
@@ -37,6 +37,10 @@ export interface ParamsImposition {
   ajustement: 'centrer' | 'adapter' | 'remplir';
   chasse_mm?: number;
   blanches: 'fin' | 'avant_derniere';
+  reliure?: 'piqure' | 'dos_carre';
+  cahier_feuilles?: number;
+  couverture_separee?: boolean;
+  lecture?: 'gauche_droite' | 'droite_gauche';
 }
 
 export interface Pose {
@@ -58,6 +62,7 @@ export interface FeuillePlan {
   numero: number;
   recto: Face;
   verso: Face | null;
+  libelle?: string;
 }
 export interface Plan {
   operation: Operation;
@@ -102,6 +107,7 @@ export interface PageAnalysee {
   format: FormatDetecte | null;
   bords: Bords | null;
   marge_blanche: Bords | null;
+  bords_unis: { haut: boolean; bas: boolean; gauche: boolean; droite: boolean } | null;
   jusqu_au_bord: boolean | null;
 }
 export interface AnalysePdf {
@@ -123,6 +129,8 @@ export type RolePiece = 'recto' | 'verso' | 'pages';
 /** Une pièce du travail : fichier du dossier (fichier_id) ou fichier libre (jeton). */
 export interface Piece {
   cle: string;
+  /** Rôle déduit automatiquement (nom du fichier, paire de deux fichiers) : remplacé dès qu'on le change. */
+  roleAuto?: boolean;
   fichier_id?: number;
   libre?: string;
   role: RolePiece;
@@ -198,6 +206,8 @@ export interface ModeleImposition {
 }
 
 export interface PropositionImposition {
+  depuis_cache?: boolean;
+  jetons?: number;
   params: ParamsImposition;
   plan: Plan | null;
   erreur_plan: string | null;
@@ -225,6 +235,8 @@ export const OPERATION_LABELS: Record<Operation, { titre: string; aide: string }
 
 export const METHODE_LABELS: Record<MethodeFondsPerdus, { label: string; aide: string }> = {
   source: { label: 'Du fichier', aide: 'Les fonds perdus déjà présents dans le fichier (au-delà de la zone finie) sont utilisés.' },
+  intelligent: { label: 'Intelligent', aide: 'Chaque bord est analysé : un aplat ou un dégradé est prolongé, un motif ou une photo est retourné en miroir. Recommandé.' },
+  prolonger: { label: 'Prolonger', aide: 'Le dernier demi-millimètre du visuel est étiré jusqu’au bord : parfait pour les aplats et les dégradés.' },
   miroir: { label: 'Miroir', aide: 'Les bords du visuel sont redessinés en miroir autour de la page : le raccord est invisible après la coupe.' },
   etirer: { label: 'Étirer', aide: 'Le visuel est légèrement agrandi pour couvrir les fonds perdus : on perd quelques millimètres sur les bords.' },
   blanc: { label: 'Blanc', aide: 'Aucun fond perdu : pour un visuel qui a déjà une marge blanche tout autour.' },

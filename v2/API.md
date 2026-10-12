@@ -39,6 +39,21 @@ Montants : entiers en FCFA. Dates : ISO 8601 (`date` = `AAAA-MM-JJ`).
   ajouté au dossier (événement `fichier/imposition`) ou téléchargeable sans dossier. `POST /imposition/ia` : plan
   proposé par l'assistant (type de document, confiance, explication, points de vigilance ; usage `imposition`).
   Modèles : `GET /imposition/modeles` (tous), `POST|PUT|DELETE` (admin).
+- **Traitement des fichiers** (migration 019, outils serveur `ghostscript` et `qpdf`) : chaque PDF déposé (et chaque
+  PDF imposé) passe en arrière-plan par une file : réparation si pdf-lib ne le lit pas (qpdf, sinon Ghostscript),
+  contrôle (polices non incorporées via pdffonts, résolution minimale via pdfimages), optimisation prépresse
+  (Ghostscript pdfwrite /prepress : polices incorporées, images gardées à 300 ppp, réduites seulement au-delà de
+  450 ppp, JPEG conservés), compactage sans perte (qpdf). L'original n'est jamais modifié ; la version traitée
+  (`chemin_traite`) est servie par défaut (`?version=originale` pour l'original) et utilisée par l'imposition.
+  Rapport dans `fichiers.traitement`. Au démarrage, les PDF non traités des dossiers en cours sont repris (200 au plus).
+- **Fonds perdus** : méthodes `intelligent` (par défaut : chaque bord analysé, aplats prolongés, motifs en miroir),
+  `prolonger`, `miroir`, `etirer`, `blanc`, `source`. Avec Poppler, les fonds perdus fabriqués sont rendus en image à
+  300 ppp et étendus par sharp (« copy » ou « mirror ») en anneau autour du visuel vectoriel : aucun liseré blanc.
+  Traits de coupe jamais posés sur une pose voisine (autour du bloc si la gouttière est trop étroite).
+- **Brochures** : `reliure` (piqûre / dos carré collé en cahiers de `cahier_feuilles`, repères de dos en escalier),
+  `couverture_separee`, `lecture` (droite à gauche pour l'arabe), chasse, pages blanches.
+- **Assistant IA et imposition** : appelé automatiquement seulement si l'analyse locale a un doute ; réponses gardées
+  12 h par travail (`depuis_cache`). `GET /imposition/capacites` dit si le serveur sait rendre les aperçus PDF.
 - **Statut « annulé »** (`annule`, colonne `annule_at`, migration 015) : un dossier annulé n'est jamais supprimé ; il
   reste dans les listes (onglet Annulés, admin et préparateur) avec fichiers, paiements et historique. Action `annuler`
   (motif obligatoire, `tone: danger`) : le préparateur sur ses dossiers tant qu'ils ne sont pas à l'atelier

@@ -12,6 +12,7 @@ export interface Securite {
 export interface ReglesFichiers {
   taille_max_mo: number;
   extensions: string[];
+  traitement_auto: boolean;
 }
 
 export interface ReglesDocuments {

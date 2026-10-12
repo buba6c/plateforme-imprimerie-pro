@@ -239,6 +239,7 @@ export default function FicheDossier() {
                     fichiers={d.fichiers}
                     peutMarquer={user.role === 'admin' || imprimeur}
                     peutSupprimer={d.peut_deposer_fichiers}
+                    peutImposer={bureau && d.peut_deposer_fichiers}
                   />
                 ) : !d.peut_deposer_fichiers ? (
                   <p className="ev-muted" style={{ margin: 0 }}>Aucun fichier d’impression.</p>

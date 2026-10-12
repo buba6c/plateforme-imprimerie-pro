@@ -306,7 +306,7 @@ export async function detailDossier(user: AuthUser, id: number) {
   const row = await chargerDossier(user, id);
   const fichiers = peutVoirFichiers(user)
     ? await query(
-        `SELECT f.id, f.nom_original, f.mime, f.taille, f.a_reimprimer, f.created_at, u.nom AS uploaded_by_nom
+        `SELECT f.id, f.nom_original, f.mime, f.taille, f.a_reimprimer, f.created_at, u.nom AS uploaded_by_nom, f.taille_traitee, f.traitement
          FROM fichiers f LEFT JOIN users u ON u.id = f.uploaded_by
          WHERE f.dossier_id = $1 AND f.deleted_at IS NULL ORDER BY f.created_at`,
         [id],

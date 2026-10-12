@@ -13,6 +13,7 @@ import path from 'node:path';
 import { PDFDocument } from 'pdf-lib';
 import { genreApercu } from '../fichiers/apercu';
 import { chargerPdf } from './analyse';
+import { reparer } from '../traitement/pdf';
 import { pt, type Dimension } from './formats';
 
 export type RolePiece = 'recto' | 'verso' | 'pages';
@@ -127,7 +128,17 @@ export async function assembler(pieces: PieceEntree[], fichiers: FichierPiece[],
     if (!f) throw new Error(`Fichier ${p.fichier_id} introuvable.`);
     const genre = genreApercu(f);
     if (genre === 'pdf') {
-      const src = await chargerPdf(await fs.promises.readFile(f.abs));
+      let src;
+      try {
+        src = await chargerPdf(await fs.promises.readFile(f.abs));
+      } catch (e) {
+        // PDF abîmé (références invalides…) : réparé avec qpdf ou Ghostscript, puis relu.
+        const repare = path.join(dossierTemp, `repare-${f.id}-${Date.now()}.pdf`);
+        await fs.promises.mkdir(dossierTemp, { recursive: true });
+        const r = await reparer(f.abs, repare);
+        if (!r) throw new Error(`« ${f.nom_original} » est illisible et n’a pas pu être réparé (${e instanceof Error ? e.message.slice(0, 80) : 'erreur'}). Demandez au client un nouvel export PDF.`);
+        src = await chargerPdf(await fs.promises.readFile(r.chemin));
+      }
       const total = src.getPageCount();
       const voulues = (p.pages?.length ? p.pages : Array.from({ length: total }, (_, i) => i + 1)).filter((n) => n >= 1 && n <= total);
       if (!voulues.length) throw new Error(`« ${f.nom_original} » : aucune page valide demandée.`);

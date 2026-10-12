@@ -15,8 +15,20 @@ const urlApercu = (s: SourcePage, largeur: number) =>
 const urlContenu = (s: SourcePage) => (s.libre ? `/api/imposition/libre/${s.libre}/contenu` : `/api/fichiers/${s.fichier_id}/contenu`);
 const cleSource = (s: SourcePage) => (s.libre ? `l:${s.libre}` : `f:${s.fichier_id}`);
 
-/** Le serveur sait-il rendre les PDF ? Mémorisé après la première réponse 501. */
+/** Le serveur sait-il rendre les PDF ? Demandé une fois (/imposition/capacites), puis mémorisé. */
 let serveurSansPoppler = false;
+let capacites: Promise<void> | null = null;
+function verifierCapacites(): Promise<void> {
+  if (!capacites) {
+    capacites = fetch('/api/imposition/capacites', { credentials: 'same-origin' })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((c: { apercus_pdf?: boolean } | null) => {
+        if (c && c.apercus_pdf === false) serveurSansPoppler = true;
+      })
+      .catch(() => {});
+  }
+  return capacites;
+}
 
 const images = new Map<string, Promise<string>>();
 const documents = new Map<string, Promise<any>>();
@@ -84,6 +96,7 @@ export function apercuPage(s: SourcePage, largeur: number): Promise<string> {
           return urlContenu(s); // l'image d'origine, affichée telle quelle
         }
       }
+      await verifierCapacites();
       if (!serveurSansPoppler) {
         try {
           return await rendreServeur(s, largeur);

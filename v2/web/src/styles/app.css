@@ -112,3 +112,14 @@ button { font: inherit; }
 .palette-apercu__bouton { display: block; height: 8px; width: 60%; border-radius: 3px; }
 .couleur-pastille { width: var(--control-md); height: var(--control-md); flex: none; padding: 2px; border: 1px solid var(--line-strong); border-radius: var(--radius-md); background: var(--surface); cursor: pointer; }
 .couleur-bandeau { padding: var(--space-3) var(--space-4); border-radius: var(--radius-md); font-weight: 600; }
+
+/* Garde-fou contre la page blanche */
+.garde-erreur { display: grid; place-items: center; padding: 40px 16px; }
+.garde-erreur[data-pleine] { min-height: 100vh; background: var(--canvas); }
+.garde-erreur__carte { display: grid; gap: 10px; max-width: 520px; padding: 22px; border-radius: 14px; border: 1px solid var(--line); background: var(--surface); box-shadow: var(--shadow-card); }
+.garde-erreur__titre { font-size: 17px; }
+.garde-erreur__carte p { margin: 0; color: var(--text-muted); font-size: 14px; line-height: 20px; }
+.garde-erreur__detail { display: block; padding: 8px 10px; border-radius: 8px; background: var(--surface-sunken); font-size: 12px; overflow-wrap: anywhere; }
+.garde-erreur__actions { display: flex; gap: 8px; flex-wrap: wrap; }
+.maj-bandeau { position: fixed; left: 50%; bottom: 76px; z-index: 70; transform: translateX(-50%); display: flex; align-items: center; gap: 10px; padding: 10px 14px; border-radius: 999px; background: var(--ink, #0f1629); color: #fff; font-size: 13px; box-shadow: 0 10px 30px -10px rgb(0 0 0 / 0.5); }
+.maj-bandeau button { border: 0; border-radius: 999px; padding: 6px 12px; background: #fff; color: #0f1629; font: inherit; font-weight: 700; cursor: pointer; }
