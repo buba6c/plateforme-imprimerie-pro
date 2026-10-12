@@ -385,7 +385,7 @@ function Generation({ actif }: { actif: boolean }) {
 function Rattacher({ jeton, onFait }: { jeton: string; onFait: (d: { id: number; numero: string; client_nom: string }) => void }) {
   const toast = useToast();
   const [q, setQ] = useState('');
-  const liste = useDossiers({ q: q.trim() || undefined, limit: 5, tri: 'recent', statut: ['en_cours', 'a_revoir'] });
+  const liste = useDossiers({ q: q.trim() || undefined, limit: 5, tri: 'recent', machine: 'xerox', statut: ['en_cours', 'a_revoir'] });
   const rattacher = useRattacher();
   return (
     <div className="ratt">

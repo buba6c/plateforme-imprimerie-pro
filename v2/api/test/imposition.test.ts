@@ -197,6 +197,15 @@ describe('imposition : routes', () => {
     expect(j.n).toBeGreaterThanOrEqual(3);
   });
 
+  it('refuse les dossiers Roland (grand format, pas d’imposition)', async () => {
+    const roland = await A.prep.post('/api/dossiers').send({ machine: 'roland', client_nom: 'Client Bâche', specs: { lignes: [{ support: 'bache_m2', largeur: 100, hauteur: 100, unite: 'cm', quantite: 1, finitions: [], options: [] }], forfaits: [] } });
+    expect(roland.status).toBe(201);
+    const f = await envoyerFichier(A.prep, roland.body.id, 'bache.pdf', await pdfTest(100, 100, 1));
+    const r = await A.prep.post('/api/imposition/analyser').send({ fichier_id: f.fichierId });
+    expect(r.status).toBe(400);
+    expect(r.body.error).toContain('Xerox');
+  });
+
   it('refuse des réglages invalides et un fichier non PDF', async () => {
     const r = await A.prep.post('/api/imposition/plan').send({ fichier_id: carteId, params: { operation: 'poses', feuille: 'zzz', fini: { largeur: 85, hauteur: 55 } } });
     expect(r.status).toBe(400);

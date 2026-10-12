@@ -26,7 +26,8 @@ function Mini({ id, nom }: { id: number; nom: string }) {
 
 export function DialogueDossier({ dossierId, pieces, onDossier, onAjouter, onClose }: { dossierId: number | null; pieces: Piece[]; onDossier: (id: number) => void; onAjouter: (p: Omit<Piece, 'cle'>) => void; onClose: () => void }) {
   const [q, setQ] = useState('');
-  const liste = useDossiers({ q: q.trim() || undefined, limit: 8, tri: 'recent', statut: ['en_cours', 'a_revoir', 'pret_impression', 'en_impression', 'pret_livraison'] });
+  // Imposition : dossiers Xerox seulement (le grand format Roland ne s'impose pas).
+  const liste = useDossiers({ q: q.trim() || undefined, limit: 8, tri: 'recent', machine: 'xerox', statut: ['en_cours', 'a_revoir', 'pret_impression', 'en_impression', 'pret_livraison'] });
   const dossier = useDossier(dossierId ?? undefined);
   const d = dossier.data;
   const fichiers = (d?.fichiers ?? []).filter((f) => genreDe(f.nom_original, f.mime));

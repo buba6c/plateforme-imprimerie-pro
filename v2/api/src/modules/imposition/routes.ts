@@ -70,7 +70,8 @@ async function fichierVisible(user: AuthUser, fichierId: number): Promise<{ f: F
   if (!peutVoirFichiers(user)) throw new HttpError(403, 'Vous ne pouvez pas accéder aux fichiers.');
   const f = await one<FichierRow>(`SELECT id, dossier_id, nom_original, chemin, chemin_traite, mime, taille, sha256 FROM fichiers WHERE id = $1 AND deleted_at IS NULL AND purge_at IS NULL`, [fichierId]);
   if (!f) throw notFound('Fichier introuvable.');
-  await chargerDossier(user, f.dossier_id); // 404 si le dossier n'est pas visible
+  const d = await chargerDossier(user, f.dossier_id); // 404 si le dossier n'est pas visible
+  if (d.machine !== 'xerox') throw badRequest('L’imposition concerne les dossiers Xerox : les dossiers Roland (grand format) s’impriment tels quels.');
   if (genreApercu(f) === null) throw badRequest(`« ${f.nom_original} » n'est ni un PDF ni une image : il ne peut pas être imposé.`);
   return { f, abs: '' };
 }
@@ -229,6 +230,7 @@ export function impositionRouter(config: Config) {
     const r = z.object({ dossier_id: z.number({ required_error: 'Choisissez un dossier' }).int().positive() }).safeParse(req.body ?? {});
     if (!r.success) throw badRequest('Choisissez un dossier.', { champs: zodDetails(r.error) });
     const d = await chargerDossier(user, r.data.dossier_id);
+    if (d.machine !== 'xerox') throw badRequest('Un PDF imposé se range dans un dossier Xerox.');
     if (!peutDeposer(user, d)) throw new HttpError(403, 'Ce dossier n’accepte plus de nouveaux fichiers (validé, livré ou annulé) : demandez son retour en préparation.');
     const octets = await fs.promises.readFile(l.chemin);
     const id = crypto.randomUUID();

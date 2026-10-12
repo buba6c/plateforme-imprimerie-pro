@@ -224,7 +224,7 @@ export default function FicheDossier() {
               actions={
                 <span className="row" style={{ gap: 8 }}>
                   {d.fichiers.some((f) => f.a_reimprimer) && <span className="fd-card-head-meta">{d.fichiers.filter((f) => f.a_reimprimer).length} à réimprimer</span>}
-                  {bureau && d.fichiers.some((f) => (f.mime ?? '').toLowerCase() === 'application/pdf' || /\.(pdf|ai)$/i.test(f.nom_original)) && (
+                  {bureau && d.machine === 'xerox' && d.fichiers.some((f) => (f.mime ?? '').toLowerCase() === 'application/pdf' || /\.(pdf|ai)$/i.test(f.nom_original)) && (
                     <Link className="ev-btn ev-btn--sm" to={`/imposition?dossier=${d.id}`}>
                       <LayoutGrid aria-hidden="true" /> Imposer / fonds perdus
                     </Link>
@@ -239,7 +239,7 @@ export default function FicheDossier() {
                     fichiers={d.fichiers}
                     peutMarquer={user.role === 'admin' || imprimeur}
                     peutSupprimer={d.peut_deposer_fichiers}
-                    peutImposer={bureau && d.peut_deposer_fichiers}
+                    peutImposer={bureau && d.peut_deposer_fichiers && d.machine === 'xerox'}
                   />
                 ) : !d.peut_deposer_fichiers ? (
                   <p className="ev-muted" style={{ margin: 0 }}>Aucun fichier d’impression.</p>
