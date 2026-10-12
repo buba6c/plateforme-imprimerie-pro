@@ -25,7 +25,11 @@ import { appelerAvecSecours, type TentativeIA } from '../ia/fournisseurs';
 import { accesIA, noterTentativesIA, noterUsageIA } from '../ia/routes';
 import { verifierBudget } from '../ia/garde';
 import { analyserPdf, type AnalysePdf } from './analyse';
-import { planifierTraitement } from '../traitement/file';
+import { planifierTraitement, traiterFichier } from '../traitement/file';
+import { traiterPdf } from '../traitement/pdf';
+
+/** Au-delà, un PDF est allégé (Ghostscript) avant d'être imposé. */
+const LOURD = 80 * 1024 * 1024;
 import { assembler, type Assemblage, type FichierPiece, type PieceEntree } from './sources';
 import { CODES_FEUILLE, FEUILLES, FORMATS_FINIS, type Feuille } from './formats';
 import { genererPdf } from './generer';
@@ -294,11 +298,31 @@ export function impositionRouter(config: Config) {
       if (p.libre) {
         const l = await lireLibre(p.libre, user);
         if (l.genre === 'resultat') throw badRequest('Un résultat d’imposition ne peut pas être réimposé : déposez le fichier d’origine.');
-        fichiers.push({ id: p.fichier_id, libre: p.libre, nom_original: l.nom, mime: l.mime, taille: l.taille, sha256: null, abs: l.chemin });
+        // Fichier libre lourd : version allégée fabriquée une fois, à côté (…-traite.pdf).
+        let abs = l.chemin;
+        if (l.genre === 'pdf' && l.taille > LOURD) {
+          const allege = l.chemin.replace(/\.pdf$/i, '') + '-traite.pdf';
+          if (fs.existsSync(allege)) abs = allege;
+          else {
+            const r = await traiterPdf(l.chemin, allege).catch(() => null);
+            if (r?.chemin) abs = r.chemin;
+          }
+        }
+        fichiers.push({ id: p.fichier_id, libre: p.libre, nom_original: l.nom, mime: l.mime, taille: l.taille, sha256: null, abs });
         continue;
       }
-      const { f } = await fichierVisible(user, p.fichier_id);
+      let { f } = await fichierVisible(user, p.fichier_id);
       if (dossierId === null) dossierId = f.dossier_id;
+      // Fichier lourd pas encore optimisé : traité maintenant (Ghostscript), puis imposé depuis la
+      // version allégée. Un PDF de 800 Mo passe ainsi à ~120 Mo avant d'être lu.
+      if (!f.chemin_traite && f.taille > LOURD && genreApercu(f) === 'pdf') {
+        const deja = await one<{ traitement: unknown }>(`SELECT traitement FROM fichiers WHERE id = $1`, [f.id]);
+        if (!deja?.traitement) {
+          await traiterFichier(f.id).catch(() => null);
+          const relu = await fichierVisible(user, p.fichier_id);
+          f = relu.f;
+        }
+      }
       fichiers.push({ id: f.id, nom_original: f.nom_original, mime: f.mime, taille: f.taille, sha256: f.sha256, abs: resoudre(f) });
     }
     let assemblage: Assemblage;

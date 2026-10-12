@@ -9,6 +9,7 @@ import {
   formatFCFA,
   MODE_PAIEMENT_LABELS,
   MODES_AVEC_REFERENCE,
+  MODES_REFERENCE_OBLIGATOIRE,
   MODES_PAIEMENT,
   parseMontant,
   type ActionId,
@@ -210,7 +211,8 @@ function LivrerDialog({ numero, reste, modePrevu, busy, onClose, onValider }: {
   const [mode, setMode] = useState<ModePaiement>(modePrevu ?? 'especes');
   const [reference, setReference] = useState('');
   const m = parseMontant(montant);
-  const refRequise = MODES_AVEC_REFERENCE.includes(mode);
+  const refProposee = MODES_AVEC_REFERENCE.includes(mode);
+  const refRequise = MODES_REFERENCE_OBLIGATOIRE.includes(mode);
   let erreur: string | null = null;
   if (encaisser) {
     if (m === null || m <= 0) erreur = 'Saisissez un montant entier, sans centimes.';
@@ -250,8 +252,8 @@ function LivrerDialog({ numero, reste, modePrevu, busy, onClose, onValider }: {
         <div className="ev-form-grid">
           <TextField label="Montant encaissé" required mono addon="FCFA" inputMode="numeric" value={montant} onChange={(e) => setMontant(e.target.value)} error={montant ? erreur : null} />
           <ModeChoix value={mode} onChange={setMode} name="mode-paiement-livraison" />
-          {refRequise && (
-            <TextField label="Référence de la transaction" required value={reference} onChange={(e) => setReference(e.target.value)} placeholder="Ex. numéro Wave" mono />
+          {refProposee && (
+            <TextField label={mode === 'cheque' ? 'Numéro du chèque (facultatif)' : 'Référence de la transaction'} required={refRequise} value={reference} onChange={(e) => setReference(e.target.value)} placeholder={mode === 'cheque' ? 'Facultatif' : 'Ex. numéro Wave'} mono />
           )}
         </div>
       )}

@@ -24,6 +24,7 @@ import {
   type Machine,
   type Specs,
   type Statut,
+  MODES_REFERENCE_OBLIGATOIRE,
 } from '@evocom/shared';
 import { getPool, one, query, tx, type Db } from '../../db/pool';
 import { journal } from '../../lib/audit';
@@ -862,7 +863,7 @@ export async function enregistrerPaiement(
   p: { montant: number; mode: string; reference: string | null; notes: string | null },
 ): Promise<number> {
   if (!['admin', 'preparateur', 'livreur'].includes(user.role)) throw forbidden();
-  if (['wave', 'orange_money', 'virement', 'cheque'].includes(p.mode) && !p.reference) {
+  if ((MODES_REFERENCE_OBLIGATOIRE as readonly string[]).includes(p.mode) && !p.reference) {
     throw badRequest('La référence de la transaction est obligatoire pour ce mode de paiement.');
   }
   if (d.montant !== null) {

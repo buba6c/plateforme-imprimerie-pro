@@ -30,7 +30,7 @@ export interface BordsUnis {
 interface SourcePage {
   emb: PDFEmbeddedPage;
   /** Fonds perdus raster (anneau autour du visuel), préparés à la demande par méthode de bords. */
-  bordures?: Map<string, { image: PDFImage; debordPt: number } | null>;
+  bordures?: Map<string, { bandes: { image: PDFImage; x: number; y: number; w: number; h: number }[] } | null>;
   zone?: { x: number; y: number; w: number; h: number; media: { x: number; y: number; width: number; height: number } };
   /** Taille du contenu intégré (pt), avant rotation. */
   largeur: number;
@@ -184,12 +184,14 @@ async function poserBordure(page: PDFPage, src: Source, s: SourcePage, num: numb
   let b = s.bordures!.get(cle);
   if (b === undefined) {
     const r = await bordure(src.chemin, num, s.zone, fondsMm, modes);
-    b = r ? { image: await src.doc.embedJpg(r.jpeg), debordPt: r.debordPt } : null;
+    b = r ? { bandes: await Promise.all(r.bandes.map(async (x2) => ({ ...x2, image: await src.doc.embedJpg(x2.jpeg) }))) } : null;
     s.bordures!.set(cle, b);
   }
   if (!b) return false;
   const r = RECOUVREMENT;
-  const d = b.debordPt;
+  // Les bandes ont été calculées pour la zone finie de la page source : mise à l'échelle de la pose.
+  const kx = w / s.zone.w;
+  const ky = h / s.zone.h;
   // Découpe en anneau (pair-impair) : zone fini + fonds perdus (+ r), moins la zone finie rentrée de r.
   page.pushOperators(
     pushGraphicsState(),
@@ -198,7 +200,7 @@ async function poserBordure(page: PDFPage, src: Source, s: SourcePage, num: numb
     clipEvenOdd(),
     endPath(),
   );
-  page.drawImage(b.image, { x: x - d, y: y - d, width: w + 2 * d, height: h + 2 * d });
+  for (const bd of b.bandes) page.drawImage(bd.image, { x: x + bd.x * kx, y: y + bd.y * ky, width: bd.w * kx, height: bd.h * ky });
   page.pushOperators(popGraphicsState());
   return true;
 }

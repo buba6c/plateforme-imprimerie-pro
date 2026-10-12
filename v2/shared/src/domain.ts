@@ -111,8 +111,10 @@ export const MODE_PAIEMENT_LABELS: Record<ModePaiement, string> = {
   carte: 'Carte bancaire',
 };
 
-/** Modes pour lesquels une référence de transaction est obligatoire. */
+/** Modes où un champ « référence » est proposé (numéro de transaction, de chèque, de virement). */
 export const MODES_AVEC_REFERENCE: readonly ModePaiement[] = ['wave', 'orange_money', 'virement', 'cheque'];
+/** Modes où la référence est obligatoire (le chèque peut être encaissé sans son numéro). */
+export const MODES_REFERENCE_OBLIGATOIRE: readonly ModePaiement[] = ['wave', 'orange_money', 'virement'];
 
 export const STATUTS_PAIEMENT = ['a_valider', 'valide', 'refuse'] as const;
 export type StatutPaiement = (typeof STATUTS_PAIEMENT)[number];

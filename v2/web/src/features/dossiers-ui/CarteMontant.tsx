@@ -10,6 +10,7 @@ import {
   formatFCFA,
   MODE_PAIEMENT_LABELS,
   MODES_AVEC_REFERENCE,
+  MODES_REFERENCE_OBLIGATOIRE,
   MODES_PAIEMENT,
   paiementInputSchema,
   parseMontant,
@@ -180,7 +181,8 @@ function PaiementDialog({ d, reste, onClose }: { d: DossierDetail; reste: number
   const [notes, setNotes] = useState('');
   const [erreurs, setErreurs] = useState<Record<string, string>>({});
   const [envoi, setEnvoi] = useState(false);
-  const refRequise = MODES_AVEC_REFERENCE.includes(mode);
+  const refProposee = MODES_AVEC_REFERENCE.includes(mode);
+  const refRequise = MODES_REFERENCE_OBLIGATOIRE.includes(mode);
 
   const valider = async () => {
     const m = parseMontant(montant);
