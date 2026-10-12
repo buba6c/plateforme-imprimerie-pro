@@ -27,6 +27,24 @@ function reponseOpenAI(contenu: unknown, usage = { prompt_tokens: 1200, completi
   );
 }
 
+const CLE_GEMINI = 'AIzaSyTest0123456789abcdefghijklmnopqrs';
+
+/** Réponse simulée de Gemini (generateContent). */
+function reponseGemini(contenu: unknown, usage = { promptTokenCount: 900, candidatesTokenCount: 200 }, finishReason = 'STOP') {
+  return new Response(
+    JSON.stringify({
+      candidates: [{ content: { role: 'model', parts: [{ text: typeof contenu === 'string' ? contenu : JSON.stringify(contenu) }] }, finishReason }],
+      usageMetadata: usage,
+      modelVersion: 'gemini-2.5-flash',
+    }),
+    { status: 200, headers: { 'content-type': 'application/json' } },
+  );
+}
+
+function erreurGemini(status: number, statut: string, message = 'erreur simulée') {
+  return new Response(JSON.stringify({ error: { code: status, message, status: statut } }), { status, headers: { 'content-type': 'application/json' } });
+}
+
 function erreurOpenAI(status: number, code: string | null, message = 'erreur simulée') {
   return new Response(JSON.stringify({ error: { message, type: 'test', code } }), { status, headers: { 'content-type': 'application/json' } });
 }
@@ -40,7 +58,10 @@ function simulerFetch(impl: (url: string, init: RequestInit) => Promise<Response
 
 async function reinitialiserIA() {
   const pool = getPool();
-  await pool.query(`UPDATE ia_config SET actif = false, modele = 'gpt-4o-mini', cle_chiffree = NULL, cle_fin = NULL, updated_by = NULL WHERE id = 1`);
+  await pool.query(
+    `UPDATE ia_config SET actif = false, fournisseur = 'openai', secours = true, modele = 'gpt-4o-mini', cle_chiffree = NULL, cle_fin = NULL,
+       modele_gemini = 'gemini-2.5-flash', cle_gemini_chiffree = NULL, cle_gemini_fin = NULL, updated_by = NULL WHERE id = 1`,
+  );
   await pool.query(`TRUNCATE ia_usage RESTART IDENTITY`);
   viderLimitesIA();
 }
@@ -138,15 +159,15 @@ describe('assistant IA : configuration et clé', () => {
     expect(j.body.items[0].data).toMatchObject({ cle: 'enregistree', actif: { avant: false, apres: true }, modele: { avant: 'gpt-4o-mini', apres: 'gpt-4o' } });
 
     // Statut visible par l'administrateur et le préparateur seulement.
-    expect((await A.prep.get('/api/ia/statut')).body).toEqual({ actif: true });
-    expect((await A.admin.get('/api/ia/statut')).body).toEqual({ actif: true });
+    expect((await A.prep.get('/api/ia/statut')).body).toEqual({ actif: true, fournisseur: 'openai' });
+    expect((await A.admin.get('/api/ia/statut')).body).toEqual({ actif: true, fournisseur: 'openai' });
     expect((await A.roland.get('/api/ia/statut')).status).toBe(403);
     expect((await A.livreur.get('/api/ia/statut')).status).toBe(403);
 
     // Effacer la clé désactive l'assistant.
     const efface = await A.admin.put('/api/ia/config').send({ cle: null });
     expect(efface.body).toMatchObject({ actif: false, cle_configuree: false, cle_fin: null });
-    expect((await A.prep.get('/api/ia/statut')).body).toEqual({ actif: false });
+    expect((await A.prep.get('/api/ia/statut')).body).toMatchObject({ actif: false });
     const j2 = await A.admin.get('/api/journal?action=ia_config_modifiee');
     expect(j2.body.items[0].data).toMatchObject({ cle: 'effacee' });
   });
@@ -391,5 +412,130 @@ describe('assistant IA : propositions', () => {
     // Les autres utilisateurs ne sont pas touchés.
     expect((await A.admin.post('/api/ia/suggestion').send({ description: 'Demande admin' })).status).toBe(200);
     viderLimitesIA();
+  });
+});
+
+describe('assistant IA : Google Gemini et secours automatique', () => {
+  const bache = { machine: 'roland', lignes: [{ support: 'bache_m2', largeur: 300, hauteur: 100, unite: 'cm', pages: null, recto_verso: null, quantite: 2, finitions: [], options: [], description: null }], forfaits: [], remarques: null };
+
+  it('enregistre une clé Gemini, la teste (en-tête x-goog-api-key, schéma JSON) et bascule le fournisseur', async () => {
+    await reinitialiserIA();
+    expect((await A.admin.put('/api/ia/config').send({ fournisseur: 'gemini' })).status).toBe(409); // pas encore de clé Gemini
+    const mauvaise = await A.admin.put('/api/ia/config').send({ gemini: { cle: 'pas une clé gemini' } });
+    expect(mauvaise.status).toBe(400);
+    expect(mauvaise.body.champs['gemini.cle']).toBeTruthy();
+
+    const r = await A.admin.put('/api/ia/config').send({ gemini: { cle: CLE_GEMINI, modele: 'gemini-2.5-pro' } });
+    expect(r.status).toBe(200);
+    expect(r.body.fournisseurs.gemini).toMatchObject({ cle_configuree: true, cle_fin: 'pqrs', cle_lisible: true, modele: 'gemini-2.5-pro' });
+    expect(r.body.fournisseurs.openai).toMatchObject({ cle_configuree: false });
+    // Le fournisseur reste OpenAI ; Gemini, qui a maintenant une clé, est disponible comme secours.
+    expect(r.body).toMatchObject({ fournisseur: 'openai', actif: false, secours_possible: true });
+    expect(JSON.stringify(r.body)).not.toContain(CLE_GEMINI);
+
+    const espion = simulerFetch(() => reponseGemini('OK', { promptTokenCount: 5, candidatesTokenCount: 1 }));
+    const test = await A.admin.post('/api/ia/test').send({ fournisseur: 'gemini' });
+    expect(test.status, JSON.stringify(test.body)).toBe(200);
+    expect(test.body).toMatchObject({ ok: true, fournisseur: 'gemini' });
+    const [url, init] = espion.mock.calls[0]!;
+    expect(String(url)).toBe('https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-pro:generateContent');
+    expect(String(url)).not.toContain(CLE_GEMINI);
+    expect((init!.headers as Record<string, string>)['x-goog-api-key']).toBe(CLE_GEMINI);
+
+    const bascule = await A.admin.put('/api/ia/config').send({ fournisseur: 'gemini', actif: true });
+    expect(bascule.status).toBe(200);
+    expect(bascule.body).toMatchObject({ fournisseur: 'gemini', actif: true, modele: 'gemini-2.5-pro', cle_fin: 'pqrs' });
+    expect((await A.prep.get('/api/ia/statut')).body).toEqual({ actif: true, fournisseur: 'gemini' });
+    const j = await A.admin.get('/api/journal?action=ia_config_modifiee');
+    expect(j.body.items[0].data).toMatchObject({ fournisseur: { avant: 'openai', apres: 'gemini' }, actif: { avant: false, apres: true } });
+    expect(JSON.stringify(j.body)).not.toContain(CLE_GEMINI);
+  });
+
+  it('propose avec Gemini : consignes en systemInstruction, schéma converti, prix recalculé côté serveur', async () => {
+    const espion = simulerFetch(() => reponseGemini(bache));
+    const r = await A.admin.post('/api/ia/suggestion').send({ description: '2 bâches 3 × 1 m' });
+    expect(r.status, JSON.stringify(r.body)).toBe(200);
+    expect(r.body).toMatchObject({ machine: 'roland', fournisseur: 'gemini', secours: false });
+    expect(r.body.specs.lignes[0]).toMatchObject({ support: 'bache_m2', largeur: 300, hauteur: 100, quantite: 2 });
+    expect(r.body.prix.total).toBe(42_000); // 2 × 3 m² × 7 000, jamais le montant de l'IA
+    const corps = JSON.parse(String(espion.mock.calls[0]![1]!.body));
+    expect(corps.systemInstruction.parts[0].text).toContain('bache_m2 ; Bâche standard');
+    expect(corps.contents[0].parts[0].text).toContain('2 bâches 3 × 1 m');
+    const schema = corps.generationConfig.responseSchema;
+    expect(corps.generationConfig.responseMimeType).toBe('application/json');
+    expect(schema.type).toBe('OBJECT');
+    expect(schema.properties.lignes.items.properties.largeur).toEqual({ type: 'NUMBER', nullable: true });
+    expect(schema.properties.lignes.items.properties.unite).toMatchObject({ type: 'STRING', nullable: true, enum: ['mm', 'cm', 'm'] });
+    expect(JSON.stringify(schema)).not.toContain('additionalProperties');
+    const u = (await getPool().query(`SELECT fournisseur, statut, secours, jetons_entree FROM ia_usage WHERE type = 'suggestion' ORDER BY id DESC LIMIT 1`)).rows[0];
+    expect(u).toEqual({ fournisseur: 'gemini', statut: 'ok', secours: false, jetons_entree: 900 });
+  });
+
+  it('traduit les erreurs de Gemini', async () => {
+    const cas = [
+      { simu: () => erreurGemini(400, 'INVALID_ARGUMENT', 'API key not valid. Please pass a valid API key.'), status: 502, message: 'Gemini a refusé la clé', statut: 'cle_refusee' },
+      { simu: () => erreurGemini(429, 'RESOURCE_EXHAUSTED', 'You exceeded your current quota, please check your plan and billing details.'), status: 503, message: 'quota Gemini', statut: 'quota' },
+      { simu: () => erreurGemini(404, 'NOT_FOUND', 'models/x is not found'), status: 502, message: "n'est pas disponible", statut: 'modele_indisponible' },
+      { simu: () => reponseGemini('', undefined, 'SAFETY'), status: 502, message: "n'a pas voulu traiter", statut: 'reponse_invalide' },
+    ];
+    for (const c of cas) {
+      simulerFetch(c.simu);
+      const r = await A.admin.post('/api/ia/suggestion').send({ description: '2 bâches 3 × 1 m' });
+      expect(r.status, c.statut).toBe(c.status);
+      expect(r.body.error).toContain(c.message);
+      expect(JSON.stringify(r.body)).not.toContain(CLE_GEMINI);
+      const u = (await getPool().query(`SELECT statut, fournisseur, erreur FROM ia_usage ORDER BY id DESC LIMIT 1`)).rows[0];
+      expect(u.statut).toBe(c.statut);
+      expect(u.fournisseur).toBe('gemini');
+      expect(u.erreur).toContain(c.message);
+    }
+  });
+
+  it('secours automatique : si Gemini est à court de quota, OpenAI répond ; les deux essais sont au journal', async () => {
+    await A.admin.put('/api/ia/config').send({ cle: CLE }).expect(200); // OpenAI disponible en secours
+    expect((await A.admin.get('/api/ia/config')).body.secours_possible).toBe(true);
+    let appels = 0;
+    const espion = simulerFetch((url) => {
+      appels++;
+      if (url.includes('generativelanguage')) return erreurGemini(429, 'RESOURCE_EXHAUSTED', 'quota exceeded');
+      return reponseOpenAI(bache);
+    });
+    const r = await A.admin.post('/api/ia/suggestion').send({ description: '2 bâches 3 × 1 m' });
+    expect(r.status, JSON.stringify(r.body)).toBe(200);
+    expect(r.body).toMatchObject({ fournisseur: 'openai', secours: true, machine: 'roland' });
+    expect(appels).toBe(2);
+    expect(String(espion.mock.calls[1]![0])).toContain('api.openai.com');
+    const rows = (await getPool().query(`SELECT fournisseur, statut, secours FROM ia_usage WHERE type = 'suggestion' ORDER BY id DESC LIMIT 2`)).rows;
+    expect(rows).toEqual([
+      { fournisseur: 'openai', statut: 'ok', secours: true },
+      { fournisseur: 'gemini', statut: 'quota', secours: false },
+    ]);
+
+    // Les deux en panne : l'erreur raconte les deux essais.
+    simulerFetch((url) => (url.includes('generativelanguage') ? erreurGemini(503, 'UNAVAILABLE', 'overloaded') : erreurOpenAI(500, null)));
+    const ko = await A.admin.post('/api/ia/suggestion').send({ description: '2 bâches 3 × 1 m' });
+    expect(ko.status).toBe(502);
+    expect(ko.body.error).toContain('surchargé');
+    expect(ko.body.error).toContain('secours a échoué');
+
+    // Secours désactivé : Gemini seul, et son erreur telle quelle.
+    await A.admin.put('/api/ia/config').send({ secours: false }).expect(200);
+    simulerFetch((url) => (url.includes('generativelanguage') ? erreurGemini(429, 'RESOURCE_EXHAUSTED', 'quota exceeded') : reponseOpenAI(bache)));
+    const seul = await A.admin.post('/api/ia/suggestion').send({ description: '2 bâches 3 × 1 m' });
+    expect(seul.status).toBe(503);
+    expect(seul.body.error).not.toContain('secours');
+
+    // Une demande mal formée (réponse illisible) ne déclenche pas le secours : le problème vient de la demande.
+    await A.admin.put('/api/ia/config').send({ secours: true }).expect(200);
+    simulerFetch((url) => (url.includes('generativelanguage') ? reponseGemini('pas du JSON') : reponseOpenAI(bache)));
+    const illisible = await A.admin.post('/api/ia/suggestion').send({ description: '2 bâches 3 × 1 m' });
+    expect(illisible.status).toBe(502);
+    expect(illisible.body.code).toBe('ia_reponse_invalide');
+    expect((await getPool().query(`SELECT statut, fournisseur FROM ia_usage ORDER BY id DESC LIMIT 1`)).rows[0]).toEqual({ statut: 'reponse_invalide', fournisseur: 'gemini' });
+
+    // Effacer la clé Gemini désactive l'assistant (fournisseur actif sans clé).
+    const efface = await A.admin.put('/api/ia/config').send({ gemini: { cle: null } });
+    expect(efface.body).toMatchObject({ actif: false, fournisseur: 'gemini', cle_configuree: false });
+    expect(efface.body.fournisseurs.openai.cle_configuree).toBe(true);
   });
 });

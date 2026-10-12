@@ -163,3 +163,12 @@
     padding: var(--space-3);
   }
 }
+
+/* Fournisseurs (OpenAI, Gemini) */
+.ia-fournisseurs { display: grid; grid-template-columns: repeat(auto-fit, minmax(340px, 1fr)); gap: var(--space-4); }
+.ia-fournisseur__titre { display: inline-flex; align-items: center; gap: 8px; }
+.ia-fournisseur__logo { width: 22px; height: 22px; border-radius: 6px; }
+.ia-fournisseur__cellule { display: inline-flex; align-items: center; gap: 6px; }
+.ia-fournisseur__cellule img { width: 16px; height: 16px; border-radius: 4px; }
+.ia-erreur { display: block; max-width: 320px; margin-top: 3px; font-size: 12px; line-height: 16px; color: var(--text-muted); }
+.ia-prop__source { font-size: 12px; color: var(--text-muted); }

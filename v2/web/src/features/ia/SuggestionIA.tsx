@@ -145,7 +145,13 @@ function Panneau({ brouillon, machineImposee, onAppliquer }: Props) {
             <div className="ia-prop" aria-live="polite">
               <div className="row-between">
                 <h3 className="section-title">Proposition à vérifier</h3>
-                <MachineChip machine={p.machine} />
+                <span className="row" style={{ gap: 8 }}>
+                  <span className="ia-prop__source">
+                    {p.fournisseur === 'gemini' ? 'Google Gemini' : 'OpenAI'}
+                    {p.secours ? ' (secours)' : ''}
+                  </span>
+                  <MachineChip machine={p.machine} />
+                </span>
               </div>
 
               {nbLignes > 0 || p.specs.forfaits.length > 0 ? (

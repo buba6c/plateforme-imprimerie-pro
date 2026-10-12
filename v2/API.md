@@ -123,7 +123,13 @@ Le prix est toujours recalculé par le moteur (`calculerPrix`) et la grille, jam
 | PUT | /ia/config `{actif?, modele?: gpt-4o-mini\|gpt-4o\|gpt-4.1-mini, cle?: string\|null}` | admin | configuration ; `cle: null` efface la clé et désactive ; 409 si activation sans clé ; clé `sk-…` (20 à 300 caractères), chiffrée AES-256-GCM ; journalisé `ia_config_modifiee` sans la clé |
 | POST | /ia/test `{cle?, modele?}` | admin | `{ok, modele, duree_ms}` ; teste la clé fournie ou l'enregistrée ; 409 si absente ou illisible |
 | POST | /ia/suggestion `{description (1 à 2000), machine?: roland\|xerox}` | admin, preparateur | `{machine, specs, prix: {total, …ResultatPrix}\|null, erreur_prix?, avertissements[], remarques?}` (`prix` toujours `null` et `erreur_prix` absent pour le préparateur) ; codes de tarif inconnus ou sans prix retirés avec un avertissement |
+| GET | /ia/config | admin | `{actif, fournisseur: openai\|gemini, secours, secours_possible, fournisseurs:{openai:{modele,modeles,cle_configuree,cle_fin,cle_lisible}, gemini:{…}}, …champs du fournisseur actif à plat, updated_at, updated_by_nom}` — jamais les clés |
+| PUT | /ia/config `{actif?, fournisseur?, secours?, openai?:{cle?\|null, modele?}, gemini?:{cle?\|null, modele?}}` (forme courte `{cle, modele}` = OpenAI) | admin | 409 si le fournisseur choisi n'a pas de clé ; effacer la clé du fournisseur actif désactive l'assistant ; journal `ia_config_modifiee` |
+| POST | /ia/test `{fournisseur?, cle?, modele?}` | admin | appel minimal au fournisseur (par défaut le fournisseur actif) ; `{ok, fournisseur, modele, duree_ms}` |
+| GET | /ia/usages?limit | admin | chaque essai : `{…, fournisseur, secours, erreur}` ; `totaux_30_jours:{suggestions, erreurs, secours, openai, gemini, jetons_entree, jetons_sortie}` |
 | GET | /ia/usages?limit (50, 200 max) | admin | `{items:[{id,user_nom,type,statut,modele,duree_ms,jetons_entree,jetons_sortie,longueur_demande,extrait,created_at}], totaux_30_jours}` (extrait ≤ 120 caractères ; ni la demande complète ni la réponse ne sont gardées) |
+
+`/ia/suggestion` renvoie aussi `fournisseur`, `modele` et `secours` (vrai si le fournisseur de secours a répondu après l'échec du premier : quota, service saturé ou en panne, clé refusée, modèle indisponible ; une réponse illisible ne déclenche pas le secours). Sans secours possible, une panne passagère donne droit à un second essai automatique.
 
 Erreurs de `/ia/suggestion` : 409 `ia_inactif`, 409 `ia_cle_illisible` (secret de chiffrement changé : ressaisir la clé),
 429 (plus de 30 propositions par utilisateur et par heure), 502 (clé refusée, modèle indisponible, service injoignable,
