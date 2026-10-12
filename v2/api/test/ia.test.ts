@@ -29,6 +29,8 @@ function reponseOpenAI(contenu: unknown, usage = { prompt_tokens: 1200, completi
 
 // Valeur factice qui ne ressemble pas à une vraie clé Google (GitHub signalerait une clé « AIza… »).
 const CLE_GEMINI = 'CLE_GEMINI_DE_TEST_0123456789abcdefghijklmnopqrs';
+// Valeur factice au format OpenRouter (« sk-or-… »), qui n'est pas une vraie clé.
+const CLE_OPENROUTER = 'sk-or-TEST-0123456789abcdefghijklmnopqrstuv';
 
 /** Réponse simulée de Gemini (generateContent). */
 function reponseGemini(contenu: unknown, usage = { promptTokenCount: 900, candidatesTokenCount: 200 }, finishReason = 'STOP') {
@@ -61,7 +63,8 @@ async function reinitialiserIA() {
   const pool = getPool();
   await pool.query(
     `UPDATE ia_config SET actif = false, fournisseur = 'openai', secours = true, modele = 'gpt-4o-mini', cle_chiffree = NULL, cle_fin = NULL,
-       modele_gemini = 'gemini-2.5-flash', cle_gemini_chiffree = NULL, cle_gemini_fin = NULL, updated_by = NULL WHERE id = 1`,
+       modele_gemini = 'gemini-2.5-flash', cle_gemini_chiffree = NULL, cle_gemini_fin = NULL,
+       modele_openrouter = 'openai/gpt-4o-mini', cle_openrouter_chiffree = NULL, cle_openrouter_fin = NULL, updated_by = NULL WHERE id = 1`,
   );
   await pool.query(`TRUNCATE ia_usage RESTART IDENTITY`);
   viderLimitesIA();
@@ -537,5 +540,77 @@ describe('assistant IA : Google Gemini et secours automatique', () => {
     const efface = await A.admin.put('/api/ia/config').send({ gemini: { cle: null } });
     expect(efface.body).toMatchObject({ actif: false, fournisseur: 'gemini', cle_configuree: false });
     expect(efface.body.fournisseurs.openai.cle_configuree).toBe(true);
+  });
+});
+
+describe('OpenRouter', () => {
+  const bache = { machine: 'roland', lignes: [{ support: 'bache_m2', largeur: 300, hauteur: 100, unite: 'cm', pages: null, recto_verso: null, quantite: 2, finitions: [], options: [], description: null }], forfaits: [], remarques: null };
+  beforeAll(async () => {
+    await reinitialiserIA();
+  });
+
+  it('enregistre une clé OpenRouter, accepte un modèle libre « éditeur/modèle », teste la connexion', async () => {
+    expect((await A.admin.put('/api/ia/config').send({ fournisseur: 'openrouter' })).status).toBe(409); // pas encore de clé
+    const mauvaise = await A.admin.put('/api/ia/config').send({ openrouter: { cle: 'sk-pas-openrouter-0123456789' } });
+    expect(mauvaise.status).toBe(400);
+    expect(mauvaise.body.champs['openrouter.cle']).toBeTruthy();
+    const mauvaisModele = await A.admin.put('/api/ia/config').send({ openrouter: { modele: 'gpt-4o-mini' } });
+    expect(mauvaisModele.status).toBe(400);
+    expect(mauvaisModele.body.champs['openrouter.modele']).toContain('éditeur/modèle');
+
+    const r = await A.admin.put('/api/ia/config').send({ openrouter: { cle: CLE_OPENROUTER, modele: 'qwen/qwen3-32b:free' } });
+    expect(r.status).toBe(200);
+    expect(r.body.fournisseurs.openrouter).toMatchObject({ cle_configuree: true, cle_fin: 'stuv', cle_lisible: true, modele: 'qwen/qwen3-32b:free' });
+    // Le fournisseur reste OpenAI ; OpenRouter, seul autre avec une clé, devient le secours.
+    expect(r.body).toMatchObject({ fournisseur: 'openai', actif: false, secours_possible: true, secours_fournisseur: 'openrouter' });
+    expect(JSON.stringify(r.body)).not.toContain(CLE_OPENROUTER);
+
+    const espion = simulerFetch(() => reponseOpenAI('OK', { prompt_tokens: 5, completion_tokens: 1 }));
+    const test = await A.admin.post('/api/ia/test').send({ fournisseur: 'openrouter' });
+    expect(test.status, JSON.stringify(test.body)).toBe(200);
+    expect(test.body).toMatchObject({ ok: true, fournisseur: 'openrouter' });
+    const [url, init] = espion.mock.calls[0]!;
+    expect(String(url)).toBe('https://openrouter.ai/api/v1/chat/completions');
+    const entetes = init!.headers as Record<string, string>;
+    expect(entetes.Authorization).toBe(`Bearer ${CLE_OPENROUTER}`);
+    expect(entetes['X-Title']).toBe('Evocom Print');
+    expect(entetes['HTTP-Referer']).toBeTruthy();
+    expect(JSON.parse(String(init!.body)).model).toBe('qwen/qwen3-32b:free');
+
+    const bascule = await A.admin.put('/api/ia/config').send({ fournisseur: 'openrouter', actif: true });
+    expect(bascule.status).toBe(200);
+    expect(bascule.body).toMatchObject({ fournisseur: 'openrouter', actif: true, cle_fin: 'stuv', secours_possible: false });
+    expect((await A.prep.get('/api/ia/statut')).body).toEqual({ actif: true, fournisseur: 'openrouter' });
+  });
+
+  it('traduit les erreurs OpenRouter (crédit épuisé 402, modèle inconnu) et les journalise', async () => {
+    simulerFetch(() => new Response(JSON.stringify({ error: { code: 402, message: 'Insufficient credits' } }), { status: 402, headers: { 'content-type': 'application/json' } }));
+    const r = await A.admin.post('/api/ia/test').send({ fournisseur: 'openrouter' });
+    expect(r.status).toBe(503);
+    expect(r.body.code).toBe('ia_quota');
+    expect(r.body.error).toContain('OpenRouter');
+    let u = (await getPool().query(`SELECT statut, fournisseur FROM ia_usage ORDER BY id DESC LIMIT 1`)).rows[0];
+    expect(u).toEqual({ statut: 'quota', fournisseur: 'openrouter' });
+    // Erreur renvoyée avec un 200 (particularité OpenRouter)
+    simulerFetch(() => new Response(JSON.stringify({ error: { code: 404, message: 'No endpoints found for qwen/qwen3-32b:free' } }), { status: 200, headers: { 'content-type': 'application/json' } }));
+    const r2 = await A.admin.post('/api/ia/test').send({ fournisseur: 'openrouter' });
+    expect(r2.status).toBe(502);
+    expect(r2.body.code).toBe('ia_modele_indisponible');
+    u = (await getPool().query(`SELECT statut, fournisseur FROM ia_usage ORDER BY id DESC LIMIT 1`)).rows[0];
+    expect(u.statut).toBe('modele_indisponible');
+  });
+
+  it('secours : OpenAI en panne, OpenRouter prend le relais ; le journal garde les deux essais', async () => {
+    await A.admin.put('/api/ia/config').send({ cle: CLE, fournisseur: 'openai', actif: true, secours: true });
+    const espion = simulerFetch((url) => (String(url).includes('openrouter.ai') ? reponseOpenAI(bache) : erreurOpenAI(503, null, 'down')));
+    const r = await A.prep.post('/api/ia/suggestion').send({ description: 'Bâche 3 m × 2 m avec œillets', machine: 'roland' });
+    expect(r.status, JSON.stringify(r.body)).toBe(200);
+    expect(r.body).toMatchObject({ fournisseur: 'openrouter', secours: true, machine: 'roland' });
+    expect(espion).toHaveBeenCalledTimes(2);
+    const rows = (await getPool().query(`SELECT fournisseur, statut, secours FROM ia_usage WHERE type = 'suggestion' ORDER BY id DESC LIMIT 2`)).rows;
+    expect(rows).toEqual([
+      { fournisseur: 'openrouter', statut: 'ok', secours: true },
+      { fournisseur: 'openai', statut: 'injoignable', secours: false },
+    ]);
   });
 });

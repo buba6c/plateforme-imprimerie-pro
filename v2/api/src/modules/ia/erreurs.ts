@@ -3,10 +3,10 @@
 
 import { HttpError } from '../../lib/errors';
 
-export const FOURNISSEURS_IA = ['openai', 'gemini'] as const;
+export const FOURNISSEURS_IA = ['openai', 'gemini', 'openrouter'] as const;
 export type FournisseurIA = (typeof FOURNISSEURS_IA)[number];
 
-export const FOURNISSEUR_LABELS: Record<FournisseurIA, string> = { openai: 'OpenAI', gemini: 'Google Gemini' };
+export const FOURNISSEUR_LABELS: Record<FournisseurIA, string> = { openai: 'OpenAI', gemini: 'Google Gemini', openrouter: 'OpenRouter' };
 
 /** Statut enregistré dans le journal d'usage. */
 export type StatutAppel =

@@ -1,21 +1,35 @@
-// Les deux fournisseurs de l'assistant (OpenAI, Google Gemini) derrière une même porte, et le
+// Les fournisseurs de l'assistant (OpenAI, Google Gemini, OpenRouter) derrière une même porte, et le
 // secours automatique : si le fournisseur choisi échoue pour une raison qui ne tient pas à la
-// demande (quota, limite, panne, clé refusée…), l'autre prend le relais quand il a une clé.
+// demande (quota, limite, panne, clé refusée…), un autre prend le relais quand il a une clé.
 // Sans secours possible, une panne passagère donne droit à un second essai.
 
-import { ErreurIA, STATUTS_SECOURS, type AppelIA, type FournisseurIA, type ReponseIA, type StatutAppel } from './erreurs';
+import { loadConfig } from '../../config';
+import { ErreurIA, FOURNISSEURS_IA, STATUTS_SECOURS, type AppelIA, type FournisseurIA, type ReponseIA, type StatutAppel } from './erreurs';
 import { appelerGemini, MODELES_GEMINI } from './gemini';
 import { appelerOpenAI, MODELES_IA } from './openai';
+import { appelerOpenRouter, MODELE_OPENROUTER_RE, MODELES_OPENROUTER } from './openrouter';
 
-export const MODELES_PAR_FOURNISSEUR: Record<FournisseurIA, readonly string[]> = { openai: MODELES_IA, gemini: MODELES_GEMINI };
-export const MODELE_DEFAUT: Record<FournisseurIA, string> = { openai: 'gpt-4o-mini', gemini: 'gemini-2.5-flash' };
+export const MODELES_PAR_FOURNISSEUR: Record<FournisseurIA, readonly string[]> = { openai: MODELES_IA, gemini: MODELES_GEMINI, openrouter: MODELES_OPENROUTER };
+export const MODELE_DEFAUT: Record<FournisseurIA, string> = { openai: 'gpt-4o-mini', gemini: 'gemini-2.5-flash', openrouter: 'openai/gpt-4o-mini' };
 
-export function autreFournisseur(f: FournisseurIA): FournisseurIA {
-  return f === 'openai' ? 'gemini' : 'openai';
+/** Un modèle est-il acceptable pour ce fournisseur ? OpenRouter accepte tout identifiant « éditeur/modèle ». */
+export function modeleValide(f: FournisseurIA, modele: string): boolean {
+  if (f === 'openrouter') return modele.length <= 120 && MODELE_OPENROUTER_RE.test(modele);
+  return MODELES_PAR_FOURNISSEUR[f].includes(modele);
+}
+
+/**
+ * Fournisseur de secours : le premier des autres, dans l'ordre de la liste (OpenAI, Gemini, OpenRouter),
+ * qui remplit la condition (une clé enregistrée et lisible).
+ */
+export function fournisseurSecours(principal: FournisseurIA, disponible: (f: FournisseurIA) => boolean): FournisseurIA | null {
+  return FOURNISSEURS_IA.find((f) => f !== principal && disponible(f)) ?? null;
 }
 
 export function appelerFournisseur(f: FournisseurIA, p: AppelIA): Promise<ReponseIA> {
-  return f === 'gemini' ? appelerGemini(p) : appelerOpenAI(p);
+  if (f === 'gemini') return appelerGemini(p);
+  if (f === 'openrouter') return appelerOpenRouter(p, loadConfig().appUrl);
+  return appelerOpenAI(p);
 }
 
 export interface Acces {

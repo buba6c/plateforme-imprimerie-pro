@@ -20,6 +20,14 @@ Montants : entiers en FCFA. Dates : ISO 8601 (`date` = `AAAA-MM-JJ`).
 - **Livreur** : inchangé (encaisse « à valider » à la livraison, voit le reste à payer de ses tournées).
 - **Imprimeurs** : inchangés (leur machine, sans téléphone ni montant). Leur interface prend la couleur de leur
   machine (Roland rose, Xerox bleu) et l'atelier affiche l'icône de la machine.
+- **Assistant IA, fournisseur OpenRouter** (migration 016) : troisième fournisseur `openrouter` à côté de `openai` et
+  `gemini` (`PUT /ia/config {openrouter:{cle,modele}}`, clé « sk-or-… », modèle libre « éditeur/modèle » du catalogue
+  openrouter.ai, `POST /ia/test {fournisseur:'openrouter'}`). Protocole OpenAI (chat completions) sur
+  `https://openrouter.ai/api/v1` (`IA_URL_OPENROUTER` en développement), en-têtes `HTTP-Referer` (APP_URL) et
+  `X-Title`. Erreurs traduites : 401 clé refusée, 402 crédit épuisé (`quota`), 404 ou « no endpoints » modèle
+  indisponible, 429 limite, 502/503 injoignable ; une erreur renvoyée avec un 200 est lue aussi. Secours automatique :
+  le premier des autres fournisseurs ayant une clé lisible, dans l'ordre OpenAI, Gemini, OpenRouter
+  (`secours_fournisseur` dans `GET /ia/config`).
 - **Statut « annulé »** (`annule`, colonne `annule_at`, migration 015) : un dossier annulé n'est jamais supprimé ; il
   reste dans les listes (onglet Annulés, admin et préparateur) avec fichiers, paiements et historique. Action `annuler`
   (motif obligatoire, `tone: danger`) : le préparateur sur ses dossiers tant qu'ils ne sont pas à l'atelier

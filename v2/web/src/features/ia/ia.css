@@ -164,7 +164,7 @@
   }
 }
 
-/* Fournisseurs (OpenAI, Gemini) */
+/* Fournisseurs (OpenAI, Gemini, OpenRouter) */
 .ia-fournisseurs { display: grid; grid-template-columns: repeat(auto-fit, minmax(340px, 1fr)); gap: var(--space-4); }
 .ia-fournisseur__titre { display: inline-flex; align-items: center; gap: 8px; }
 .ia-fournisseur__logo { width: 22px; height: 22px; border-radius: 6px; }

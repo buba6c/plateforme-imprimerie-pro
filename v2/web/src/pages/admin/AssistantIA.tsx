@@ -1,4 +1,4 @@
-// Réglage de l'assistant IA de saisie : fournisseur utilisé (OpenAI ou Google Gemini), activation,
+// Réglage de l'assistant IA de saisie : fournisseur utilisé (OpenAI, Google Gemini ou OpenRouter), activation,
 // secours automatique, clés (en écriture seule) et modèle de chaque fournisseur, test de connexion,
 // et journal de tout ce que l'assistant a fait (chaque essai, chaque erreur).
 
@@ -10,7 +10,7 @@ import { api, messageErreur } from '../../lib/api';
 import { Alert, Button, Card, Checkbox, ConfirmDialog, EmptyState, LoadingRows, PageHeader, Segmented, SelectField, TextField, useToast } from '../../ui';
 import { champsErreur } from '../../features/admin/hooks';
 import { useConfigIA, useUsagesIA } from '../../features/ia/hooks';
-import { FOURNISSEUR_LABELS, MODELES_PAR_FOURNISSEUR, STATUT_USAGE_LABELS, type ConfigIA, type FournisseurIA } from '../../features/ia/types';
+import { FOURNISSEUR_LABELS, FOURNISSEURS_IA, MODELE_OPENROUTER_RE, MODELES_PAR_FOURNISSEUR, STATUT_USAGE_LABELS, type ConfigIA, type FournisseurIA } from '../../features/ia/types';
 import '../../features/admin/admin.css';
 import '../../features/ia/ia.css';
 
@@ -20,6 +20,7 @@ type Corps = {
   secours?: boolean;
   openai?: { cle?: string | null; modele?: string };
   gemini?: { cle?: string | null; modele?: string };
+  openrouter?: { cle?: string | null; modele?: string };
 };
 
 function useEnregistrer() {
@@ -52,8 +53,9 @@ export default function AssistantIA() {
             <Fonctionnement />
           </div>
           <div className="ia-fournisseurs">
-            <CarteFournisseur c={config.data} f="openai" />
-            <CarteFournisseur c={config.data} f="gemini" />
+            {FOURNISSEURS_IA.map((f) => (
+              <CarteFournisseur key={f} c={config.data!} f={f} />
+            ))}
           </div>
         </>
       )}
@@ -74,7 +76,7 @@ function Fonctionnement() {
           <li>La personne applique la proposition au formulaire, la corrige si besoin, puis enregistre elle-même.</li>
         </ol>
         <p className="adm-explain">
-          Ce qui part chez le fournisseur (OpenAI ou Google) : la description saisie et la liste des tarifs actifs (codes, libellés, unités), sans les prix ni
+          Ce qui part chez le fournisseur (OpenAI, Google ou OpenRouter) : la description saisie et la liste des tarifs actifs (codes, libellés, unités), sans les prix ni
           les fiches clients. Le journal ci-dessous garde chaque essai, avec au plus les 120 premiers caractères de la demande, jamais les clés.
         </p>
       </div>
@@ -99,7 +101,8 @@ function Pilotage({ c }: { c: ConfigIA }) {
   const enregistrer = useEnregistrer();
   const occupe = enregistrer.isPending;
   const principal = c.fournisseurs[c.fournisseur];
-  const autre: FournisseurIA = c.fournisseur === 'openai' ? 'gemini' : 'openai';
+  const autre = c.secours_fournisseur;
+  const autres = FOURNISSEURS_IA.filter((f) => f !== c.fournisseur).map((f) => FOURNISSEUR_LABELS[f]).join(' ou ');
   const envoyer = (body: Corps, titre: string, detail?: string) =>
     enregistrer.mutate(body, { onSuccess: () => toast.success(titre, detail), onError: (e) => toast.error('Réglage non enregistré', messageErreur(e)) });
   return (
@@ -110,10 +113,11 @@ function Pilotage({ c }: { c: ConfigIA }) {
           label="Fournisseur utilisé pour les propositions"
           value={c.fournisseur}
           onChange={(f) => envoyer({ fournisseur: f }, `Propositions confiées à ${FOURNISSEUR_LABELS[f]}`)}
-          options={[
-            { value: 'openai', label: 'OpenAI', help: c.fournisseurs.openai.cle_configuree ? `Clé …${c.fournisseurs.openai.cle_fin}` : 'clé à saisir' },
-            { value: 'gemini', label: 'Google Gemini', help: c.fournisseurs.gemini.cle_configuree ? `Clé …${c.fournisseurs.gemini.cle_fin}` : 'clé à saisir' },
-          ]}
+          options={FOURNISSEURS_IA.map((f) => ({
+            value: f,
+            label: FOURNISSEUR_LABELS[f],
+            help: c.fournisseurs[f].cle_configuree ? `Clé …${c.fournisseurs[f].cle_fin}` : 'clé à saisir',
+          }))}
         />
         <div className="stack-sm">
           <Checkbox
@@ -132,15 +136,15 @@ function Pilotage({ c }: { c: ConfigIA }) {
         </div>
         <div className="stack-sm">
           <Checkbox
-            label={`Secours automatique : si ${FOURNISSEUR_LABELS[c.fournisseur]} échoue, essayer ${FOURNISSEUR_LABELS[autre]}`}
+            label={`Secours automatique : si ${FOURNISSEUR_LABELS[c.fournisseur]} échoue, essayer ${autre ? FOURNISSEUR_LABELS[autre] : 'un autre fournisseur'}`}
             checked={c.secours}
             disabled={occupe}
             onChange={(secours) => envoyer({ secours }, secours ? 'Secours automatique activé' : 'Secours automatique désactivé')}
           />
           <span className="ev-help">
-            {c.secours_possible
+            {c.secours_possible && autre
               ? `Quota épuisé, service saturé ou en panne, clé refusée : la proposition est redemandée à ${FOURNISSEUR_LABELS[autre]} sans que la personne ait à réessayer. Chaque essai est au journal.`
-              : `Pour que le secours fonctionne, enregistrez aussi une clé ${FOURNISSEUR_LABELS[autre]}. Sans secours, une panne passagère donne droit à un second essai automatique.`}
+              : `Pour que le secours fonctionne, enregistrez aussi une clé ${autres}. Sans secours, une panne passagère donne droit à un second essai automatique.`}
           </span>
         </div>
         {c.updated_at && (
@@ -175,7 +179,82 @@ const AIDE_CLE: Record<FournisseurIA, { placeholder: string; ou: string; verifie
       return null;
     },
   },
+  openrouter: {
+    placeholder: 'sk-or-v1-…',
+    ou: 'Créez-la sur openrouter.ai, rubrique Keys : une seule clé donne accès aux modèles OpenAI, Google, Anthropic, Mistral, DeepSeek…',
+    verifier: (s) => {
+      if (!s) return 'Collez la clé API OpenRouter.';
+      if (!s.startsWith('sk-or-') || /\s/.test(s)) return 'Clé OpenRouter invalide : elle commence par « sk-or- » et ne contient pas d’espace.';
+      if (s.length < 20) return 'Clé trop courte : copiez la clé complète.';
+      return null;
+    },
+  },
 };
+
+const AUTRE_MODELE = '__autre';
+
+/** Choix du modèle OpenRouter : liste de suggestions, ou n'importe quel identifiant « éditeur/modèle ». */
+function ModeleOpenRouter({ valeur, occupe, onChoisir }: { valeur: string; occupe: boolean; onChoisir: (m: string) => void }) {
+  const modeles = MODELES_PAR_FOURNISSEUR.openrouter;
+  const connu = modeles.some((m) => m.value === valeur);
+  const [libre, setLibre] = useState(!connu);
+  const [saisie, setSaisie] = useState(connu ? '' : valeur);
+  const [erreur, setErreur] = useState<string | null>(null);
+  const valider = () => {
+    const m = saisie.trim();
+    if (!MODELE_OPENROUTER_RE.test(m)) {
+      setErreur('Identifiant « éditeur/modèle » attendu, par exemple openai/gpt-4o-mini (copiez-le depuis openrouter.ai/models).');
+      return;
+    }
+    setErreur(null);
+    onChoisir(m);
+  };
+  return (
+    <div className="stack-sm">
+      <SelectField
+        label="Modèle"
+        value={libre ? AUTRE_MODELE : valeur}
+        disabled={occupe}
+        onChange={(e) => {
+          if (e.target.value === AUTRE_MODELE) {
+            setLibre(true);
+            setSaisie(connu ? '' : valeur);
+          } else {
+            setLibre(false);
+            onChoisir(e.target.value);
+          }
+        }}
+        options={[...modeles.map((m) => ({ value: m.value, label: m.label })), { value: AUTRE_MODELE, label: 'Autre modèle du catalogue OpenRouter…' }]}
+        help={libre ? `Modèle actuel : ${valeur}` : modeles.find((m) => m.value === valeur)?.aide}
+      />
+      {libre && (
+        <form
+          className="row"
+          onSubmit={(e) => {
+            e.preventDefault();
+            valider();
+          }}
+          noValidate
+        >
+          <TextField
+            label="Identifiant du modèle"
+            mono
+            placeholder="éditeur/modèle, ex. qwen/qwen3-32b"
+            value={saisie}
+            onChange={(e) => setSaisie(e.target.value)}
+            error={erreur}
+            spellCheck={false}
+            autoComplete="off"
+            className="grow"
+          />
+          <Button type="submit" disabled={occupe || !saisie.trim()} busy={occupe}>
+            Utiliser ce modèle
+          </Button>
+        </form>
+      )}
+    </div>
+  );
+}
 
 /** Clé, modèle et test de connexion d'un fournisseur. */
 function CarteFournisseur({ c, f }: { c: ConfigIA; f: FournisseurIA }) {
@@ -307,19 +386,32 @@ function CarteFournisseur({ c, f }: { c: ConfigIA; f: FournisseurIA }) {
           )}
         </div>
 
-        <SelectField
-          label="Modèle"
-          value={conf.modele}
-          disabled={occupe}
-          onChange={(e) =>
-            enregistrer.mutate(
-              { [f]: { modele: e.target.value } },
-              { onSuccess: () => toast.success(`Modèle ${label} enregistré`, modeles.find((m) => m.value === e.target.value)?.label), onError: (err) => toast.error('Modèle non enregistré', messageErreur(err)) },
-            )
-          }
-          options={modeles.map((m) => ({ value: m.value, label: m.label }))}
-          help={modele?.aide}
-        />
+        {f === 'openrouter' ? (
+          <ModeleOpenRouter
+            valeur={conf.modele}
+            occupe={occupe}
+            onChoisir={(m) =>
+              enregistrer.mutate(
+                { openrouter: { modele: m } },
+                { onSuccess: () => toast.success('Modèle OpenRouter enregistré', modeles.find((x) => x.value === m)?.label ?? m), onError: (err) => toast.error('Modèle non enregistré', messageErreur(err)) },
+              )
+            }
+          />
+        ) : (
+          <SelectField
+            label="Modèle"
+            value={conf.modele}
+            disabled={occupe}
+            onChange={(e) =>
+              enregistrer.mutate(
+                { [f]: { modele: e.target.value } },
+                { onSuccess: () => toast.success(`Modèle ${label} enregistré`, modeles.find((m) => m.value === e.target.value)?.label), onError: (err) => toast.error('Modèle non enregistré', messageErreur(err)) },
+              )
+            }
+            options={modeles.map((m) => ({ value: m.value, label: m.label }))}
+            help={modele?.aide}
+          />
+        )}
 
         {conf.cle_configuree && (
           <div className="stack-sm">
@@ -374,7 +466,7 @@ function Usages() {
             30 derniers jours : {formatEntier(t.suggestions)} proposition{t.suggestions > 1 ? 's' : ''}
             {t.erreurs > 0 ? ` dont ${formatEntier(t.erreurs)} en erreur` : ''}
             {t.secours > 0 ? ` · ${formatEntier(t.secours)} par le secours` : ''}
-            {t.openai || t.gemini ? ` · OpenAI ${formatEntier(t.openai)} / Gemini ${formatEntier(t.gemini)}` : ''} · {formatEntier(t.jetons_entree + t.jetons_sortie)} jetons
+            {t.openai || t.gemini || t.openrouter ? ` · OpenAI ${formatEntier(t.openai)} / Gemini ${formatEntier(t.gemini)} / OpenRouter ${formatEntier(t.openrouter ?? 0)}` : ''} · {formatEntier(t.jetons_entree + t.jetons_sortie)} jetons
           </span>
         )}
       </div>

@@ -1,7 +1,7 @@
 // Assistant IA de saisie : propose des spécifications de dossier ou de devis à partir de la
 // description d'une demande. Il ne crée ni ne modifie rien ; le prix est recalculé par le
-// serveur avec la grille. Deux fournisseurs (OpenAI, Google Gemini), chacun avec sa clé chiffrée
-// et son modèle ; un fournisseur actif et un secours automatique vers l'autre. Configuration
+// serveur avec la grille. Trois fournisseurs (OpenAI, Google Gemini, OpenRouter), chacun avec sa clé
+// chiffrée et son modèle ; un fournisseur actif et un secours automatique vers un autre. Configuration
 // réservée à l'administrateur ; le journal d'usage garde chaque essai, jamais les clés.
 
 import { Router, type Request } from 'express';
@@ -17,7 +17,8 @@ import { getTarifs } from '../../lib/tarifs';
 import { chiffrer, CleIllisible, dechiffrer } from './chiffrement';
 import { ErreurIA, FOURNISSEUR_LABELS, FOURNISSEURS_IA, type FournisseurIA, type StatutAppel } from './erreurs';
 import { MODELES_GEMINI } from './gemini';
-import { appelerAvecSecours, appelerFournisseur, autreFournisseur, MODELE_DEFAUT, MODELES_PAR_FOURNISSEUR, type Acces, type TentativeIA } from './fournisseurs';
+import { appelerAvecSecours, appelerFournisseur, fournisseurSecours, MODELE_DEFAUT, MODELES_PAR_FOURNISSEUR, modeleValide, type Acces, type TentativeIA } from './fournisseurs';
+import { MODELE_OPENROUTER_RE } from './openrouter';
 import { MODELES_IA } from './openai';
 import { messagesSuggestion, nettoyerSuggestion, reponseIASchema, schemaReponse } from './suggestion';
 
@@ -36,6 +37,9 @@ interface ConfigIA {
   modele_gemini: string;
   cle_gemini_chiffree: string | null;
   cle_gemini_fin: string | null;
+  modele_openrouter: string;
+  cle_openrouter_chiffree: string | null;
+  cle_openrouter_fin: string | null;
   updated_at: string | null;
   updated_by_nom: string | null;
 }
@@ -43,6 +47,7 @@ interface ConfigIA {
 async function lireConfig(): Promise<ConfigIA> {
   const c = await one<ConfigIA>(
     `SELECT c.actif, c.fournisseur, c.secours, c.modele, c.cle_chiffree, c.cle_fin, c.modele_gemini, c.cle_gemini_chiffree, c.cle_gemini_fin,
+            c.modele_openrouter, c.cle_openrouter_chiffree, c.cle_openrouter_fin,
             c.updated_at, u.nom AS updated_by_nom
      FROM ia_config c LEFT JOIN users u ON u.id = c.updated_by WHERE c.id = 1`,
   );
@@ -57,6 +62,9 @@ async function lireConfig(): Promise<ConfigIA> {
       modele_gemini: MODELE_DEFAUT.gemini,
       cle_gemini_chiffree: null,
       cle_gemini_fin: null,
+      modele_openrouter: MODELE_DEFAUT.openrouter,
+      cle_openrouter_chiffree: null,
+      cle_openrouter_fin: null,
       updated_at: null,
       updated_by_nom: null,
     }
@@ -65,7 +73,9 @@ async function lireConfig(): Promise<ConfigIA> {
 
 /** Clé chiffrée, fin de clé et modèle d'un fournisseur. */
 function acces(c: ConfigIA, f: FournisseurIA): { chiffree: string | null; fin: string | null; modele: string } {
-  return f === 'gemini' ? { chiffree: c.cle_gemini_chiffree, fin: c.cle_gemini_fin, modele: c.modele_gemini } : { chiffree: c.cle_chiffree, fin: c.cle_fin, modele: c.modele };
+  if (f === 'gemini') return { chiffree: c.cle_gemini_chiffree, fin: c.cle_gemini_fin, modele: c.modele_gemini };
+  if (f === 'openrouter') return { chiffree: c.cle_openrouter_chiffree, fin: c.cle_openrouter_fin, modele: c.modele_openrouter };
+  return { chiffree: c.cle_chiffree, fin: c.cle_fin, modele: c.modele };
 }
 
 function lisible(chiffree: string | null): boolean {
@@ -93,13 +103,15 @@ function vueFournisseur(c: ConfigIA, f: FournisseurIA) {
 /** Ce que voit l'administrateur : jamais les clés, seulement leurs 4 derniers caractères. */
 function versVue(c: ConfigIA) {
   const principal = vueFournisseur(c, c.fournisseur);
-  const secoursPossible = !!acces(c, autreFournisseur(c.fournisseur)).chiffree;
+  const secoursFournisseur = fournisseurSecours(c.fournisseur, (f) => lisible(acces(c, f).chiffree));
   return {
     actif: c.actif && principal.cle_configuree,
     fournisseur: c.fournisseur,
     secours: c.secours,
-    secours_possible: secoursPossible,
-    fournisseurs: { openai: vueFournisseur(c, 'openai'), gemini: vueFournisseur(c, 'gemini') },
+    secours_possible: secoursFournisseur !== null,
+    /** Fournisseur qui prendrait le relais (le premier des autres ayant une clé lisible). */
+    secours_fournisseur: secoursFournisseur,
+    fournisseurs: { openai: vueFournisseur(c, 'openai'), gemini: vueFournisseur(c, 'gemini'), openrouter: vueFournisseur(c, 'openrouter') },
     // Champs du fournisseur actif, à plat (compatibilité avec les premiers écrans).
     ...principal,
     updated_at: c.updated_at,
@@ -119,13 +131,13 @@ function cleEnClair(c: ConfigIA, f: FournisseurIA): string {
   }
 }
 
-/** Accès de secours : l'autre fournisseur, s'il est permis et que sa clé se lit. */
+/** Accès de secours : un autre fournisseur avec une clé lisible, si le secours est permis. */
 function accesSecours(c: ConfigIA): Acces | null {
   if (!c.secours) return null;
-  const f = autreFournisseur(c.fournisseur);
+  const f = fournisseurSecours(c.fournisseur, (x) => lisible(acces(c, x).chiffree));
+  if (!f) return null;
   const a = acces(c, f);
-  if (!a.chiffree || !lisible(a.chiffree)) return null;
-  return { fournisseur: f, cle: dechiffrer(a.chiffree), modele: a.modele };
+  return { fournisseur: f, cle: dechiffrer(a.chiffree!), modele: a.modele };
 }
 
 async function noterUsage(
@@ -216,9 +228,24 @@ const cleGeminiSchema = z
   .max(300, 'Clé trop longue : copiez uniquement la clé')
   .regex(/^[A-Za-z0-9_-]+$/, 'Clé Gemini invalide : elle ne contient ni espace ni caractère spécial (elle commence le plus souvent par « AIza »)');
 
+// OpenRouter : « sk-or-v1-… », sans espace.
+const cleOpenRouterSchema = z
+  .string({ invalid_type_error: 'Clé : texte attendu' })
+  .trim()
+  .min(20, 'Clé trop courte : copiez la clé complète, elle commence par « sk-or- »')
+  .max(300, 'Clé trop longue : copiez uniquement la clé')
+  .regex(/^sk-or-[\x21-\x7e]+$/, 'Clé OpenRouter invalide : elle commence par « sk-or- » et ne contient pas d’espace');
+
 const modeleOpenAISchema = z.enum(MODELES_IA, { errorMap: () => ({ message: `Modèle inconnu : choisissez ${MODELES_IA.join(', ')}` }) });
 const modeleGeminiSchema = z.enum(MODELES_GEMINI, { errorMap: () => ({ message: `Modèle inconnu : choisissez ${MODELES_GEMINI.join(', ')}` }) });
-const fournisseurSchema = z.enum(FOURNISSEURS_IA, { errorMap: () => ({ message: 'Fournisseur : openai ou gemini' }) });
+const modeleOpenRouterSchema = z
+  .string({ invalid_type_error: 'Modèle : texte attendu' })
+  .trim()
+  .max(120, 'Identifiant de modèle trop long')
+  .regex(MODELE_OPENROUTER_RE, 'Modèle OpenRouter invalide : identifiant « éditeur/modèle », par exemple openai/gpt-4o-mini');
+const fournisseurSchema = z.enum(FOURNISSEURS_IA, { errorMap: () => ({ message: 'Fournisseur : openai, gemini ou openrouter' }) });
+
+const cleSchemaPour = (f: FournisseurIA) => (f === 'gemini' ? cleGeminiSchema : f === 'openrouter' ? cleOpenRouterSchema : cleOpenAISchema);
 
 const configSchema = z.object({
   actif: z.boolean({ invalid_type_error: 'Activation : oui ou non' }).optional(),
@@ -229,6 +256,7 @@ const configSchema = z.object({
   cle: cleOpenAISchema.nullable().optional(),
   openai: z.object({ cle: cleOpenAISchema.nullable().optional(), modele: modeleOpenAISchema.optional() }).optional(),
   gemini: z.object({ cle: cleGeminiSchema.nullable().optional(), modele: modeleGeminiSchema.optional() }).optional(),
+  openrouter: z.object({ cle: cleOpenRouterSchema.nullable().optional(), modele: modeleOpenRouterSchema.optional() }).optional(),
 });
 
 // ---------------------------------------------------------------------------
@@ -251,10 +279,11 @@ iaRouter.put('/config', requireRole('admin'), async (req, res) => {
   const cles: Record<FournisseurIA, { chiffree: string | null; fin: string | null; modele: string }> = {
     openai: { chiffree: avant.cle_chiffree, fin: avant.cle_fin, modele: avant.modele },
     gemini: { chiffree: avant.cle_gemini_chiffree, fin: avant.cle_gemini_fin, modele: avant.modele_gemini },
+    openrouter: { chiffree: avant.cle_openrouter_chiffree, fin: avant.cle_openrouter_fin, modele: avant.modele_openrouter },
   };
   const appliquer = (f: FournisseurIA, cle: string | null | undefined, modele: string | undefined) => {
-    const nomCle = f === 'openai' ? 'cle' : 'cle_gemini';
-    const nomModele = f === 'openai' ? 'modele' : 'modele_gemini';
+    const nomCle = f === 'openai' ? 'cle' : `cle_${f}`;
+    const nomModele = f === 'openai' ? 'modele' : `modele_${f}`;
     if (cle === null) {
       if (cles[f].chiffree) changements[nomCle] = 'effacee';
       cles[f] = { ...cles[f], chiffree: null, fin: null };
@@ -269,6 +298,7 @@ iaRouter.put('/config', requireRole('admin'), async (req, res) => {
   };
   appliquer('openai', input.openai?.cle ?? input.cle, input.openai?.modele ?? input.modele);
   appliquer('gemini', input.gemini?.cle, input.gemini?.modele);
+  appliquer('openrouter', input.openrouter?.cle, input.openrouter?.modele);
 
   // Fournisseur actif : il lui faut une clé.
   const fournisseur = input.fournisseur ?? avant.fournisseur;
@@ -290,13 +320,21 @@ iaRouter.put('/config', requireRole('admin'), async (req, res) => {
   if (Object.keys(changements).length) {
     await tx(async (db) => {
       await db.query(
-        `INSERT INTO ia_config (id, actif, fournisseur, secours, modele, cle_chiffree, cle_fin, modele_gemini, cle_gemini_chiffree, cle_gemini_fin, updated_by, updated_at)
-         VALUES (1, $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, now())
+        `INSERT INTO ia_config (id, actif, fournisseur, secours, modele, cle_chiffree, cle_fin, modele_gemini, cle_gemini_chiffree, cle_gemini_fin,
+                                modele_openrouter, cle_openrouter_chiffree, cle_openrouter_fin, updated_by, updated_at)
+         VALUES (1, $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, now())
          ON CONFLICT (id) DO UPDATE SET actif = EXCLUDED.actif, fournisseur = EXCLUDED.fournisseur, secours = EXCLUDED.secours,
            modele = EXCLUDED.modele, cle_chiffree = EXCLUDED.cle_chiffree, cle_fin = EXCLUDED.cle_fin,
            modele_gemini = EXCLUDED.modele_gemini, cle_gemini_chiffree = EXCLUDED.cle_gemini_chiffree, cle_gemini_fin = EXCLUDED.cle_gemini_fin,
+           modele_openrouter = EXCLUDED.modele_openrouter, cle_openrouter_chiffree = EXCLUDED.cle_openrouter_chiffree, cle_openrouter_fin = EXCLUDED.cle_openrouter_fin,
            updated_by = EXCLUDED.updated_by, updated_at = now()`,
-        [actif, fournisseur, secours, cles.openai.modele, cles.openai.chiffree, cles.openai.fin, cles.gemini.modele, cles.gemini.chiffree, cles.gemini.fin, me(req).id],
+        [
+          actif, fournisseur, secours,
+          cles.openai.modele, cles.openai.chiffree, cles.openai.fin,
+          cles.gemini.modele, cles.gemini.chiffree, cles.gemini.fin,
+          cles.openrouter.modele, cles.openrouter.chiffree, cles.openrouter.fin,
+          me(req).id,
+        ],
       );
       await journal(req, 'ia_config_modifiee', 'ia_config', null, changements, db);
     });
@@ -308,7 +346,7 @@ const testSchema = z.object({
   fournisseur: fournisseurSchema.optional(),
   /** Clé à essayer avant de l'enregistrer ; sinon la clé enregistrée. */
   cle: z.string({ invalid_type_error: 'Clé : texte attendu' }).trim().min(1).max(300).optional(),
-  modele: z.string().trim().min(1).max(80).optional(),
+  modele: z.string().trim().min(1).max(120).optional(),
 });
 
 iaRouter.post('/test', requireRole('admin'), async (req, res) => {
@@ -316,11 +354,13 @@ iaRouter.post('/test', requireRole('admin'), async (req, res) => {
   const config = await lireConfig();
   const fournisseur = input.fournisseur ?? config.fournisseur;
   if (input.cle !== undefined) {
-    const v = (fournisseur === 'gemini' ? cleGeminiSchema : cleOpenAISchema).safeParse(input.cle);
+    const v = cleSchemaPour(fournisseur).safeParse(input.cle);
     if (!v.success) throw badRequest('Certains champs sont invalides.', { champs: { cle: v.error.issues[0]?.message ?? 'Clé invalide' } });
   }
-  if (input.modele !== undefined && !MODELES_PAR_FOURNISSEUR[fournisseur].includes(input.modele)) {
-    throw badRequest('Certains champs sont invalides.', { champs: { modele: `Modèle inconnu : choisissez ${MODELES_PAR_FOURNISSEUR[fournisseur].join(', ')}` } });
+  if (input.modele !== undefined && !modeleValide(fournisseur, input.modele)) {
+    throw badRequest('Certains champs sont invalides.', {
+      champs: { modele: fournisseur === 'openrouter' ? 'Modèle OpenRouter invalide : identifiant « éditeur/modèle », par exemple openai/gpt-4o-mini' : `Modèle inconnu : choisissez ${MODELES_PAR_FOURNISSEUR[fournisseur].join(', ')}` },
+    });
   }
   const cle = input.cle ?? cleEnClair(config, fournisseur);
   const modele = input.modele ?? acces(config, fournisseur).modele;
@@ -410,6 +450,7 @@ iaRouter.get('/usages', requireRole('admin'), async (req, res) => {
             count(*) FILTER (WHERE type = 'suggestion' AND statut = 'ok' AND secours)::int AS secours,
             count(*) FILTER (WHERE type = 'suggestion' AND fournisseur = 'openai')::int AS openai,
             count(*) FILTER (WHERE type = 'suggestion' AND fournisseur = 'gemini')::int AS gemini,
+            count(*) FILTER (WHERE type = 'suggestion' AND fournisseur = 'openrouter')::int AS openrouter,
             coalesce(sum(jetons_entree), 0)::int AS jetons_entree,
             coalesce(sum(jetons_sortie), 0)::int AS jetons_sortie
      FROM ia_usage WHERE created_at > now() - interval '30 days'`,
