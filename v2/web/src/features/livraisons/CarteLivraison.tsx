@@ -14,6 +14,7 @@ import { useAction } from '../dossiers/hooks';
 import { ecartJours, libelleRendezVous } from './dates';
 import { lienItineraire, lienTelephone, resteAEncaisser } from './hooks';
 import { ReporterDialog } from './ReporterDialog';
+import { MiniaturesDossier } from '../fichiers/MiniaturesDossier';
 import { FixerMontantDialog } from './FixerMontantDialog';
 
 type Etat = 'a_programmer' | 'tournee' | 'retard';
@@ -158,6 +159,7 @@ export function CarteLivraison({ d, montrerLivreur }: { d: DossierResume; montre
           <span>{adresse ?? 'Adresse à confirmer avec le client'}</span>
         </p>
         {d.notes_livraison && <p className="lv-card__notes">{d.notes_livraison}</p>}
+        <MiniaturesDossier dossierId={d.id} fichiers={d.fichiers_apercu ?? []} total={d.nb_fichiers} resume={d.resume_specs} />
 
         <div className="lv-card__tuiles">
           <Quand d={d} etat={etat} />

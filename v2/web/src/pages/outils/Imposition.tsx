@@ -1,0 +1,686 @@
+// Poste d'imposition (administrateur, préparateurs). Trois zones, comme un logiciel d'imposition :
+//  - à gauche, les pièces du travail : fichiers d'un dossier ou fichiers déposés sans dossier (PDF, images),
+//    chacune avec son rôle (recto, verso, pages qui se suivent), analysées (format, fonds perdus, résolution) ;
+//  - au centre, la feuille en grand avec le vrai visuel dans chaque pose, zoom, recto/verso, feuilles ;
+//  - à droite, les réglages illustrés : opération, feuille et orientation, fonds perdus, coupe, poses,
+//    livret, numérotation ; modèles enregistrés ; proposition de l'assistant IA.
+// Le résultat est ajouté au dossier (ou proposé au téléchargement sans dossier), dans une fenêtre.
+
+import { useEffect, useMemo, useRef, useState, type ChangeEvent, type DragEvent } from 'react';
+import { Link, useSearchParams } from 'react-router-dom';
+import { ArrowDown, ArrowLeft, ArrowRight, ArrowUp, Bookmark, Check, ChevronLeft, ChevronRight, Download, FileCheck2, FolderOpen, LayoutGrid, Minus, Plus, RotateCcw, Sparkles, Trash2, Upload, Wand2, X } from 'lucide-react';
+import { formatTaille } from '@evocom/shared';
+import { useUser } from '../../auth/AuthContext';
+import { useDossier } from '../../features/dossiers/hooks';
+import { DialogueDossier, genreDe } from '../../features/imposition/DialogueDossier';
+import { extension } from '../../features/fichiers/ListeFichiers';
+import { useStatutIA } from '../../features/ia/hooks';
+import { useAnalyse, useGenerer, useModelesImposition, useModelesMutations, usePlan, useProposerIA, useTeleverserLibre } from '../../features/imposition/hooks';
+import { OptionCartes } from '../../features/imposition/OptionCartes';
+import { PictoFondsPerdus, PictoMode, PictoOperation, PictoOrientation, PictoTraits } from '../../features/imposition/Pictos';
+import { SchemaFeuille, type AffichageSchema } from '../../features/imposition/SchemaFeuille';
+import { FOURNISSEUR_LABELS_IA, METHODE_LABELS, MODE_LABELS, OPERATION_LABELS, type AnalysePdf, type Feuille, type ModeleImposition, type Operation, type ParamsImposition, type Piece, type PieceAnalysee, type PropositionImposition, type ResultatGeneration, type RolePiece } from '../../features/imposition/types';
+import '../../features/imposition/imposition.css';
+import { apercuUrl, fichierUrl, messageErreur } from '../../lib/api';
+import { Alert, Button, Checkbox, ConfirmDialog, Dialog, MachineChip, PageHeader, Ref, SelectField, Skeleton, TextField, TextareaField, useToast } from '../../ui';
+
+const FEUILLE_LABELS: Record<Feuille, string> = { sra3: 'SRA3 · 320 × 450 mm', a3: 'A3 · 297 × 420 mm', a3_plus: 'A3+ · 329 × 483 mm', sra4: 'SRA4 · 225 × 320 mm', a4: 'A4 · 210 × 297 mm', a5: 'A5 · 148 × 210 mm', banniere_330: 'Bannière 330 × 660 mm', personnalisee: 'Personnalisée…' };
+
+function Nombre({ label, value, onChange, min = 0, max = 2000, step = 0.5, addon = 'mm', help }: { label: string; value: number; onChange: (v: number) => void; min?: number; max?: number; step?: number; addon?: string; help?: string }) {
+  const [texte, setTexte] = useState(String(value));
+  useEffect(() => setTexte(String(value)), [value]);
+  return (
+    <TextField label={label} type="number" inputMode="decimal" min={min} max={max} step={step} addon={addon} value={texte} help={help}
+      onChange={(e) => {
+        setTexte(e.target.value);
+        const v = Number(e.target.value.replace(',', '.'));
+        if (Number.isFinite(v) && v >= min && v <= max) onChange(v);
+      }}
+    />
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Panneau des pièces
+
+function MiniPiece({ p, analyse }: { p: Piece; analyse?: PieceAnalysee }) {
+  const [ko, setKo] = useState(false);
+  const src = p.libre ? `/api/imposition/libre/${p.libre}/apercu?page=1&largeur=160` : apercuUrl(p.fichier_id!, 160);
+  void analyse;
+  return <span className="pc__mini">{src && !ko ? <img src={src} alt="" onError={() => setKo(true)} /> : <span className="ev-file__type">{extension(p.nom)}</span>}</span>;
+}
+
+function ChipsPiece({ a }: { a: PieceAnalysee }) {
+  const f = a.format;
+  return (
+    <span className="pc__chips">
+      <span className="pc__chip">{a.pages} p.</span>
+      {a.largeur && a.hauteur && <span className="pc__chip">{Math.round(a.largeur)} × {Math.round(a.hauteur)} mm</span>}
+      {f ? <span className="pc__chip" data-tone="ok">{f.libelle.replace(/\s*\(.*\)$/, '').replace(/ \d+ × \d+ mm$/, '')}</span> : <span className="pc__chip" data-tone="attention">format libre</span>}
+      {a.fonds_perdus === 'declares' && <span className="pc__chip" data-tone="ok">fonds perdus</span>}
+      {a.fonds_perdus === 'incertains' && <span className="pc__chip" data-tone="attention">fonds perdus probables</span>}
+      {a.fonds_perdus === 'absents' && <span className="pc__chip" data-tone="alerte">sans fonds perdus</span>}
+      {a.genre === 'image' && <span className="pc__chip">image</span>}
+    </span>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Réglages
+
+function Reglages({ p, onChange, nbPages }: { p: ParamsImposition; onChange: (p: ParamsImposition) => void; nbPages: number }) {
+  const maj = (patch: Partial<ParamsImposition>) => onChange({ ...p, ...patch });
+  const num = p.numerotation ?? null;
+  const majNum = (patch: Partial<NonNullable<ParamsImposition['numerotation']>>) => maj({ numerotation: { ...(num ?? { debut: 1, chiffres: 4, prefixe: '', position: 'bas_droite', taille_pt: 12, verso: false }), ...patch } });
+  return (
+    <div className="stack">
+      <OptionCartes<Operation>
+        name="imp-operation" label="Opération" tone="accent"
+        value={p.operation}
+        onChange={(operation) => maj({ operation, ...(operation === 'livret' ? { recto_verso: true, mode: 'sequence' as const } : {}) })}
+        options={(Object.keys(OPERATION_LABELS) as Operation[]).map((o) => ({ value: o, label: OPERATION_LABELS[o].titre, aide: OPERATION_LABELS[o].aide, picto: <PictoOperation op={o} /> }))}
+      />
+
+      {p.operation === 'assembler' && (
+        <p className="ev-help" style={{ margin: 0 }}>Les pièces sont réunies dans l’ordre de l’étape 1 (recto 1, verso 1, recto 2…), sans modification des pages. Utile pour envoyer un seul PDF à l’imprimeur.</p>
+      )}
+      {p.operation !== 'assembler' && (
+      <div className="ws__section">
+        <p className="ws__section-titre">Format fini</p>
+        <div className="imp-ligne">
+          <Nombre label="Largeur" value={p.fini.largeur} onChange={(v) => maj({ fini: { ...p.fini, largeur: v } })} min={10} />
+          <Nombre label="Hauteur" value={p.fini.hauteur} onChange={(v) => maj({ fini: { ...p.fini, hauteur: v } })} min={10} />
+        </div>
+      </div>
+      )}
+
+      {p.operation !== 'fonds_perdus' && p.operation !== 'assembler' && (
+        <div className="ws__section">
+          <p className="ws__section-titre">Papier</p>
+          <SelectField label="Feuille d’impression" value={p.feuille} onChange={(e) => maj({ feuille: e.target.value as Feuille })} options={(Object.keys(FEUILLE_LABELS) as Feuille[]).map((f) => ({ value: f, label: FEUILLE_LABELS[f] }))} />
+          {p.feuille === 'personnalisee' && (
+            <div className="imp-ligne">
+              <Nombre label="Largeur feuille" value={p.feuille_personnalisee?.largeur ?? 320} onChange={(v) => maj({ feuille_personnalisee: { largeur: v, hauteur: p.feuille_personnalisee?.hauteur ?? 450 } })} min={50} />
+              <Nombre label="Hauteur feuille" value={p.feuille_personnalisee?.hauteur ?? 450} onChange={(v) => maj({ feuille_personnalisee: { largeur: p.feuille_personnalisee?.largeur ?? 320, hauteur: v } })} min={50} />
+            </div>
+          )}
+          <OptionCartes name="imp-orientation" label="Sens du papier" tone="teal" compact value={p.orientation} onChange={(orientation) => maj({ orientation })}
+            options={[
+              { value: 'auto' as const, label: 'Auto', aide: 'Le sens qui loge le plus de poses', picto: <PictoOrientation sens="auto" /> },
+              { value: 'portrait' as const, label: 'Portrait', picto: <PictoOrientation sens="portrait" /> },
+              { value: 'paysage' as const, label: 'Paysage', picto: <PictoOrientation sens="paysage" /> },
+            ]}
+          />
+        </div>
+      )}
+
+      {p.operation !== 'assembler' && (
+      <div className="ws__section">
+        <p className="ws__section-titre">Fonds perdus et coupe</p>
+        <div className="imp-ligne">
+          <Nombre label="Fonds perdus" value={p.fonds_perdus_mm} onChange={(v) => maj({ fonds_perdus_mm: v })} max={20} help="3 mm en général, 5 mm en grand format." />
+          {p.operation !== 'fonds_perdus' && <Nombre label="Gouttière" value={p.gouttiere_mm} onChange={(v) => maj({ gouttiere_mm: v })} max={50} help="Entre deux poses, en plus des fonds perdus." />}
+          {p.operation === 'poses' && <Nombre label="Marge feuille" value={p.marge_mm} onChange={(v) => maj({ marge_mm: v })} max={100} help="Autour des poses (pinces, traits)." />}
+        </div>
+        <OptionCartes name="imp-methode" label="D’où viennent les fonds perdus" tone="rose" compact value={p.methode_fonds_perdus} onChange={(methode_fonds_perdus) => maj({ methode_fonds_perdus })}
+          options={(Object.keys(METHODE_LABELS) as ParamsImposition['methode_fonds_perdus'][]).map((m) => ({ value: m, label: METHODE_LABELS[m].label, aide: METHODE_LABELS[m].aide, picto: <PictoFondsPerdus methode={m} /> }))}
+        />
+        <p className="ev-help" style={{ margin: 0 }}>{METHODE_LABELS[p.methode_fonds_perdus].aide}</p>
+        <OptionCartes name="imp-traits" label="Traits de coupe" tone="orange" compact value={p.traits_de_coupe ? 'oui' : 'non'} onChange={(v) => maj({ traits_de_coupe: v === 'oui' })}
+          options={[
+            { value: 'oui', label: 'Avec traits', aide: 'Angles de chaque pose et bords de feuille', picto: <PictoTraits actifs /> },
+            { value: 'non', label: 'Sans', picto: <PictoTraits actifs={false} /> },
+          ]}
+        />
+      </div>
+      )}
+
+      {p.operation === 'poses' && (
+        <div className="ws__section">
+          <p className="ws__section-titre">Poses</p>
+          <OptionCartes name="imp-mode" label="Répartition des pages" tone="violet" value={p.mode} onChange={(mode) => maj({ mode, numerotation: mode === 'coupe_empile' ? p.numerotation : null })}
+            options={(Object.keys(MODE_LABELS) as ParamsImposition['mode'][]).map((m) => ({ value: m, label: MODE_LABELS[m].label, aide: MODE_LABELS[m].aide, picto: <PictoMode mode={m} /> }))}
+          />
+          <Checkbox label={`Recto-verso${nbPages >= 2 ? '' : ' (une seule page : verso vide)'}`} checked={p.recto_verso} onChange={(recto_verso) => maj({ recto_verso })} />
+          {p.recto_verso && (
+            <SelectField label="Retournement à l’impression" value={p.retournement} onChange={(e) => maj({ retournement: e.target.value as ParamsImposition['retournement'] })} options={[{ value: 'bord_long', label: 'Sur le bord long (le plus courant)' }, { value: 'bord_court', label: 'Sur le bord court' }]} help="Le verso est placé en miroir pour tomber sur le recto." />
+          )}
+          <Nombre label={p.mode === 'coupe_empile' ? 'Nombre d’exemplaires' : 'Quantité à produire'} value={p.quantite ?? 0} onChange={(v) => maj({ quantite: v > 0 ? Math.round(v) : undefined })} min={0} max={100000} step={1} addon="ex." help={p.mode === 'coupe_empile' ? 'Tickets ou exemplaires à sortir.' : 'Pour compter les feuilles à imprimer.'} />
+          {p.mode === 'coupe_empile' && (
+            <div className="stack-sm">
+              <Checkbox label="Numéroter les exemplaires (tickets, bons, billets)" checked={!!num} onChange={(on) => maj({ numerotation: on ? { debut: 1, chiffres: 4, prefixe: '', position: 'bas_droite', taille_pt: 12, verso: false } : null })} />
+              {num && (
+                <div className="imp-ligne">
+                  <TextField label="Préfixe" value={num.prefixe} onChange={(e) => majNum({ prefixe: e.target.value.slice(0, 12) })} placeholder="N° " />
+                  <Nombre label="Premier numéro" value={num.debut} onChange={(v) => majNum({ debut: Math.round(v) })} min={0} max={9999999} step={1} addon="" />
+                  <Nombre label="Chiffres" value={num.chiffres} onChange={(v) => majNum({ chiffres: Math.round(v) })} min={1} max={8} step={1} addon="" help="0001, 0002…" />
+                  <SelectField label="Position" value={num.position} onChange={(e) => majNum({ position: e.target.value as NonNullable<ParamsImposition['numerotation']>['position'] })} options={[{ value: 'bas_droite', label: 'Bas droite' }, { value: 'bas_gauche', label: 'Bas gauche' }, { value: 'bas_centre', label: 'Bas centre' }, { value: 'haut_droite', label: 'Haut droite' }, { value: 'haut_gauche', label: 'Haut gauche' }]} />
+                  <Nombre label="Taille" value={num.taille_pt} onChange={(v) => majNum({ taille_pt: v })} min={6} max={72} step={1} addon="pt" />
+                  {p.recto_verso && <Checkbox label="Numéro aussi au verso" checked={num.verso} onChange={(verso) => majNum({ verso })} />}
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      )}
+
+      {p.operation === 'livret' && (
+        <div className="ws__section">
+          <p className="ws__section-titre">Livret</p>
+          <Nombre label="Chasse (cahiers intérieurs)" value={p.chasse_mm ?? 0} onChange={(v) => maj({ chasse_mm: v })} max={10} step={0.1} help="0 pour un livret fin ; 0,2 à 0,5 mm par cahier au-delà de 40 pages." />
+          <SelectField label="Pages blanches ajoutées" value={p.blanches} onChange={(e) => maj({ blanches: e.target.value as ParamsImposition['blanches'] })} options={[{ value: 'fin', label: 'À la fin' }, { value: 'avant_derniere', label: 'Avant la dernière page (4e de couverture gardée)' }]} />
+          <Nombre label="Exemplaires" value={p.quantite ?? 0} onChange={(v) => maj({ quantite: v > 0 ? Math.round(v) : undefined })} min={0} max={100000} step={1} addon="ex." help="Pour compter les feuilles à imprimer." />
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Modèles (admin) et assistant IA
+
+function Modeles({ params, onAppliquer }: { params: ParamsImposition | null; onAppliquer: (m: ModeleImposition) => void }) {
+  const user = useUser();
+  const toast = useToast();
+  const q = useModelesImposition();
+  const { creer, supprimer } = useModelesMutations();
+  const [enregistrer, setEnregistrer] = useState(false);
+  const [nom, setNom] = useState('');
+  const [description, setDescription] = useState('');
+  const [aSupprimer, setASupprimer] = useState<ModeleImposition | null>(null);
+  const items = q.data?.items ?? [];
+  const admin = user.role === 'admin';
+  return (
+    <div className="ws__section">
+      <div className="row-between">
+        <p className="ws__section-titre">Modèles</p>
+        {admin && params && (
+          <Button size="sm" variant="ghost" icon={<Bookmark />} onClick={() => setEnregistrer(true)}>Enregistrer ces réglages</Button>
+        )}
+      </div>
+      {items.length === 0 ? (
+        <p className="ev-muted" style={{ margin: 0, fontSize: 12 }}>{admin ? 'Aucun modèle : réglez une imposition puis enregistrez-la.' : 'Aucun modèle enregistré par l’administrateur.'}</p>
+      ) : (
+        <div className="imp-modeles">
+          {items.map((m) => (
+            <span key={m.id} className="imp-modele" title={m.description ?? undefined}>
+              <button type="button" className="imp-modele" style={{ padding: 0, border: 0 }} onClick={() => onAppliquer(m)}>
+                <LayoutGrid aria-hidden="true" width={14} height={14} /> {m.nom}
+              </button>
+              {admin && (
+                <button type="button" className="imp-modele__x" aria-label={`Supprimer le modèle ${m.nom}`} onClick={() => setASupprimer(m)}>
+                  <Trash2 width={12} height={12} />
+                </button>
+              )}
+            </span>
+          ))}
+        </div>
+      )}
+      {enregistrer && params && (
+        <Dialog open onClose={() => setEnregistrer(false)} title="Enregistrer un modèle d’imposition" description="Les réglages actuels seront proposés d’un clic aux préparateurs. Le format fini du fichier est conservé à l’application."
+          footer={
+            <>
+              <Button onClick={() => setEnregistrer(false)}>Annuler</Button>
+              <Button variant="primary" busy={creer.isPending} disabled={!nom.trim()} onClick={() => creer.mutate({ nom: nom.trim(), description: description.trim() || null, params }, { onSuccess: () => (setEnregistrer(false), setNom(''), setDescription(''), toast.success('Modèle enregistré', nom.trim())), onError: (e) => toast.error('Modèle non enregistré', messageErreur(e)) })}>
+                Enregistrer
+              </Button>
+            </>
+          }
+        >
+          <TextField label="Nom" required value={nom} onChange={(e) => setNom(e.target.value)} placeholder="Ex. Cartes de visite SRA3, 21 poses" data-autofocus />
+          <TextareaField label="Description" value={description} onChange={(e) => setDescription(e.target.value)} rows={2} placeholder="Quand l’utiliser, ce qu’il faut vérifier…" />
+        </Dialog>
+      )}
+      <ConfirmDialog open={!!aSupprimer} onClose={() => setASupprimer(null)} title={`Supprimer le modèle « ${aSupprimer?.nom} » ?`} description="Les impositions déjà générées ne sont pas concernées." confirmLabel="Supprimer" danger busy={supprimer.isPending}
+        onConfirm={() => aSupprimer && supprimer.mutate(aSupprimer.id, { onSuccess: () => setASupprimer(null), onError: (e) => toast.error('Suppression impossible', messageErreur(e)) })}
+      />
+    </div>
+  );
+}
+
+function BlocIA({ pieces, onAppliquer }: { pieces: Piece[]; onAppliquer: (p: ParamsImposition) => void }) {
+  const statut = useStatutIA();
+  const proposer = useProposerIA();
+  const [question, setQuestion] = useState('');
+  const r: PropositionImposition | undefined = proposer.data;
+  if (!statut.data?.actif) return null;
+  return (
+    <div className="imp-ia">
+      <div className="imp-ia__tete">
+        <Sparkles aria-hidden="true" />
+        Assistant IA
+        {r && <span className="imp-confiance" data-niveau={r.confiance}>confiance {r.confiance}</span>}
+      </div>
+      <TextField label="Précision (facultatif)" value={question} onChange={(e) => setQuestion(e.target.value)} placeholder="Ex. 500 cartes, coins arrondis" />
+      <Button variant="primary" icon={<Wand2 />} busy={proposer.isPending} onClick={() => proposer.mutate({ pieces, question: question.trim() || undefined }, { onSuccess: (x) => onAppliquer(x.params) })}>
+        Analyser et régler automatiquement
+      </Button>
+      {proposer.isError && <Alert tone="error">{messageErreur(proposer.error)}</Alert>}
+      {r && (
+        <>
+          <p style={{ margin: 0 }}><strong>{r.type_document}</strong> · {r.explication}</p>
+          {r.points_de_vigilance.length > 0 && <ul>{r.points_de_vigilance.map((x, i) => <li key={i}>{x}</li>)}</ul>}
+          {r.erreur_plan && <Alert tone="warning">{r.erreur_plan}</Alert>}
+          <span className="ev-help">{FOURNISSEUR_LABELS_IA[r.fournisseur] ?? r.fournisseur} · {r.modele}{r.secours ? ' · par le secours' : ''} · réglages appliqués, vérifiez la feuille.</span>
+        </>
+      )}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Résumé de l'analyse (centre, au-dessus de la feuille)
+
+function Diagnostic({ a }: { a: AnalysePdf }) {
+  const f = a.format;
+  const touche = a.pages.some((p) => p.jusqu_au_bord === true);
+  const tone = a.fonds_perdus === 'declares' ? 'ok' : a.fonds_perdus === 'incertains' ? 'attention' : touche ? 'alerte' : 'attention';
+  return (
+    <div className="imp-resume-bloc">
+      <strong>
+        {a.nb_pages} page{a.nb_pages > 1 ? 's' : ''} · {a.largeur} × {a.hauteur} mm · {f ? f.libelle.replace(/\s*\(.*\)$/, '') : 'format non reconnu'}
+        {f?.paysage ? ' (paysage)' : ''}
+      </strong>
+      <span className="pc__chips">
+        <span className="pc__chip" data-tone={tone}>
+          {a.fonds_perdus === 'declares' ? `Fonds perdus déclarés ${a.fonds_perdus_mm} mm` : a.fonds_perdus === 'incertains' ? `Fonds perdus probables ${a.fonds_perdus_mm} mm (non déclarés)` : touche ? 'Sans fonds perdus, visuel jusqu’au bord : à fabriquer' : 'Sans fonds perdus, marge blanche autour'}
+        </span>
+        {!a.uniforme && <span className="pc__chip" data-tone="attention">pages de tailles différentes</span>}
+        {!a.rendu && <span className="pc__chip">bords non contrôlés (Poppler absent)</span>}
+      </span>
+      {a.avertissements.filter((m) => !/Poppler/.test(m)).map((m, i) => (
+        <span key={i} className="ev-help" style={{ margin: 0 }}>{m}</span>
+      ))}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Page : trois écrans. 1. Fichiers  2. Prévisualisation et réglages  3. Résultat.
+
+type Ecran = 1 | 2;
+const ECRANS: { id: Ecran; titre: string; aide: string }[] = [
+  { id: 1, titre: 'Fichiers', aide: 'Choisir dans un dossier ou déposer' },
+  { id: 2, titre: 'Prévisualisation, réglages et génération', aide: 'Feuille, poses, fonds perdus, traits' },
+];
+
+function Etapes({ courant, max, onAller }: { courant: Ecran; max: Ecran; onAller: (e: Ecran) => void }) {
+  return (
+    <ol className="imp-stepper" aria-label="Étapes">
+      {ECRANS.map((e) => {
+        const etat = e.id < courant ? 'faite' : e.id === courant ? 'courante' : 'a_venir';
+        return (
+          <li key={e.id} data-etat={etat}>
+            <button type="button" className="imp-stepper__btn" disabled={e.id > max} aria-current={etat === 'courante' ? 'step' : undefined} onClick={() => onAller(e.id)}>
+              <span className="imp-etape" aria-hidden="true">{etat === 'faite' ? <Check width={14} height={14} /> : e.id}</span>
+              <span className="imp-stepper__texte">
+                <span>{e.titre}</span>
+                <small>{e.aide}</small>
+              </span>
+            </button>
+          </li>
+        );
+      })}
+    </ol>
+  );
+}
+
+/** Écran 1 : les pièces du travail. */
+function EcranFichiers({ pieces, setPieces, analyses, dossierId, setDossierId, enAnalyse, onSuivant }: {
+  pieces: Piece[];
+  setPieces: (p: Piece[]) => void;
+  analyses: PieceAnalysee[];
+  dossierId: number | null;
+  setDossierId: (id: number | null) => void;
+  enAnalyse: boolean;
+  onSuivant: () => void;
+}) {
+  const toast = useToast();
+  const [dialogue, setDialogue] = useState(false);
+  const [survol, setSurvol] = useState(false);
+  const deposer = useTeleverserLibre();
+  const dossier = useDossier(dossierId ?? undefined);
+  const input = useRef<HTMLInputElement>(null);
+  const ajouter = (p: Omit<Piece, 'cle'>) => setPieces([...piecesRef.current, { ...p, cle: `${p.libre ?? p.fichier_id}:${p.role}:${Math.random().toString(36).slice(2, 7)}` }]);
+  const piecesRef = useRef(pieces);
+  piecesRef.current = pieces;
+  const deplacer = (i: number, d: -1 | 1) => {
+    const l = [...pieces];
+    const j = i + d;
+    if (j < 0 || j >= l.length) return;
+    [l[i], l[j]] = [l[j]!, l[i]!];
+    setPieces(l);
+  };
+  const envoyer = async (files: File[]) => {
+    for (const f of files) {
+      if (!genreDe(f.name, f.type)) {
+        toast.error('Fichier non pris en charge', `${f.name} : déposez un PDF ou une image.`);
+        continue;
+      }
+      try {
+        const r = await deposer.mutateAsync(f);
+        ajouter({ libre: r.libre, role: 'pages', nom: r.nom, taille: r.taille, mime: r.mime, genre: r.genre });
+      } catch (err) {
+        toast.error(`${f.name} non déposé`, messageErreur(err));
+      }
+    }
+  };
+  const onChoix = (e: ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(e.target.files ?? []);
+    e.target.value = '';
+    void envoyer(files);
+  };
+  const onDrop = (e: DragEvent) => {
+    e.preventDefault();
+    setSurvol(false);
+    void envoyer(Array.from(e.dataTransfer.files));
+  };
+  const analyseDe = (p: Piece) => analyses.find((a) => (p.libre ? a.libre === p.libre : a.fichier_id === p.fichier_id));
+  const avecRV = pieces.some((p) => p.role !== 'pages');
+  const rectos = pieces.filter((p) => p.role === 'recto').length;
+  const versos = pieces.filter((p) => p.role === 'verso').length;
+
+  return (
+    <div className="ecran ecran--fichiers">
+      <div className="ecran__sources">
+        <button type="button" className="source" onClick={() => setDialogue(true)}>
+          <span className="source__icone"><FolderOpen aria-hidden="true" /></span>
+          <span className="source__titre">Depuis un dossier</span>
+          <span className="source__aide">Les PDF et images déjà déposés dans un dossier client</span>
+          {dossier.data && (
+            <span className="source__actuel">
+              <Ref>{dossier.data.numero}</Ref> {dossier.data.client_nom} <MachineChip machine={dossier.data.machine} />
+            </span>
+          )}
+        </button>
+        <label className="source source--depot" data-survol={survol || undefined} onDragOver={(e) => (e.preventDefault(), setSurvol(true))} onDragLeave={() => setSurvol(false)} onDrop={onDrop}>
+          <input ref={input} type="file" accept=".pdf,.ai,image/*" multiple onChange={onChoix} />
+          <span className="source__icone"><Upload aria-hidden="true" /></span>
+          <span className="source__titre">{deposer.isPending ? 'Envoi en cours…' : 'Déposer des fichiers'}</span>
+          <span className="source__aide">Glissez des PDF ou des images ici, sans passer par un dossier. Le résultat se télécharge.</span>
+        </label>
+      </div>
+
+      <section className="ws__panneau ecran__liste" aria-labelledby="titre-pieces">
+        <div className="ws__outils">
+          <h2 className="ws__titre" id="titre-pieces">Fichiers du travail</h2>
+          <span className="ev-muted" style={{ fontSize: 13 }}>{pieces.length ? `${pieces.length} fichier${pieces.length > 1 ? 's' : ''}${avecRV ? ` · ${rectos} recto${rectos > 1 ? 's' : ''}, ${versos} verso${versos > 1 ? 's' : ''}` : ''}` : ''}</span>
+        </div>
+        {pieces.length === 0 ? (
+          <p className="pc__vide">Aucun fichier pour l’instant. Ajoutez un PDF (une ou plusieurs pages), ou deux fichiers séparés pour le recto et le verso, ou plusieurs images.</p>
+        ) : (
+          <ul className="pc">
+            {pieces.map((p, i) => {
+              const a = analyseDe(p);
+              return (
+                <li key={p.cle} className="pc__item pc__item--large" data-role={p.role}>
+                  <span className="pc__ordre">
+                    <button type="button" aria-label="Monter" disabled={i === 0} onClick={() => deplacer(i, -1)}><ArrowUp width={14} height={14} /></button>
+                    <span className="pc__rang">{i + 1}</span>
+                    <button type="button" aria-label="Descendre" disabled={i === pieces.length - 1} onClick={() => deplacer(i, 1)}><ArrowDown width={14} height={14} /></button>
+                  </span>
+                  <MiniPiece p={p} analyse={a} />
+                  <span style={{ minWidth: 0 }}>
+                    <span className="pc__nom" title={p.nom}>{p.nom}</span>
+                    <span className="pc__meta">{p.libre ? 'déposé sans dossier · ' : ''}{formatTaille(p.taille)}</span>
+                    {a ? <ChipsPiece a={a} /> : enAnalyse ? <span className="pc__meta">Analyse…</span> : null}
+                    {a?.avertissements.filter((m) => !/Poppler/.test(m)).slice(0, 1).map((m, k) => <span key={k} className="ev-help" style={{ display: 'block', margin: '3px 0 0' }}>{m}</span>)}
+                  </span>
+                  <span className="pc__roles" role="radiogroup" aria-label={`Rôle de ${p.nom}`}>
+                    {(['pages', 'recto', 'verso'] as RolePiece[]).map((r) => (
+                      <button key={r} type="button" role="radio" aria-checked={p.role === r} data-role={r} onClick={() => setPieces(pieces.map((x) => (x.cle === p.cle ? { ...x, role: r } : x)))}>
+                        {r === 'pages' ? 'Pages' : r === 'recto' ? 'Recto' : 'Verso'}
+                      </button>
+                    ))}
+                  </span>
+                  <button type="button" className="ev-icon-btn ev-icon-btn--sm" aria-label={`Retirer ${p.nom}`} onClick={() => setPieces(pieces.filter((x) => x.cle !== p.cle))}><X /></button>
+                </li>
+              );
+            })}
+          </ul>
+        )}
+        <div className="ecran__legende">
+          <span><span className="pc__pastille" data-role="pages" /> <strong>Pages</strong> : les pages se suivent (brochure, flyers différents).</span>
+          <span><span className="pc__pastille" data-role="recto" /> <strong>Recto</strong> et <span className="pc__pastille" data-role="verso" /> <strong>Verso</strong> : deux fichiers pour les deux faces, appariés dans l’ordre.</span>
+        </div>
+      </section>
+
+      <div className="ecran__pied">
+        <span className="ev-muted" style={{ fontSize: 13 }}>{pieces.length === 0 ? 'Ajoutez au moins un fichier pour continuer.' : rectos !== versos && avecRV && versos > 0 ? 'Attention : il n’y a pas autant de rectos que de versos.' : 'Le fichier d’origine n’est jamais modifié.'}</span>
+        <Button variant="primary" size="lg" disabled={pieces.length === 0} onClick={onSuivant}>
+          Suivant : prévisualiser et régler <ArrowRight aria-hidden="true" />
+        </Button>
+      </div>
+
+      {dialogue && <DialogueDossier dossierId={dossierId} pieces={pieces} onDossier={setDossierId} onAjouter={ajouter} onClose={() => setDialogue(false)} />}
+    </div>
+  );
+}
+
+export default function Imposition() {
+  const [sp, setSp] = useSearchParams();
+  const toast = useToast();
+  const dossierParam = Number(sp.get('dossier')) || null;
+  const fichierParam = Number(sp.get('fichier')) || null;
+  const [ecran, setEcran] = useState<Ecran>(1);
+  const [dossierId, setDossierIdState] = useState<number | null>(dossierParam);
+  const setDossierId = (id: number | null) => {
+    setDossierIdState(id);
+    setSp(id ? { dossier: String(id) } : {}, { replace: true });
+  };
+  const [pieces, setPieces] = useState<Piece[]>([]);
+  const [params, setParams] = useState<ParamsImposition | null>(null);
+  const [zoom, setZoom] = useState(1);
+  const [face, setFace] = useState<'recto' | 'verso'>('recto');
+  const [feuilleVue, setFeuilleVue] = useState(0);
+  const [resultat, setResultat] = useState<ResultatGeneration | null>(null);
+  const dossier = useDossier(dossierId ?? undefined);
+
+  // Fichier passé dans l'adresse (bouton « Imposer » de la fiche dossier) : première pièce.
+  const initialise = useRef(false);
+  useEffect(() => {
+    if (initialise.current || !fichierParam || !dossier.data) return;
+    const f = dossier.data.fichiers.find((x) => x.id === fichierParam);
+    const genre = f ? genreDe(f.nom_original, f.mime) : null;
+    if (f && genre) {
+      initialise.current = true;
+      setPieces([{ cle: `${f.id}:init`, fichier_id: f.id, role: 'pages', nom: f.nom_original, taille: f.taille, mime: f.mime, genre }]);
+    }
+  }, [fichierParam, dossier.data]);
+
+  const analyse = useAnalyse(pieces, params?.fini, params?.fonds_perdus_mm);
+  const clePieces = pieces.map((p) => `${p.libre ?? p.fichier_id}:${p.role}`).join('|');
+  const derniereCle = useRef('');
+  useEffect(() => {
+    if (!analyse.data || analyse.isPlaceholderData) return;
+    if (derniereCle.current !== clePieces) {
+      derniereCle.current = clePieces;
+      setParams((prev) => (prev ? { ...analyse.data.params_defaut, operation: prev.operation, feuille: prev.feuille, orientation: prev.orientation, traits_de_coupe: prev.traits_de_coupe } : analyse.data.params_defaut));
+      setFeuilleVue(0);
+      setFace('recto');
+    }
+  }, [analyse.data, analyse.isPlaceholderData, clePieces]);
+  useEffect(() => {
+    if (pieces.length === 0) {
+      setParams(null);
+      derniereCle.current = '';
+      setEcran(1);
+    }
+  }, [pieces.length]);
+
+  const plan = usePlan(ecran >= 2 ? pieces : [], params);
+  const generer = useGenerer();
+  const planData = plan.data?.plan;
+  const pages = analyse.data?.pages ?? [];
+  const nbPages = analyse.data?.analyse.nb_pages ?? 0;
+  const feuille = planData?.feuilles[Math.min(feuilleVue, Math.max(0, (planData?.feuilles.length ?? 1) - 1))];
+  const faceVue = feuille ? (face === 'verso' && feuille.verso ? feuille.verso : feuille.recto) : null;
+  const stats = useMemo(() => {
+    if (!planData) return [] as { t: string; fort?: boolean }[];
+    const l: { t: string; fort?: boolean }[] = [];
+    if (planData.operation === 'poses') l.push({ t: `${planData.poses_par_face} pose${planData.poses_par_face > 1 ? 's' : ''} par face`, fort: true }, { t: `${planData.colonnes} × ${planData.rangs}` });
+    if (planData.operation === 'livret') l.push({ t: `${planData.nb_feuilles} feuille${planData.nb_feuilles > 1 ? 's' : ''} par livret`, fort: true }, { t: `${planData.pages_blanches} blanche${planData.pages_blanches > 1 ? 's' : ''}` });
+    if (planData.operation === 'assembler') l.push({ t: `${planData.nb_pages_sortie} page${planData.nb_pages_sortie > 1 ? 's' : ''} réunies`, fort: true });
+    else l.push({ t: `${planData.nb_pages_sortie} page${planData.nb_pages_sortie > 1 ? 's' : ''} PDF` });
+    if (planData.feuilles_a_imprimer) l.push({ t: `${planData.feuilles_a_imprimer} feuille${planData.feuilles_a_imprimer > 1 ? 's' : ''} à imprimer` });
+    l.push({ t: `${planData.feuille.largeur} × ${planData.feuille.hauteur} mm · ${planData.paysage ? 'paysage' : 'portrait'}` });
+    return l;
+  }, [planData]);
+  const max: Ecran = pieces.length && params ? 2 : 1;
+  const [affichage, setAffichage] = useState<AffichageSchema>({ fonds: true, traits: true, zone_finie: true, numeros: false });
+  const sourceAvecFonds = analyse.data ? analyse.data.analyse.fonds_perdus !== 'absents' : false;
+  const fondsAFabriquer = !!analyse.data && params?.operation !== 'assembler' && analyse.data.analyse.fonds_perdus === 'absents' && (params?.methode_fonds_perdus === 'source' || params?.methode_fonds_perdus === 'blanc' || (params?.fonds_perdus_mm ?? 0) === 0);
+  const destination = analyse.data?.sans_dossier ? 'Sans dossier : le PDF sera proposé au téléchargement (gardé 6 h).' : analyse.data?.fichier.dossier_id ? `Le PDF sera ajouté au dossier de ${dossier.data && dossier.data.id === analyse.data.fichier.dossier_id ? `${dossier.data.numero} (${dossier.data.client_nom})` : 'la première pièce'}.` : '';
+  const lancer = () =>
+    params &&
+    generer.mutate(
+      { pieces, params },
+      { onSuccess: (r) => (setResultat(r), toast.success('PDF généré', r.fichier?.nom ?? r.libre?.nom)), onError: (e) => toast.error('Génération impossible', messageErreur(e)) },
+    );
+
+  return (
+    <div className="imp">
+      <PageHeader title="Imposition" subtitle="Préparer les fichiers d’impression : cartes, flyers, tickets, livrets, fonds perdus, assemblage recto-verso." />
+      <Etapes courant={ecran} max={max} onAller={setEcran} />
+
+      {ecran === 1 && (
+        <EcranFichiers pieces={pieces} setPieces={setPieces} analyses={analyse.data?.pieces ?? []} dossierId={dossierId} setDossierId={setDossierId} enAnalyse={analyse.isFetching}
+          onSuivant={() => (params ? setEcran(2) : toast.info('Analyse en cours', 'Patientez un instant, puis continuez.'))}
+        />
+      )}
+
+      {ecran === 2 && params && (
+        <div className="ecran">
+          <div className="ecran__barre">
+            <Button variant="ghost" icon={<ArrowLeft />} onClick={() => setEcran(1)}>Fichiers</Button>
+            <span className="ecran__barre-texte">
+              {pieces.length} fichier{pieces.length > 1 ? 's' : ''} : {pieces.map((p) => p.nom).join(', ')}
+            </span>
+            <Button variant="primary" icon={<FileCheck2 />} busy={generer.isPending} disabled={!planData || plan.isError} onClick={lancer}>Générer le PDF</Button>
+          </div>
+          <div className="ws ws--2">
+            <section className="ws__centre" aria-label="Prévisualisation">
+              {analyse.data && <Diagnostic a={analyse.data.analyse} />}
+              {fondsAFabriquer ? (
+                <div className="alerte-fonds">
+                  <span>Ce fichier n’a pas de fonds perdus. Après la coupe, un filet blanc risque d’apparaître sur les bords.</span>
+                  <Button size="sm" variant="primary" icon={<Wand2 />} onClick={() => (setParams({ ...params, fonds_perdus_mm: params.fonds_perdus_mm || 3, methode_fonds_perdus: 'miroir' }), setAffichage((a) => ({ ...a, fonds: true })), toast.success('Fonds perdus générés en miroir', 'Visibles en rose sur la feuille. Changez la méthode dans les réglages si besoin.'))}>
+                    Générer les fonds perdus
+                  </Button>
+                </div>
+              ) : analyse.data && params.operation !== 'assembler' && params.fonds_perdus_mm > 0 && params.methode_fonds_perdus !== 'blanc' ? (
+                <div className="alerte-fonds" data-ok>
+                  <span>Fonds perdus : {params.fonds_perdus_mm} mm, {params.methode_fonds_perdus === 'source' ? 'pris dans le fichier' : params.methode_fonds_perdus === 'miroir' ? 'générés en miroir des bords' : 'par étirement du visuel'}.</span>
+                </div>
+              ) : null}
+              <div className="ws__panneau">
+                <div className="ws__barre">
+                  <ul className="imp-stats">{stats.map((x) => <li key={x.t} data-fort={x.fort || undefined}>{x.t}</li>)}</ul>
+                  <div className="ws__outils-droite">
+                    {feuille?.verso && (
+                      <div className="ws__faces" role="group" aria-label="Face">
+                        <button type="button" aria-pressed={face === 'recto'} onClick={() => setFace('recto')}>Recto</button>
+                        <button type="button" aria-pressed={face === 'verso'} onClick={() => setFace('verso')}>Verso</button>
+                      </div>
+                    )}
+                    {params.operation !== 'fonds_perdus' && params.operation !== 'assembler' && (
+                      <div className="ws__faces" role="group" aria-label="Sens du papier">
+                        {(['auto', 'portrait', 'paysage'] as const).map((o) => (
+                          <button key={o} type="button" aria-pressed={params.orientation === o} onClick={() => setParams({ ...params, orientation: o })}>{o === 'auto' ? 'Auto' : o === 'portrait' ? 'Portrait' : 'Paysage'}</button>
+                        ))}
+                      </div>
+                    )}
+                    {planData && planData.feuilles.length > 1 && (
+                      <div className="imp-nav">
+                        <Button size="sm" variant="ghost" icon={<ChevronLeft />} disabled={feuilleVue === 0} onClick={() => setFeuilleVue((v) => v - 1)} aria-label="Feuille précédente" />
+                        {feuilleVue + 1} / {planData.feuilles.length}
+                        <Button size="sm" variant="ghost" icon={<ChevronRight />} disabled={feuilleVue >= planData.feuilles.length - 1} onClick={() => setFeuilleVue((v) => v + 1)} aria-label="Feuille suivante" />
+                      </div>
+                    )}
+                    <div className="ws__zoom" role="group" aria-label="Zoom">
+                      <Button size="sm" variant="ghost" icon={<Minus />} aria-label="Zoom arrière" onClick={() => setZoom((z) => Math.max(0.4, Math.round((z - 0.2) * 10) / 10))} />
+                      <span>{Math.round(zoom * 100)} %</span>
+                      <Button size="sm" variant="ghost" icon={<Plus />} aria-label="Zoom avant" onClick={() => setZoom((z) => Math.min(4, Math.round((z + 0.2) * 10) / 10))} />
+                      <Button size="sm" variant="ghost" icon={<RotateCcw />} aria-label="Taille d’origine" onClick={() => setZoom(1)} />
+                    </div>
+                  </div>
+                </div>
+                {plan.isError ? (
+                  <Alert tone="warning">{messageErreur(plan.error)}</Alert>
+                ) : !planData || !faceVue ? (
+                  <Skeleton h={420} />
+                ) : (
+                  <>
+                    {planData.avertissements.map((m, i) => <Alert key={i} tone="warning">{m}</Alert>)}
+                    <div className="affichage" role="group" aria-label="Affichage">
+                      {([['fonds', 'Fonds perdus'], ['traits', 'Traits de coupe'], ['zone_finie', 'Format fini'], ['numeros', 'Numéros de page']] as [keyof AffichageSchema, string][]).map(([cle, label]) => (
+                        <label key={cle} data-actif={affichage[cle] || undefined}>
+                          <input type="checkbox" checked={affichage[cle]} onChange={(e) => setAffichage({ ...affichage, [cle]: e.target.checked })} />
+                          {label}
+                        </label>
+                      ))}
+                    </div>
+                    <div className="ws__scene" onWheel={(e) => { if (e.ctrlKey || e.metaKey) { e.preventDefault(); setZoom((z) => Math.min(4, Math.max(0.4, Math.round((z - Math.sign(e.deltaY) * 0.1) * 10) / 10))); } }}>
+                      <div className="ws__scene-int">
+                        <SchemaFeuille plan={planData} face={faceVue} pages={pages} methode={params.methode_fonds_perdus} sourceAvecFonds={sourceAvecFonds} affichage={affichage} largeur={Math.round((planData.feuille.largeur > planData.feuille.hauteur ? 640 : 460) * zoom)} />
+                      </div>
+                    </div>
+                    <p className="ev-help" style={{ margin: 0 }}>Ctrl + molette pour zoomer. Trait bleu : format fini. Pointillé rose : fonds perdus. Traits noirs : coupe.</p>
+                  </>
+                )}
+              </div>
+            </section>
+            <aside className="ws__panneau ws__droite" aria-label="Réglages">
+              <h2 className="ws__titre">Réglages</h2>
+              <BlocIA pieces={pieces} onAppliquer={(p) => (setParams(p), toast.success('Réglages de l’assistant appliqués', 'Vérifiez la feuille avant de générer.'))} />
+              <Modeles params={params} onAppliquer={(m) => (setParams({ ...m.params, fini: params.fini, recto_verso: m.params.operation === 'livret' ? true : params.recto_verso }), toast.success(`Modèle appliqué : ${m.nom}`, 'Le format fini et le recto-verso du fichier sont conservés.'))} />
+              <Reglages p={params} onChange={setParams} nbPages={nbPages} />
+            </aside>
+          </div>
+          <div className="ecran__pied">
+            <Button variant="ghost" icon={<ArrowLeft />} onClick={() => setEcran(1)}>Retour aux fichiers</Button>
+            <span className="ev-muted" style={{ fontSize: 13 }}>{destination}</span>
+            <Button variant="primary" size="lg" icon={<FileCheck2 />} busy={generer.isPending} disabled={!planData || plan.isError} onClick={lancer}>Générer le PDF</Button>
+          </div>
+        </div>
+      )}
+
+      {resultat && (
+        <Dialog open onClose={() => (setResultat(null), generer.reset())} title="PDF prêt" width={760}
+          footer={
+            <>
+              <Button variant="ghost" onClick={() => (setResultat(null), generer.reset())}>Modifier les réglages</Button>
+              <Button onClick={() => (generer.reset(), setResultat(null), setPieces([]), setEcran(1))}>Nouveau travail</Button>
+              {resultat.fichier ? (
+                <>
+                  <Link className="ev-btn" to={`/dossiers/${resultat.fichier.dossier_id}`}><FolderOpen aria-hidden="true" /> Voir dans le dossier</Link>
+                  <a className="ev-btn ev-btn--primary" href={fichierUrl(resultat.fichier.id, true)}><Download aria-hidden="true" /> Télécharger</a>
+                </>
+              ) : resultat.libre ? (
+                <a className="ev-btn ev-btn--primary" href={resultat.libre.telechargement}><Download aria-hidden="true" /> Télécharger</a>
+              ) : null}
+            </>
+          }
+        >
+          <div className="resultat">
+            <div className="resultat__apercu">
+              <img src={resultat.fichier ? (apercuUrl(resultat.fichier.id, 720) ?? undefined) : resultat.libre ? `/api/imposition/libre/${resultat.libre.jeton}/apercu?page=1&largeur=720` : undefined} alt="Première page du PDF généré" />
+            </div>
+            <div className="resultat__texte">
+              <span className="resultat__ok"><Check aria-hidden="true" /> Généré</span>
+              <h2 className="resultat__nom">{resultat.fichier?.nom ?? resultat.libre?.nom}</h2>
+              <ul className="imp-stats">
+                <li data-fort>{resultat.plan.nb_pages_sortie} page{resultat.plan.nb_pages_sortie > 1 ? 's' : ''}</li>
+                <li>{formatTaille(resultat.fichier?.taille ?? resultat.libre?.taille ?? 0)}</li>
+                <li>{resultat.plan.feuille.largeur} × {resultat.plan.feuille.hauteur} mm</li>
+                {resultat.plan.operation === 'poses' && <li>{resultat.plan.poses_par_face} poses par face</li>}
+                {resultat.plan.feuilles_a_imprimer && <li>{resultat.plan.feuilles_a_imprimer} feuilles à imprimer</li>}
+              </ul>
+              <p className="ev-muted" style={{ margin: 0 }}>{resultat.fichier ? 'Ajouté au dossier, à côté du fichier d’origine : l’imprimeur le voit dans la fiche.' : 'Gardé 6 heures sur le serveur : téléchargez-le maintenant.'}</p>
+            </div>
+          </div>
+        </Dialog>
+      )}
+    </div>
+  );
+}

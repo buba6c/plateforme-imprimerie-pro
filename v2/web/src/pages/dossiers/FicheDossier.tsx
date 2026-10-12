@@ -6,7 +6,7 @@ import { EnregistrerModeleDialog } from '../../features/modeles/ModelesDossier';
 import { lazy, Suspense, useMemo, useState } from 'react';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
-import { ArrowLeft, BookmarkPlus, CalendarClock, Copy, FileDown, Files, History, ListChecks, Pencil, Route, ShieldAlert, Trash2, UserCog, UserRound, Zap, ZapOff } from 'lucide-react';
+import { ArrowLeft, BookmarkPlus, CalendarClock, Copy, FileDown, Files, History, ListChecks, Pencil, Route, ShieldAlert, Trash2, UserCog, UserRound, Zap, ZapOff, LayoutGrid } from 'lucide-react';
 import {
   formatDate,
   formatDateHeure,
@@ -110,7 +110,7 @@ export default function FicheDossier() {
   const proprietaire = user.role === 'preparateur' && d.preparateur_id === user.id;
   const peutUrgence = (user.role === 'admin' || proprietaire) && !['livre', 'termine', 'annule'].includes(d.statut);
   const peutReporter = (user.role === 'admin' || user.role === 'livreur') && d.statut === 'en_livraison';
-  const voirFichiers = user.role !== 'livreur';
+  const voirFichiers = true; // le livreur aussi, en lecture : il sait ce qu'il livre
   const voirMontants = d.montant !== undefined;
   const revision = d.statut === 'a_revoir' && d.commentaire_revision ? d.historique.find((e) => e.action === 'demander_revision') : undefined;
 
@@ -221,7 +221,16 @@ export default function FicheDossier() {
                   Fichiers d’impression <Count n={d.fichiers.length} />
                 </span>
               }
-              actions={d.fichiers.some((f) => f.a_reimprimer) ? <span className="fd-card-head-meta">{d.fichiers.filter((f) => f.a_reimprimer).length} à réimprimer</span> : undefined}
+              actions={
+                <span className="row" style={{ gap: 8 }}>
+                  {d.fichiers.some((f) => f.a_reimprimer) && <span className="fd-card-head-meta">{d.fichiers.filter((f) => f.a_reimprimer).length} à réimprimer</span>}
+                  {bureau && d.fichiers.some((f) => (f.mime ?? '').toLowerCase() === 'application/pdf' || /\.(pdf|ai)$/i.test(f.nom_original)) && (
+                    <Link className="ev-btn ev-btn--sm" to={`/imposition?dossier=${d.id}`}>
+                      <LayoutGrid aria-hidden="true" /> Imposer / fonds perdus
+                    </Link>
+                  )}
+                </span>
+              }
             >
               <div className="stack">
                 {d.fichiers.length > 0 ? (

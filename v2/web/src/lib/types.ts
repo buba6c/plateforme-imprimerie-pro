@@ -46,6 +46,8 @@ export interface DossierResume {
   adresse_livraison?: string | null;
   notes_livraison?: string | null;
   nb_fichiers: number;
+  /** Quatre premiers fichiers du dossier, pour les miniatures des cartes. */
+  fichiers_apercu?: { id: number; nom_original: string; mime: string | null; taille: number }[];
   importe: boolean;
   created_at: string;
   updated_at: string;

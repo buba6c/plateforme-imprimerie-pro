@@ -105,6 +105,12 @@ function decrire(e: Evenement, ctx: { machine: Machine; libelle: (m: Machine, c:
           return { titre: `Réimpression annulée ${nom}` };
         case 'restauration':
           return { titre: `Fichier restauré ${nom}` };
+        case 'imposition':
+          return {
+            titre: `PDF imposé ajouté ${nom}`,
+            ton: 'success',
+            details: <span className="ev-muted" style={{ fontSize: 12 }}>{[data?.source_nom ? `d’après « ${data.source_nom} »` : null, data?.operation === 'livret' ? 'livret' : data?.operation === 'fonds_perdus' ? 'fonds perdus' : data?.poses ? `${data.poses} poses` : null, data?.feuille ?? null, data?.pages ? `${data.pages} page${Number(data.pages) > 1 ? 's' : ''}` : null].filter(Boolean).join(' · ')}</span>,
+          };
         case 'nettoyage': {
           const nb = Number(data?.nb ?? 0);
           return {

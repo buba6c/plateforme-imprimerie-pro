@@ -8,6 +8,7 @@ import {
   FolderOpen,
   History,
   House,
+  LayoutGrid,
   LayoutDashboard,
   Printer,
   ReceiptText,
@@ -51,6 +52,7 @@ export function navigationPour(role: Role): NavSection[] {
           { to: '/dossiers', label: 'Dossiers', icon: FolderOpen, mobile: true },
           { to: '/modeles', label: 'Modèles', icon: BookmarkCheck },
           { to: '/fichiers', label: 'Fichiers', icon: Files },
+          { to: '/imposition', label: 'Imposition', icon: LayoutGrid },
           { to: '/paiements', label: 'Paiements', icon: Banknote, mobile: true, countKey: 'paiements_a_valider' },
         ] },
         { title: 'Commercial', items: [
@@ -78,6 +80,7 @@ export function navigationPour(role: Role): NavSection[] {
           { to: '/dossiers', label: 'Dossiers', icon: FolderOpen, mobile: true },
           { to: '/modeles', label: 'Modèles', icon: BookmarkCheck, mobile: true },
           { to: '/fichiers', label: 'Fichiers', icon: Files, mobile: true },
+          { to: '/imposition', label: 'Imposition', icon: LayoutGrid },
         ] },
       ];
     case 'imprimeur_roland':

@@ -196,7 +196,8 @@ describe('dossiers et circuit', () => {
     const d = await liv.get(`/api/dossiers/${rolandId}`);
     expect(d.body.client_telephone).toBe('77 412 58 90');
     expect(d.body.solde).toBe(45000);
-    expect(d.body.fichiers).toEqual([]);
+    expect(d.body.fichiers).toHaveLength(1); // le livreur voit les fichiers (lecture) pour savoir ce qu'il livre
+    expect(d.body.fichiers_apercu).toHaveLength(1);
     const prog = await liv.post(`/api/dossiers/${rolandId}/actions/programmer_livraison`).send({ livraison: { date_prevue: '2026-10-03T10:00', adresse: 'Sacré-Cœur 3' } });
     expect(prog.body.statut).toBe('en_livraison');
     const trop = await liv.post(`/api/dossiers/${rolandId}/actions/confirmer_livraison`).send({ encaissement: { montant: 2_500_000, mode: 'especes' } });

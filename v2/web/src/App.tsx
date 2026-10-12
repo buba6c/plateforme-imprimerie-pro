@@ -8,6 +8,7 @@ import Connexion from './pages/compte/Connexion';
 const ListeDossiers = lazy(() => import('./pages/dossiers/ListeDossiers'));
 const NouveauDossier = lazy(() => import('./pages/dossiers/NouveauDossier'));
 const AccueilPreparateur = lazy(() => import('./pages/dossiers/AccueilPreparateur'));
+const Imposition = lazy(() => import('./pages/outils/Imposition'));
 const Modeles = lazy(() => import('./pages/dossiers/Modeles'));
 const FicheDossier = lazy(() => import('./pages/dossiers/FicheDossier'));
 const FileImpression = lazy(() => import('./pages/atelier/FileImpression'));
@@ -92,6 +93,7 @@ export default function App() {
         <Route path="admin/corbeille" element={<Lazy><R roles={ADMIN}><Corbeille /></R></Lazy>} />
         <Route path="admin/sante" element={<Lazy><R roles={ADMIN}><Sante /></R></Lazy>} />
         <Route path="fichiers" element={<Lazy><R roles={BUREAU}><Fichiers /></R></Lazy>} />
+        <Route path="imposition" element={<Lazy><R roles={BUREAU}><Imposition /></R></Lazy>} />
         <Route path="admin/permissions" element={<Lazy><R roles={ADMIN}><Permissions /></R></Lazy>} />
         <Route path="admin/assistant-ia" element={<Lazy><R roles={ADMIN}><AssistantIA /></R></Lazy>} />
         <Route path="whatsapp" element={<Lazy><R roles={ADMIN}><WhatsApp /></R></Lazy>} />

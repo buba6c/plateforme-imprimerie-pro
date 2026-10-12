@@ -54,7 +54,7 @@ export function visible(user: UserDemo, d: DossierDemo, joursLivreur = E().param
 
 export const peutVoirMontants = (u: UserDemo) => u.role === 'admin' || u.role === 'preparateur' || u.role === 'livreur';
 export const peutVoirContactClient = peutVoirMontants;
-export const peutVoirFichiers = (u: UserDemo) => u.role !== 'livreur';
+export const peutVoirFichiers = (_u: UserDemo) => true;
 
 // ---------------------------------------------------------------------------
 // Lecture

@@ -42,6 +42,8 @@ import { peutVoirContactClient, peutVoirFichiers, peutVoirMontants, peutVoirPrix
 const SELECT_DOSSIER = `
   SELECT d.*,
     (SELECT count(*)::int FROM fichiers f WHERE f.dossier_id = d.id AND f.deleted_at IS NULL) AS nb_fichiers,
+    (SELECT coalesce(json_agg(json_build_object('id', x.id, 'nom_original', x.nom_original, 'mime', x.mime, 'taille', x.taille) ORDER BY x.created_at, x.id), '[]'::json)
+       FROM (SELECT f.id, f.nom_original, f.mime, f.taille, f.created_at FROM fichiers f WHERE f.dossier_id = d.id AND f.deleted_at IS NULL ORDER BY f.created_at, f.id LIMIT 4) x) AS fichiers_apercu,
     (SELECT coalesce(sum(p.montant),0)::int FROM paiements p WHERE p.dossier_id = d.id AND p.statut = 'valide') AS deja_paye,
     (SELECT coalesce(sum(p.montant),0)::int FROM paiements p WHERE p.dossier_id = d.id AND p.statut = 'a_valider') AS en_attente_validation,
     prep.nom AS preparateur_nom, imp.nom AS imprimeur_nom, liv.nom AS livreur_nom
@@ -120,6 +122,7 @@ export function presenter(row: DossierRow, user: AuthUser, libelles: Libelles = 
     termine_at: row.termine_at,
     annule_at: (row as DossierRow & { annule_at?: string | null }).annule_at ?? null,
     nb_fichiers: row.nb_fichiers,
+    fichiers_apercu: peutVoirFichiers(user) ? (row.fichiers_apercu ?? []) : [],
     devis_id: row.devis_id,
     importe: row.legacy_id !== null && row.legacy_id !== undefined,
     deleted_at: row.deleted_at,

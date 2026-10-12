@@ -140,10 +140,22 @@ function accesSecours(c: ConfigIA): Acces | null {
   return { fournisseur: f, cle: dechiffrer(a.chiffree!), modele: a.modele };
 }
 
+export type TypeUsageIA = 'suggestion' | 'test' | 'imposition';
+
+/** Accès au fournisseur actif et à son secours, pour un autre module (409 si l'assistant est inactif). */
+export async function accesIA(): Promise<{ principal: Acces; secours: Acces | null }> {
+  const config = await lireConfig();
+  if (!config.actif || !acces(config, config.fournisseur).chiffree) throw new HttpError(409, PAS_ACTIF, undefined, 'ia_inactif');
+  return { principal: { fournisseur: config.fournisseur, cle: cleEnClair(config, config.fournisseur), modele: acces(config, config.fournisseur).modele }, secours: accesSecours(config) };
+}
+
+export const noterUsageIA = (req: Request, u: Parameters<typeof noterUsage>[1]) => noterUsage(req, u);
+export const noterTentativesIA = (req: Request, type: TypeUsageIA, tentatives: TentativeIA[], demande?: string) => noterTentatives(req, type, tentatives, demande);
+
 async function noterUsage(
   req: Request,
   u: {
-    type: 'suggestion' | 'test';
+    type: TypeUsageIA;
     statut: StatutAppel;
     fournisseur: FournisseurIA;
     modele: string;
@@ -175,7 +187,7 @@ async function noterUsage(
   );
 }
 
-async function noterTentatives(req: Request, type: 'suggestion' | 'test', tentatives: TentativeIA[], demande?: string) {
+async function noterTentatives(req: Request, type: TypeUsageIA, tentatives: TentativeIA[], demande?: string) {
   for (const t of tentatives) {
     await noterUsage(req, { type, statut: t.statut, fournisseur: t.fournisseur, modele: t.modele, duree_ms: t.duree_ms, jetons_entree: t.jetons_entree, jetons_sortie: t.jetons_sortie, demande, secours: t.secours, erreur: t.erreur });
   }

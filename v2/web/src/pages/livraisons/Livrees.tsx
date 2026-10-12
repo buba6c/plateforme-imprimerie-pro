@@ -11,6 +11,7 @@ import { debutJour, libelleJour } from '../../features/livraisons/dates';
 import { EncaisserDialog } from '../../features/livraisons/EncaisserDialog';
 import { resteAEncaisser, useParametres } from '../../features/livraisons/hooks';
 import { Resume } from '../../features/livraisons/Resume';
+import { MiniaturesDossier } from '../../features/fichiers/MiniaturesDossier';
 import '../../features/livraisons/livraisons.css';
 import { messageErreur } from '../../lib/api';
 import type { DossierResume } from '../../lib/types';
@@ -114,6 +115,7 @@ export default function Livrees() {
                           </span>
                           <Paiement d={d} />
                         </Link>
+                        <MiniaturesDossier dossierId={d.id} fichiers={d.fichiers_apercu ?? []} total={d.nb_fichiers} compacte />
                         <div className="lv-ligne__droite">
                           <span className="ev-num lv-ligne__montant">{formatFCFA(d.montant)}</span>
                           {r !== null && r > 0 && (

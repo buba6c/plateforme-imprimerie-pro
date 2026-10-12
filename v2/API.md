@@ -17,7 +17,7 @@ Montants : entiers en FCFA. Dates : ISO 8601 (`date` = `AAAA-MM-JJ`).
   le moteur ne calcule pas (erreur « hors grille : saisissez le prix du dossier à la main ») et le montant est saisi.
 - **Administrateur** : voit tout et gère seul l'argent (encaissements validés d'office, validation des paiements,
   devis, factures, prix).
-- **Livreur** : inchangé (encaisse « à valider » à la livraison, voit le reste à payer de ses tournées).
+- **Livreur** : encaisse « à valider » à la livraison, voit le reste à payer de ses tournées ; **voit les fichiers** (liste, miniatures, aperçu) des dossiers de ses livraisons, en lecture seule, pour savoir ce qu'il livre. Les listes de dossiers portent `fichiers_apercu` (4 premiers fichiers : id, nom, type, taille) pour tous les rôles.
 - **Imprimeurs** : inchangés (leur machine, sans téléphone ni montant). Leur interface prend la couleur de leur
   machine (Roland rose, Xerox bleu) et l'atelier affiche l'icône de la machine.
 - **Assistant IA, fournisseur OpenRouter** (migration 016) : troisième fournisseur `openrouter` à côté de `openai` et
@@ -28,6 +28,17 @@ Montants : entiers en FCFA. Dates : ISO 8601 (`date` = `AAAA-MM-JJ`).
   indisponible, 429 limite, 502/503 injoignable ; une erreur renvoyée avec un 200 est lue aussi. Secours automatique :
   le premier des autres fournisseurs ayant une clé lisible, dans l'ordre OpenAI, Gemini, OpenRouter
   (`secours_fournisseur` dans `GET /ia/config`).
+- **Imposition** (`/imposition`, admin et préparateurs ; migrations 017, 018) : travail fait de **pièces**
+  (`pieces: [{fichier_id | libre, role: pages|recto|verso}]`) : fichiers du dossier ou fichiers déposés sans dossier
+  (`POST /imposition/libre?nom=` corps brut, gardés 6 h, `GET /imposition/libre/:jeton/apercu|contenu`), PDF ou images
+  (taille d'après la résolution, sinon ajustée au format fini). `POST /imposition/analyser` : pièces analysées, pages,
+  appariement recto/verso, analyse (format reconnu, fonds perdus déclarés/probables/absents, visuel au bord via
+  Poppler), réglages par défaut. `POST /imposition/plan` : positions sans générer. `POST /imposition/generer` :
+  opérations `poses` (répétition, séquence, coupe & empile avec numérotation), `livret` (piqûre à cheval, blanches,
+  chasse), `fonds_perdus` (source, miroir, étirer, blanc ; traits de coupe), `assembler` (réunir les pièces) ; résultat
+  ajouté au dossier (événement `fichier/imposition`) ou téléchargeable sans dossier. `POST /imposition/ia` : plan
+  proposé par l'assistant (type de document, confiance, explication, points de vigilance ; usage `imposition`).
+  Modèles : `GET /imposition/modeles` (tous), `POST|PUT|DELETE` (admin).
 - **Statut « annulé »** (`annule`, colonne `annule_at`, migration 015) : un dossier annulé n'est jamais supprimé ; il
   reste dans les listes (onglet Annulés, admin et préparateur) avec fichiers, paiements et historique. Action `annuler`
   (motif obligatoire, `tone: danger`) : le préparateur sur ses dossiers tant qu'ils ne sont pas à l'atelier

@@ -57,6 +57,7 @@ export function peutVoirContactClient(user: AuthUser): boolean {
   return user.role === 'admin' || user.role === 'preparateur' || user.role === 'livreur';
 }
 
-export function peutVoirFichiers(user: AuthUser): boolean {
-  return user.role !== 'livreur';
+/** Fichiers d'impression : tous les rôles les voient (le livreur en lecture, pour savoir ce qu'il livre). */
+export function peutVoirFichiers(_user: AuthUser): boolean {
+  return true;
 }

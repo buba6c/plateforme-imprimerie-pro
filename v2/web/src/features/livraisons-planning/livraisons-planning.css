@@ -59,7 +59,8 @@
 .lp-rdv__ligne svg { width: 14px; height: 14px; flex: none; margin-top: 2px; }
 .lp-rdv__ligne[data-vide="true"] { color: var(--warning-ink); }
 .lp-rdv__tel { color: var(--text); text-decoration: none; }
-.lp-rdv__tel .ev-mono { white-space: nowrap; font-size: 12px; }
+.lp-rdv__tel { min-width: 0; max-width: 100%; }
+.lp-rdv__tel .ev-mono { white-space: normal; overflow-wrap: anywhere; font-size: 12px; min-width: 0; }
 .lp-rdv__tel:hover { color: var(--accent-ink); text-decoration: underline; }
 .lp-rdv__bas { display: flex; align-items: baseline; justify-content: space-between; gap: 4px var(--space-2); flex-wrap: wrap; padding-top: 4px; border-top: 1px solid var(--line); font-size: 12px; color: var(--text-muted); }
 .lp-rdv__a-encaisser { display: inline-flex; align-items: baseline; gap: 6px; flex-wrap: wrap; }
