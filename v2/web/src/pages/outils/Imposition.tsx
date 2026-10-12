@@ -338,7 +338,8 @@ function EcranFichiers({ pieces, setPieces, analyses, dossierId, setDossierId, e
   const toast = useToast();
   const [dialogue, setDialogue] = useState(false);
   const [survol, setSurvol] = useState(false);
-  const deposer = useTeleverserLibre();
+  const [envois, setEnvois] = useState<Record<string, number>>({});
+  const deposer = useTeleverserLibre((nom, part) => setEnvois((e) => ({ ...e, [nom]: part })));
   const dossier = useDossier(dossierId ?? undefined);
   const input = useRef<HTMLInputElement>(null);
   const ajouter = (p: Omit<Piece, 'cle'>) => setPieces([...piecesRef.current, { ...p, cle: `${p.libre ?? p.fichier_id}:${p.role}:${Math.random().toString(36).slice(2, 7)}` }]);
@@ -357,11 +358,18 @@ function EcranFichiers({ pieces, setPieces, analyses, dossierId, setDossierId, e
         toast.error('Fichier non pris en charge', `${f.name} : déposez un PDF ou une image.`);
         continue;
       }
+      setEnvois((e) => ({ ...e, [f.name]: 0 }));
       try {
         const r = await deposer.mutateAsync(f);
         ajouter({ libre: r.libre, role: 'pages', nom: r.nom, taille: r.taille, mime: r.mime, genre: r.genre });
       } catch (err) {
         toast.error(`${f.name} non déposé`, messageErreur(err));
+      } finally {
+        setEnvois((e) => {
+          const n = { ...e };
+          delete n[f.name];
+          return n;
+        });
       }
     }
   };
@@ -398,6 +406,13 @@ function EcranFichiers({ pieces, setPieces, analyses, dossierId, setDossierId, e
           <span className="source__icone"><Upload aria-hidden="true" /></span>
           <span className="source__titre">{deposer.isPending ? 'Envoi en cours…' : 'Déposer des fichiers'}</span>
           <span className="source__aide">Glissez des PDF ou des images ici, sans passer par un dossier. Le résultat se télécharge.</span>
+          {Object.entries(envois).map(([nom, part]) => (
+            <span key={nom} className="source__envoi">
+              <span className="source__envoi-nom">{nom}</span>
+              <span className="source__barre"><span style={{ width: `${Math.round(part * 100)}%` }} /></span>
+              <span className="source__envoi-pc">{Math.round(part * 100)} %</span>
+            </span>
+          ))}
         </label>
       </div>
 

@@ -286,3 +286,9 @@
 .resultat__ok svg { width: 16px; height: 16px; }
 .resultat__nom { margin: 0; font-size: 18px; overflow-wrap: anywhere; }
 .resultat__actions { display: flex; flex-wrap: wrap; gap: 8px; }
+
+.source__envoi { display: grid; grid-template-columns: minmax(0, 1fr) 120px 40px; align-items: center; gap: 8px; width: 100%; font-size: 12px; }
+.source__envoi-nom { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; }
+.source__barre { height: 6px; border-radius: 999px; background: var(--surface); overflow: hidden; }
+.source__barre > span { display: block; height: 100%; background: var(--accent); transition: width 150ms; }
+.source__envoi-pc { font-family: var(--font-mono); text-align: right; }

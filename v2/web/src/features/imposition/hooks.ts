@@ -57,15 +57,29 @@ export function useProposerIA() {
   });
 }
 
-/** Dépôt d'un fichier libre (sans dossier) : corps brut, nom en paramètre. */
-export function useTeleverserLibre() {
+/** Dépôt d'un fichier libre (sans dossier) : corps brut, nom en paramètre, progression 0 → 1. */
+export function useTeleverserLibre(onProgression?: (nom: string, part: number) => void) {
   return useMutation({
-    mutationFn: async (file: File): Promise<FichierLibre> => {
-      const res = await fetch(`/api/imposition/libre?nom=${encodeURIComponent(file.name)}`, { method: 'POST', body: file, headers: { 'Content-Type': file.type || 'application/octet-stream' }, credentials: 'same-origin' });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) throw new ApiError(res.status, data?.error ?? 'Dépôt impossible', data?.champs, undefined, data?.code);
-      return data as FichierLibre;
-    },
+    mutationFn: (file: File): Promise<FichierLibre> =>
+      new Promise((ok, ko) => {
+        const xhr = new XMLHttpRequest();
+        xhr.open('POST', `/api/imposition/libre?nom=${encodeURIComponent(file.name)}`);
+        xhr.withCredentials = true;
+        xhr.setRequestHeader('Content-Type', file.type || 'application/octet-stream');
+        xhr.upload.onprogress = (e) => e.lengthComputable && onProgression?.(file.name, e.loaded / e.total);
+        xhr.onload = () => {
+          let data: any = {};
+          try {
+            data = JSON.parse(xhr.responseText || '{}');
+          } catch {
+            data = {};
+          }
+          if (xhr.status >= 200 && xhr.status < 300) ok(data as FichierLibre);
+          else ko(new ApiError(xhr.status, xhr.status === 413 ? 'Fichier trop lourd pour ce mode (300 Mo au plus) : déposez-le dans un dossier.' : data?.error ?? 'Dépôt impossible', data?.champs, undefined, data?.code));
+        };
+        xhr.onerror = () => ko(new ApiError(0, 'Connexion interrompue pendant l’envoi : réessayez.'));
+        xhr.send(file);
+      }),
   });
 }
 
