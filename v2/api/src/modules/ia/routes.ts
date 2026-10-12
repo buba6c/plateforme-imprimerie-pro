@@ -10,7 +10,7 @@ import { calculerPrix, MACHINES } from '@evocom/shared';
 import { one, query, tx } from '../../db/pool';
 import { me, requireAuth, requireRole } from '../../lib/auth';
 import { journal } from '../../lib/audit';
-import { badRequest, conflict, HttpError } from '../../lib/errors';
+import { badRequest, conflict, HttpError, zodDetails } from '../../lib/errors';
 import { qInt } from '../../lib/http';
 import { getParametres } from '../../lib/params';
 import { getTarifs } from '../../lib/tarifs';
@@ -21,6 +21,7 @@ import { appelerAvecSecours, appelerFournisseur, fournisseurSecours, MODELE_DEFA
 import { MODELE_OPENROUTER_RE } from './openrouter';
 import { MODELES_IA } from './openai';
 import { messagesSuggestion, nettoyerSuggestion, reponseIASchema, schemaReponse } from './suggestion';
+import { cleCache, consommation, ecrireCache, lireCache, lireGarde, verifierBudget, viderCacheIA } from './garde';
 
 export const iaRouter = Router();
 iaRouter.use(requireAuth);
@@ -220,6 +221,7 @@ function reserverAppel(userId: number) {
 /** Pour les tests. */
 export function viderLimitesIA() {
   appelsRecents.clear();
+  viderCacheIA();
 }
 
 // ---------------------------------------------------------------------------
@@ -403,9 +405,17 @@ iaRouter.post('/suggestion', requireRole('admin', 'preparateur'), async (req, re
   if (!config.actif || !acces(config, config.fournisseur).chiffree) throw new HttpError(409, PAS_ACTIF, undefined, 'ia_inactif');
   const principal: Acces = { fournisseur: config.fournisseur, cle: cleEnClair(config, config.fournisseur), modele: acces(config, config.fournisseur).modele };
   const secours = accesSecours(config);
+  const [tarifs, params] = await Promise.all([getTarifs(), getParametres()]);
+  // Même demande, même fournisseur, même grille : réponse réutilisée, aucun jeton consommé.
+  const cle = cleCache('suggestion', description.trim().toLowerCase(), machine ?? null, principal.fournisseur, principal.modele, tarifs.map((t) => `${t.code}:${t.actif}`).join(','));
+  const deja = lireCache<Record<string, unknown>>(cle);
+  if (deja) {
+    res.json({ ...deja, depuis_cache: true });
+    return;
+  }
+  await verifierBudget(me(req).id);
   reserverAppel(me(req).id);
 
-  const [tarifs, params] = await Promise.all([getTarifs(), getParametres()]);
   let resultat;
   try {
     resultat = await appelerAvecSecours(principal, secours, { messages: messagesSuggestion(description, tarifs, machine), schema: schemaReponse(machine), maxJetons: 2000 });
@@ -433,7 +443,7 @@ iaRouter.post('/suggestion', requireRole('admin', 'preparateur'), async (req, re
   const s = nettoyerSuggestion(lu.data, tarifs, machine);
   // Le prix vient toujours du moteur et de la grille, jamais de l'IA.
   const calcul = calculerPrix(s.machine, s.specs, tarifs, params.prix);
-  res.json({
+  const reponse = {
     machine: s.machine,
     specs: s.specs,
     // Prix calculé avec la grille (le préparateur, qui remplit le dossier, le voit aussi).
@@ -444,7 +454,44 @@ iaRouter.post('/suggestion', requireRole('admin', 'preparateur'), async (req, re
     fournisseur: resultat.fournisseur,
     modele: resultat.modele,
     secours: resultat.secours,
-  });
+  };
+  ecrireCache(cle, reponse);
+  res.json({ ...reponse, depuis_cache: false });
+});
+
+// ---------------------------------------------------------------------------
+// Garde IA (administrateur) : plafonds et consommation.
+
+const gardeSchema = z.object({
+  active: z.boolean().optional(),
+  jetons_jour: z.number().int().min(0).max(100_000_000).optional(),
+  jetons_mois: z.number().int().min(0).max(2_000_000_000).optional(),
+  appels_jour: z.number().int().min(0).max(100_000).optional(),
+  appels_utilisateur_jour: z.number().int().min(0).max(10_000).optional(),
+  alerte_pct: z.number().int().min(10).max(100).optional(),
+});
+
+iaRouter.get('/garde', requireRole('admin'), async (_req, res) => {
+  const [garde, conso] = await Promise.all([lireGarde(), consommation()]);
+  res.json({ garde, consommation: conso });
+});
+
+iaRouter.put('/garde', requireRole('admin'), async (req, res) => {
+  const r = gardeSchema.safeParse(req.body ?? {});
+  if (!r.success) throw badRequest('Certains champs sont invalides.', { champs: zodDetails(r.error) });
+  const avant = await lireGarde();
+  const apres = { ...avant, ...r.data };
+  await query(
+    `INSERT INTO ia_garde (id, active, jetons_jour, jetons_mois, appels_jour, appels_utilisateur_jour, alerte_pct, updated_by, updated_at)
+     VALUES (1, $1, $2, $3, $4, $5, $6, $7, now())
+     ON CONFLICT (id) DO UPDATE SET active = EXCLUDED.active, jetons_jour = EXCLUDED.jetons_jour, jetons_mois = EXCLUDED.jetons_mois,
+       appels_jour = EXCLUDED.appels_jour, appels_utilisateur_jour = EXCLUDED.appels_utilisateur_jour, alerte_pct = EXCLUDED.alerte_pct,
+       updated_by = EXCLUDED.updated_by, updated_at = now()`,
+    [apres.active, apres.jetons_jour, apres.jetons_mois, apres.appels_jour, apres.appels_utilisateur_jour, apres.alerte_pct, me(req).id],
+  );
+  await journal(req, 'ia_garde_modifiee', 'ia_config', null, { avant: { ...avant, updated_at: undefined, updated_by_nom: undefined }, apres: r.data });
+  const [garde, conso] = await Promise.all([lireGarde(), consommation()]);
+  res.json({ garde, consommation: conso });
 });
 
 /** Derniers appels (sans le texte complet des demandes) et totaux des 30 derniers jours. */

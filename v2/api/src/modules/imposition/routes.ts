@@ -23,6 +23,7 @@ import { contentDisposition } from '../fichiers/routes';
 import { ErreurIA, type StatutAppel } from '../ia/erreurs';
 import { appelerAvecSecours, type TentativeIA } from '../ia/fournisseurs';
 import { accesIA, noterTentativesIA, noterUsageIA } from '../ia/routes';
+import { verifierBudget } from '../ia/garde';
 import { analyserPdf, type AnalysePdf } from './analyse';
 import { planifierTraitement } from '../traitement/file';
 import { assembler, type Assemblage, type FichierPiece, type PieceEntree } from './sources';
@@ -607,6 +608,7 @@ export function impositionRouter(config: Config) {
     }
     const [d, libelles] = await Promise.all([dossierId !== null ? chargerDossier(user, dossierId) : Promise.resolve(null), libellesTarifs()]);
     const { principal, secours } = await accesIA();
+    await verifierBudget(user.id);
     const quantite = (d?.specs?.lignes ?? []).reduce((t: number, l: { quantite?: number }) => t + (Number(l.quantite) || 0), 0) || null;
     const contexte = {
       dossier: d ? { numero: d.numero, machine: d.machine, description: d.description, specs: resumeSpecs(d.machine, d.specs, d.description, libelles), quantite_totale: quantite } : null,

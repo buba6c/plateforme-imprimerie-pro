@@ -1,4 +1,4 @@
-import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi, beforeEach } from 'vitest';
 import type supertest from 'supertest';
 import { dossierCreateSchema } from '@evocom/shared';
 import { getPool } from '../src/db/pool';
@@ -7,6 +7,10 @@ import { invalidateTarifs } from '../src/lib/tarifs';
 import { chiffrer, CleIllisible, dechiffrer } from '../src/modules/ia/chiffrement';
 import { viderLimitesIA } from '../src/modules/ia/routes';
 import { agent, app, comptes } from './helpers';
+import { viderCacheIA } from '../src/modules/ia/garde';
+
+// Chaque test part sans réponse réutilisée (la garde IA garde les réponses identiques 24 h).
+beforeEach(() => viderCacheIA());
 
 type Agent = supertest.Agent;
 const A = {} as Record<'admin' | 'prep' | 'roland' | 'xerox' | 'livreur', Agent>;
@@ -516,6 +520,7 @@ describe('assistant IA : Google Gemini et secours automatique', () => {
 
     // Les deux en panne : l'erreur raconte les deux essais.
     simulerFetch((url) => (url.includes('generativelanguage') ? erreurGemini(503, 'UNAVAILABLE', 'overloaded') : erreurOpenAI(500, null)));
+    viderCacheIA(); // même demande rejouée exprès avec une autre réponse simulée
     const ko = await A.admin.post('/api/ia/suggestion').send({ description: '2 bâches 3 × 1 m' });
     expect(ko.status).toBe(502);
     expect(ko.body.error).toContain('surchargé');
@@ -524,6 +529,7 @@ describe('assistant IA : Google Gemini et secours automatique', () => {
     // Secours désactivé : Gemini seul, et son erreur telle quelle.
     await A.admin.put('/api/ia/config').send({ secours: false }).expect(200);
     simulerFetch((url) => (url.includes('generativelanguage') ? erreurGemini(429, 'RESOURCE_EXHAUSTED', 'quota exceeded') : reponseOpenAI(bache)));
+    viderCacheIA(); // même demande rejouée exprès avec une autre réponse simulée
     const seul = await A.admin.post('/api/ia/suggestion').send({ description: '2 bâches 3 × 1 m' });
     expect(seul.status).toBe(503);
     expect(seul.body.error).not.toContain('secours');
@@ -531,6 +537,7 @@ describe('assistant IA : Google Gemini et secours automatique', () => {
     // Une demande mal formée (réponse illisible) ne déclenche pas le secours : le problème vient de la demande.
     await A.admin.put('/api/ia/config').send({ secours: true }).expect(200);
     simulerFetch((url) => (url.includes('generativelanguage') ? reponseGemini('pas du JSON') : reponseOpenAI(bache)));
+    viderCacheIA(); // même demande rejouée exprès avec une autre réponse simulée
     const illisible = await A.admin.post('/api/ia/suggestion').send({ description: '2 bâches 3 × 1 m' });
     expect(illisible.status).toBe(502);
     expect(illisible.body.code).toBe('ia_reponse_invalide');
@@ -612,5 +619,38 @@ describe('OpenRouter', () => {
       { fournisseur: 'openrouter', statut: 'ok', secours: true },
       { fournisseur: 'openai', statut: 'injoignable', secours: false },
     ]);
+  });
+});
+
+describe('garde IA', () => {
+  beforeAll(async () => {
+    await reinitialiserIA();
+  });
+
+  it('réutilise une réponse identique sans nouvel appel, puis refuse au-delà du plafond du jour', async () => {
+    await A.admin.put('/api/ia/config').send({ cle: CLE, actif: true }).expect(200);
+    const espion = simulerFetch(() => reponseOpenAI({ machine: 'roland', lignes: [{ support: 'bache_m2', largeur: 300, hauteur: 100, unite: 'cm', pages: null, recto_verso: null, quantite: 2, finitions: [], options: [], description: null }], forfaits: [], remarques: null }));
+    const r1 = await A.prep.post('/api/ia/suggestion').send({ description: 'Deux bâches 3 × 1 m' });
+    expect(r1.status, JSON.stringify(r1.body)).toBe(200);
+    expect(r1.body.depuis_cache).toBe(false);
+    const r2 = await A.prep.post('/api/ia/suggestion').send({ description: '  deux bâches 3 × 1 m ' });
+    expect(r2.body.depuis_cache).toBe(true);
+    expect(espion).toHaveBeenCalledTimes(1);
+
+    // Plafond du jour très bas : le prochain appel est refusé avec un message clair.
+    const g = await A.admin.put('/api/ia/garde').send({ jetons_jour: 100 });
+    expect(g.status).toBe(200);
+    expect(g.body.consommation.jour.jetons).toBeGreaterThanOrEqual(1500);
+    const r3 = await A.prep.post('/api/ia/suggestion').send({ description: 'Une autre demande' });
+    expect(r3.status).toBe(429);
+    expect(r3.body.code).toBe('ia_budget');
+    expect(r3.body.error).toContain('Budget IA du jour');
+    expect(espion).toHaveBeenCalledTimes(1);
+    // Garde désactivée : l'appel repasse.
+    await A.admin.put('/api/ia/garde').send({ active: false }).expect(200);
+    expect((await A.prep.post('/api/ia/suggestion').send({ description: 'Une autre demande' })).status).toBe(200);
+    // Seuls les administrateurs règlent la garde.
+    expect((await A.prep.get('/api/ia/garde')).status).toBe(403);
+    await A.admin.put('/api/ia/garde').send({ active: true, jetons_jour: 200000 }).expect(200);
   });
 });

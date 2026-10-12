@@ -60,6 +60,7 @@ export const TYPES_NOTIFICATION = [
   'livraison_programmee',
   'livraison_annulee',
   'annulation',
+  'ia_budget',
 ] as const;
 export type TypeNotification = (typeof TYPES_NOTIFICATION)[number];
 export type ReglesNotifications = Record<TypeNotification, boolean>;

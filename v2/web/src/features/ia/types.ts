@@ -97,6 +97,7 @@ export const STATUT_USAGE_LABELS: Record<string, string> = {
   delai: 'Délai dépassé',
   reponse_invalide: 'Réponse illisible',
   erreur: 'Erreur',
+  budget: 'Budget atteint',
 };
 
 /** Proposition renvoyée par POST /ia/suggestion : prix calculé par le serveur avec la grille. */

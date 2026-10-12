@@ -10,6 +10,7 @@ import { api, messageErreur } from '../../lib/api';
 import { Alert, Button, Card, Checkbox, ConfirmDialog, EmptyState, LoadingRows, PageHeader, Segmented, SelectField, TextField, useToast } from '../../ui';
 import { champsErreur } from '../../features/admin/hooks';
 import { useConfigIA, useUsagesIA } from '../../features/ia/hooks';
+import { GardeIA } from '../../features/ia/GardeIA';
 import { FOURNISSEUR_LABELS, FOURNISSEURS_IA, MODELE_OPENROUTER_RE, MODELES_PAR_FOURNISSEUR, STATUT_USAGE_LABELS, type ConfigIA, type FournisseurIA } from '../../features/ia/types';
 import '../../features/admin/admin.css';
 import '../../features/ia/ia.css';
@@ -52,6 +53,7 @@ export default function AssistantIA() {
             <Pilotage c={config.data} />
             <Fonctionnement />
           </div>
+          <GardeIA />
           <div className="ia-fournisseurs">
             {FOURNISSEURS_IA.map((f) => (
               <CarteFournisseur key={f} c={config.data!} f={f} />
