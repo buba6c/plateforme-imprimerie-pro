@@ -16,7 +16,7 @@ import { FILTRES_FILE_TRAVAIL, useVusAtelier, type DossierAtelier } from '../../
 import '../../features/atelier/atelier.css';
 import { messageErreur } from '../../lib/api';
 import type { DossierResume } from '../../lib/types';
-import { Alert, Button, Count, EmptyState, PageHeader, Ref, Segmented, Skeleton, Tabs } from '../../ui';
+import { Alert, Button, Count, EmptyState, MachineIcone, Ref, Segmented, Skeleton, Tabs } from '../../ui';
 
 type Colonne = 'pret' | 'encours' | 'imprime';
 
@@ -121,7 +121,7 @@ export default function FileImpression() {
   // Le nombre de dossiers à imprimer reste visible dans l'onglet du navigateur.
   useEffect(() => {
     const avant = document.title;
-    if (chargee) document.title = `${colonnes.pret.length ? `(${colonnes.pret.length}) ` : ''}File ${MACHINE_LABELS[machine]} · Evocom Print`;
+    if (chargee) document.title = `${colonnes.pret.length ? `(${colonnes.pret.length}) ` : ''}Atelier ${MACHINE_LABELS[machine]} · Evocom Print`;
     return () => {
       document.title = avant;
     };
@@ -135,70 +135,77 @@ export default function FileImpression() {
 
   return (
     <>
-      <PageHeader
-        title={`File ${MACHINE_LABELS[machine]}`}
-        subtitle={
-          chargee ? (
-            <span className="atelier-compteurs" aria-label="Compteurs de la file">
-              <span>
-                <strong>{colonnes.pret.length}</strong> à imprimer
-                {urgents > 0 && <span className="atelier-compteurs__urgent">, dont {urgents} urgent{urgents > 1 ? 's' : ''}</span>}
-                {machineRole && nbNouveaux > 0 && (
-                  <span className="atelier-compteurs__nouveaux">
-                    {' '}· {nbNouveaux} nouveau{nbNouveaux > 1 ? 'x' : ''}
-                  </span>
+      <header className="atelier-entete" data-machine={machine}>
+        <div className="atelier-entete__identite">
+          <span className="atelier-entete__icone" aria-hidden="true">
+            <MachineIcone machine={machine} taille={34} />
+          </span>
+          <div>
+            <p className="atelier-entete__sur">{machineRole ? `Bonjour ${user.nom.trim().split(/\s+/)[0] ?? user.nom}` : 'File d’impression'}</p>
+            <h1 className="atelier-entete__titre">Atelier {MACHINE_LABELS[machine]}</h1>
+            {chargee ? (
+              <ul className="atelier-compteurs" aria-label="Compteurs de la file">
+                <li data-tone="pret">
+                  <strong>{colonnes.pret.length}</strong> à imprimer
+                  {urgents > 0 && <span className="atelier-compteurs__urgent"> dont {urgents} urgent{urgents > 1 ? 's' : ''}</span>}
+                  {machineRole && nbNouveaux > 0 && (
+                    <span className="atelier-compteurs__nouveaux"> · {nbNouveaux} nouveau{nbNouveaux > 1 ? 'x' : ''}</span>
+                  )}
+                </li>
+                <li data-tone="encours">
+                  <strong>{colonnes.encours.length}</strong> en impression
+                </li>
+                <li data-tone="imprime">
+                  <strong>{colonnes.imprime.length}</strong> imprimé{colonnes.imprime.length > 1 ? 's' : ''} en 48 h
+                </li>
+                {colonnes.revision.length > 0 && (
+                  <li data-tone="revision">
+                    <strong>{colonnes.revision.length}</strong> en révision
+                  </li>
                 )}
-              </span>
-              <span>
-                <strong>{colonnes.encours.length}</strong> en impression
-              </span>
-              <span>
-                <strong>{colonnes.imprime.length}</strong> imprimé{colonnes.imprime.length > 1 ? 's' : ''} en 48 h
-              </span>
-            </span>
-          ) : (
-            'Chargement de la file…'
-          )
-        }
-        actions={
-          <div className="atelier-head-actions">
-            {machineRole && nbNouveaux > 1 && (
-              <Button variant="ghost" size="sm" icon={<CheckCheck />} onClick={() => marquerTousVus([...nouveaux])}>
-                Tout marquer comme vu
-              </Button>
+              </ul>
+            ) : (
+              <p className="atelier-entete__sur">Chargement de la file…</p>
             )}
-            {!machineRole && (
-              <Segmented
-                name="machine"
-                label="Machine affichée"
-                value={machine}
-                onChange={changerMachine}
-                options={[
-                  { value: 'roland', label: 'Roland' },
-                  { value: 'xerox', label: 'Xerox' },
-                ]}
-              />
-            )}
-            <Button
-              variant="ghost"
-              size="sm"
-              icon={son.etat === 'on' ? <Volume2 /> : <VolumeX />}
-              aria-pressed={son.etat === 'on'}
-              disabled={son.etat === 'indisponible'}
-              onClick={() => void son.basculer()}
-              title={
-                son.etat === 'on'
-                  ? 'Un signal sonore retentit quand un nouveau dossier arrive. Cliquer pour couper.'
-                  : son.etat === 'bloque'
-                    ? 'Le navigateur attend un geste pour jouer le son : cliquez pour le réactiver.'
-                    : 'Jouer un signal sonore quand un nouveau dossier arrive.'
-              }
-            >
-              {son.etat === 'on' ? 'Son activé' : son.etat === 'bloque' ? 'Réactiver le son' : son.etat === 'indisponible' ? 'Son indisponible' : 'Activer le son'}
-            </Button>
           </div>
-        }
-      />
+        </div>
+        <div className="atelier-head-actions">
+          {machineRole && nbNouveaux > 1 && (
+            <Button variant="ghost" size="sm" icon={<CheckCheck />} onClick={() => marquerTousVus([...nouveaux])}>
+              Tout marquer comme vu
+            </Button>
+          )}
+          {!machineRole && (
+            <Segmented
+              name="machine"
+              label="Machine affichée"
+              value={machine}
+              onChange={changerMachine}
+              options={[
+                { value: 'roland', label: 'Roland' },
+                { value: 'xerox', label: 'Xerox' },
+              ]}
+            />
+          )}
+          <Button
+            variant="ghost"
+            size="sm"
+            icon={son.etat === 'on' ? <Volume2 /> : <VolumeX />}
+            aria-pressed={son.etat === 'on'}
+            disabled={son.etat === 'indisponible'}
+            onClick={() => void son.basculer()}
+            title={
+              son.etat === 'on'
+                ? 'Un signal sonore retentit quand un nouveau dossier arrive. Cliquer pour couper.'
+                : son.etat === 'bloque'
+                  ? 'Le navigateur attend un geste pour jouer le son : cliquez pour le réactiver.'
+                  : 'Jouer un signal sonore quand un nouveau dossier arrive.'
+            }
+          >
+            {son.etat === 'on' ? 'Son activé' : son.etat === 'bloque' ? 'Réactiver le son' : son.etat === 'indisponible' ? 'Son indisponible' : 'Activer le son'}
+          </Button>
+        </div>
+      </header>
 
       {q.isError && !q.data ? (
         <Alert tone="error">
@@ -269,7 +276,7 @@ export default function FileImpression() {
                             )}
                           </div>
                         )}
-                        <JobCard d={principales(d)} contexte="atelier" />
+                        <JobCard d={principales(d)} contexte="atelier" montrerStatut />
                         {secondaires(d).actions.length > 0 && (
                           <div className="atelier-item__plus">
                             <DossierActions dossier={secondaires(d)} size="sm" />

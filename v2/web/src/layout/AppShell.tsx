@@ -3,9 +3,11 @@ import { useEffect, useMemo, useState } from 'react';
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { useIsFetching, useIsMutating, useQuery } from '@tanstack/react-query';
 import { KeyRound, LogOut, Menu, Moon, Search, Sun, SunMoon, Wifi, WifiOff } from 'lucide-react';
-import { machineOfRole, ROLE_LABELS } from '@evocom/shared';
+import { MACHINE_LABELS, machineOfRole, ROLE_LABELS } from '@evocom/shared';
 import { useAuth, useUser } from '../auth/AuthContext';
 import { api } from '../lib/api';
+import type { Notification } from '../lib/types';
+import { MachineIcone } from '../ui';
 import { onConnexion } from '../lib/realtime';
 import { abonnerApparence, changerPreferences, getPreferences, type Theme } from '../lib/theme';
 import { NotificationBell } from './NotificationBell';
@@ -51,12 +53,20 @@ export function AppShell() {
     refetchInterval: 60_000,
     retry: false,
   });
-  const counts: Record<string, number | undefined> = { paiements_a_valider: compteurs.data?.total };
+  // Préparateur : le nombre de notifications non lues sur « Accueil » (même cache que la cloche).
+  const notifs = useQuery({
+    queryKey: ['notifications'],
+    queryFn: () => api.get<{ items: Notification[]; non_lues: number }>('/notifications'),
+    enabled: user.role === 'preparateur',
+    refetchInterval: 120_000,
+    retry: false,
+  });
+  const counts: Record<string, number | undefined> = { paiements_a_valider: compteurs.data?.total, notifications_non_lues: notifs.data?.non_lues || undefined };
 
   const ThemeIcon = theme === 'light' ? Sun : theme === 'dark' ? Moon : SunMoon;
 
   return (
-    <div className="ev-shell">
+    <div className="ev-shell" data-machine={machineImprimeur ?? undefined}>
       {open && <div className="drawer-backdrop" onClick={() => setOpen(false)} aria-hidden="true" />}
       <aside className="ev-sidebar" data-open={open} aria-label="Navigation principale">
         <a className="ev-brand" href="/" onClick={(e) => { e.preventDefault(); navigate('/'); }}>
@@ -86,7 +96,14 @@ export function AppShell() {
           <span className="ev-avatar" aria-hidden="true">{initiales(user.nom)}</span>
           <div className="grow">
             <div style={{ fontWeight: 500 }} className="truncate">{user.nom}</div>
-            <div className="ev-muted" style={{ fontSize: 12 }}>{ROLE_LABELS[user.role]}</div>
+            {machineImprimeur ? (
+              <div className="ev-user__machine" data-machine={machineImprimeur}>
+                <MachineIcone machine={machineImprimeur} taille={13} />
+                Imprimeur {MACHINE_LABELS[machineImprimeur]}
+              </div>
+            ) : (
+              <div className="ev-muted" style={{ fontSize: 12 }}>{ROLE_LABELS[user.role]}</div>
+            )}
           </div>
           <button className="ev-icon-btn ev-icon-btn--sm" aria-label="Mon compte" title="Mon compte" onClick={() => navigate('/profil')}>
             <KeyRound />

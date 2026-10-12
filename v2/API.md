@@ -18,7 +18,12 @@ Montants : entiers en FCFA. Dates : ISO 8601 (`date` = `AAAA-MM-JJ`).
 - **Administrateur** : voit tout et gère seul l'argent (encaissements validés d'office, validation des paiements,
   devis, factures, prix).
 - **Livreur** : inchangé (encaisse « à valider » à la livraison, voit le reste à payer de ses tournées).
-- **Imprimeurs** : inchangés (leur machine, sans téléphone ni montant).
+- **Imprimeurs** : inchangés (leur machine, sans téléphone ni montant). Leur interface prend la couleur de leur
+  machine (Roland rose, Xerox bleu) et l'atelier affiche l'icône de la machine.
+- **Accueil du préparateur** (`/accueil`, page d'entrée) : ses dossiers à corriger (`a_revoir`, avec le motif du
+  renvoi), en préparation, envoyés à l'atelier, en livraison, ses livrés de la semaine et ses notifications.
+  Il est prévenu (`revision`) quand un dossier est renvoyé en révision par l'atelier ou en préparation par
+  l'administrateur (`renvoyer_preparation`), puis quand il est imprimé (`pret_livraison`) et livré (`livre`).
 
 ## Déjà en place
 

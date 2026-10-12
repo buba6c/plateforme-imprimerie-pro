@@ -514,3 +514,11 @@
 .ev-segmented span[data-icone] { flex-direction: row; align-items: center; gap: 12px; }
 .ev-segmented__icone { display: grid; place-items: center; flex: none; }
 .ev-segmented__texte { display: flex; flex-direction: column; gap: 2px; }
+
+/* Imprimeurs : l'interface prend la couleur de leur machine (accent, menu actif, onglets, cloche). */
+.ev-shell[data-machine="xerox"] { --accent: var(--xerox); --accent-soft: var(--xerox-soft); --accent-ink: var(--xerox-ink); --on-accent: var(--on-xerox); --nav-active-fill: var(--xerox); --nav-active-text: var(--on-xerox); }
+.ev-shell[data-machine="roland"] { --accent: var(--roland); --accent-soft: var(--roland-soft); --accent-ink: var(--roland-ink); --on-accent: var(--on-roland); --nav-active-fill: var(--roland); --nav-active-text: var(--on-roland); }
+.ev-shell[data-machine] .ev-tab[aria-selected="true"] { background: var(--accent) left bottom / 100% 2px no-repeat; }
+.ev-user__machine { display: inline-flex; align-items: center; gap: 5px; margin-top: 2px; padding: 2px 8px; border-radius: 999px; font-size: 11px; font-weight: 700; }
+.ev-user__machine[data-machine="xerox"] { background: var(--xerox); color: var(--on-xerox); }
+.ev-user__machine[data-machine="roland"] { background: var(--roland); color: var(--on-roland); }

@@ -107,7 +107,7 @@ export function accueilPour(role: Role): string {
     case 'admin':
       return '/tableau-de-bord';
     case 'preparateur':
-      return '/dossiers';
+      return '/accueil';
     case 'imprimeur_roland':
     case 'imprimeur_xerox':
       return '/atelier';

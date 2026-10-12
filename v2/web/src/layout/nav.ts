@@ -7,6 +7,7 @@ import {
   FileText,
   FolderOpen,
   History,
+  House,
   LayoutDashboard,
   Printer,
   ReceiptText,
@@ -73,6 +74,7 @@ export function navigationPour(role: Role): NavSection[] {
     case 'preparateur':
       return [
         { items: [
+          { to: '/accueil', label: 'Accueil', icon: House, mobile: true, countKey: 'notifications_non_lues' },
           { to: '/dossiers', label: 'Dossiers', icon: FolderOpen, mobile: true },
           { to: '/modeles', label: 'Modèles', icon: BookmarkCheck, mobile: true },
           { to: '/fichiers', label: 'Fichiers', icon: Files, mobile: true },
@@ -82,7 +84,7 @@ export function navigationPour(role: Role): NavSection[] {
     case 'imprimeur_xerox':
       return [
         { items: [
-          { to: '/atelier', label: "File d'impression", icon: Printer, mobile: true },
+          { to: '/atelier', label: 'Mon atelier', icon: Printer, mobile: true },
           { to: '/dossiers', label: 'Historique', icon: History, mobile: true },
         ] },
       ];

@@ -1,0 +1,107 @@
+/* Accueil du préparateur : blocs à la couleur du statut (mêmes variables --s-* que les badges),
+   cartes compactes avec une barre de couleur à gauche, notifications et livrés récents à côté. */
+
+.ac { display: grid; gap: var(--space-6); }
+
+.ac-entete { display: flex; align-items: flex-end; justify-content: space-between; gap: var(--space-4); flex-wrap: wrap; }
+.ac-entete__bonjour { margin: 0 0 2px; font-size: 14px; color: var(--text-muted); }
+.ac-entete__actions { display: flex; gap: var(--space-2); flex-wrap: wrap; }
+.ac-compteurs { display: flex; flex-wrap: wrap; gap: 8px; margin: var(--space-3) 0 0; padding: 0; list-style: none; }
+.ac-compteurs li {
+  display: inline-flex; align-items: baseline; gap: 6px; padding: 5px 12px; border-radius: 999px;
+  background: var(--c-bg); color: var(--c-ink); font-size: 13px; font-weight: 500;
+  --c-bg: var(--surface-sunken); --c-ink: var(--text);
+}
+.ac-compteurs strong { font-family: var(--font-mono); font-variant-numeric: tabular-nums; font-size: 15px; font-weight: 700; }
+.ac-compteurs li[data-tone="a_revoir"] { --c-bg: var(--s-a-revoir-bg); --c-ink: var(--s-a-revoir-ink); }
+.ac-compteurs li[data-tone="en_cours"] { --c-bg: var(--s-en-cours-bg); --c-ink: var(--s-en-cours-ink); }
+.ac-compteurs li[data-tone="atelier"] { --c-bg: var(--s-en-impression-bg); --c-ink: var(--s-en-impression-ink); }
+.ac-compteurs li[data-tone="livraison"] { --c-bg: var(--s-pret-livraison-bg); --c-ink: var(--s-pret-livraison-ink); }
+
+.ac-grille { display: grid; grid-template-columns: minmax(0, 1fr) 340px; gap: var(--space-6); align-items: start; }
+@media (max-width: 1000px) { .ac-grille { grid-template-columns: minmax(0, 1fr); } }
+.ac-colonne, .ac-cote { display: grid; gap: var(--space-5); min-width: 0; }
+
+/* Un bloc : titre coloré souligné, aide, puis les cartes. */
+.ac-bloc { --b: var(--text-muted); --b-bg: var(--surface-sunken); --b-ink: var(--text); display: grid; gap: var(--space-3); }
+.ac-bloc[data-bloc="a_revoir"] { --b: var(--s-a-revoir); --b-bg: var(--s-a-revoir-bg); --b-ink: var(--s-a-revoir-ink); }
+.ac-bloc[data-bloc="en_cours"] { --b: var(--s-en-cours); --b-bg: var(--s-en-cours-bg); --b-ink: var(--s-en-cours-ink); }
+.ac-bloc[data-bloc="atelier"] { --b: var(--s-en-impression); --b-bg: var(--s-en-impression-bg); --b-ink: var(--s-en-impression-ink); }
+.ac-bloc[data-bloc="livraison"] { --b: var(--s-pret-livraison); --b-bg: var(--s-pret-livraison-bg); --b-ink: var(--s-pret-livraison-ink); }
+.ac-bloc[data-bloc="recents"] { --b: var(--s-livre); --b-bg: var(--s-livre-bg); --b-ink: var(--s-livre-ink); }
+.ac-bloc--notifs { --b: var(--accent); --b-bg: var(--accent-soft); --b-ink: var(--accent-ink); }
+.ac-bloc__tete { display: flex; align-items: center; justify-content: space-between; gap: var(--space-2) var(--space-4); flex-wrap: wrap; padding-bottom: 6px; border-bottom: 2px solid var(--b); }
+.ac-bloc__titre { display: inline-flex; align-items: center; gap: 8px; margin: 0; font-size: 15px; font-weight: 700; color: var(--b-ink); }
+.ac-bloc__titre > svg { width: 18px; height: 18px; color: var(--b); }
+.ac-bloc__titre .ev-count { background: var(--b); color: #fff; }
+.ac-bloc__aide { font-size: 12px; color: var(--text-muted); flex: 1 1 220px; }
+.ac-vide-bloc { border: 1.5px dashed var(--line); border-radius: var(--radius-lg); }
+.ac-vide-bloc .ev-empty { padding: var(--space-5); }
+.ac-vide-bloc .ev-empty svg { color: var(--b); }
+.ac-vide { margin: 0; padding: 10px 12px; border-radius: 10px; background: var(--surface-sunken); font-size: 13px; color: var(--text-muted); }
+
+/* Cartes : deux par rangée quand la place le permet, barre de statut à gauche. */
+.ac-cartes { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: var(--space-3); }
+.ac-carte {
+  --s: var(--text-muted); --s-bg: var(--surface-sunken);
+  position: relative; display: grid; gap: 6px; padding: 12px 14px 12px 18px; min-width: 0;
+  background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius-lg); box-shadow: var(--shadow-card);
+  cursor: pointer; transition: transform 120ms ease, box-shadow 120ms ease;
+}
+.ac-carte::before { content: ''; position: absolute; inset: 0 auto 0 0; width: 6px; border-radius: var(--radius-lg) 0 0 var(--radius-lg); background: var(--s); }
+.ac-carte:hover { transform: translateY(-1px); box-shadow: 0 0 0 1px var(--s), var(--shadow-card); }
+.ac-carte:focus-visible { outline: 2px solid transparent; box-shadow: var(--focus-ring); }
+.ac-carte[data-statut="a_revoir"] { --s: var(--s-a-revoir); --s-bg: var(--s-a-revoir-bg); background: color-mix(in srgb, var(--s-a-revoir-bg) 35%, var(--surface)); }
+.ac-carte[data-statut="en_cours"] { --s: var(--s-en-cours); --s-bg: var(--s-en-cours-bg); }
+.ac-carte[data-statut="pret_impression"] { --s: var(--s-pret-impression); --s-bg: var(--s-pret-impression-bg); }
+.ac-carte[data-statut="en_impression"] { --s: var(--s-en-impression); --s-bg: var(--s-en-impression-bg); }
+.ac-carte[data-statut="pret_livraison"] { --s: var(--s-pret-livraison); --s-bg: var(--s-pret-livraison-bg); }
+.ac-carte[data-statut="en_livraison"] { --s: var(--s-en-livraison); --s-bg: var(--s-en-livraison-bg); }
+.ac-carte[data-urgent] { border-color: color-mix(in srgb, var(--coral) 70%, var(--line)); }
+.ac-carte__tete { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.ac-carte__machine { display: inline-flex; align-items: center; gap: 4px; padding: 2px 8px; border-radius: 999px; font-size: 11px; font-weight: 700; color: #fff; }
+.ac-carte__machine[data-machine="roland"] { background: var(--roland); color: var(--on-roland); }
+.ac-carte__machine[data-machine="xerox"] { background: var(--xerox); color: var(--on-xerox); }
+.ac-carte__client { margin: 0; font-size: 16px; line-height: 22px; font-weight: 600; color: var(--text); overflow-wrap: anywhere; }
+.ac-carte__spec { margin: 0; font-size: 13px; color: var(--text-muted); overflow-wrap: anywhere; }
+.ac-carte__motif { display: grid; gap: 2px; padding: 8px 10px; border-radius: 8px; background: var(--s-a-revoir-bg); border-left: 3px solid var(--s-a-revoir); font-size: 13px; color: var(--s-a-revoir-ink); cursor: default; }
+.ac-carte__motif strong { font-size: 11px; letter-spacing: 0.06em; text-transform: uppercase; }
+.ac-carte__pied { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; margin-top: 4px; padding-top: 8px; border-top: 1px solid var(--line); cursor: default; }
+.ac-carte__quand { font-size: 12px; color: var(--text-muted); }
+.ac-carte__actions { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+
+/* Notifications : point coloré selon le type, non lues en gras. */
+.ac-notifs { display: grid; gap: 4px; margin: 0; padding: 0; list-style: none; }
+.ac-notif {
+  --n: var(--text-muted);
+  display: flex; align-items: flex-start; gap: 10px; width: 100%; padding: 8px 10px; border-radius: 10px;
+  border: 1px solid transparent; background: transparent; color: var(--text); font: inherit; text-align: left; cursor: pointer;
+}
+.ac-notif:hover { background: var(--surface-sunken); }
+.ac-notif:focus-visible { outline: 2px solid transparent; box-shadow: var(--focus-ring); }
+.ac-notif[data-nonlue] { background: var(--surface); border-color: var(--line); box-shadow: var(--shadow-card); }
+.ac-notif[data-type="revision"], .ac-notif[data-type="statut_force"] { --n: var(--s-a-revoir); }
+.ac-notif[data-type="pret_livraison"] { --n: var(--s-pret-livraison); }
+.ac-notif[data-type="livre"] { --n: var(--s-livre); }
+.ac-notif[data-type="nouveau_travail"] { --n: var(--s-en-impression); }
+.ac-notif[data-type="report_livraison"], .ac-notif[data-type="livraison_programmee"] { --n: var(--s-en-livraison); }
+.ac-notif__point { flex: none; width: 10px; height: 10px; margin-top: 5px; border-radius: 50%; background: var(--n); opacity: 0.45; }
+.ac-notif[data-nonlue] .ac-notif__point { opacity: 1; box-shadow: 0 0 0 3px color-mix(in srgb, var(--n) 22%, transparent); }
+.ac-notif__corps { display: grid; gap: 1px; min-width: 0; }
+.ac-notif__titre { font-size: 13px; font-weight: 500; }
+.ac-notif[data-nonlue] .ac-notif__titre { font-weight: 700; }
+.ac-notif__message { font-size: 12px; color: var(--text-muted); overflow-wrap: anywhere; }
+.ac-notif__quand { font-size: 11px; color: var(--text-muted); }
+
+/* Livrés récents : lignes compactes. */
+.ac-recents { display: grid; margin: 0; padding: 0; list-style: none; }
+.ac-recent { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: baseline; gap: var(--space-3); padding: 8px 6px; border-bottom: 1px solid var(--line); color: var(--text); text-decoration: none; }
+.ac-recents li:last-child .ac-recent { border-bottom: 0; }
+.ac-recent:hover { background: var(--surface-sunken); }
+.ac-recent__client { font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ac-recent__quand { font-size: 12px; color: var(--s-livre-ink); white-space: nowrap; }
+
+@media (max-width: 560px) {
+  .ac-cartes { grid-template-columns: minmax(0, 1fr); }
+  .ac-entete__actions .ev-btn { flex: 1 1 auto; justify-content: center; }
+}

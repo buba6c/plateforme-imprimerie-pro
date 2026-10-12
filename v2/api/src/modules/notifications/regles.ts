@@ -154,9 +154,17 @@ export async function notifierTransitionDossier(
     case 'reimprimer':
       await notifierReimpression(auteur, avant, d, commentaire, db);
       break;
+    case 'renvoyer_preparation':
+      // Par l'administrateur : le préparateur retrouve le dossier dans « En préparation ».
+      await envoyer(
+        db,
+        { userIds: ids(d.preparateur_id), exclure: auteur.id },
+        { type: 'revision', titre: `Renvoyé en préparation : ${d.numero}`, message: commentaire ?? d.client_nom, dossier_id: d.id },
+      );
+      break;
     default:
-      // demarrer, remettre_en_attente, renvoyer_preparation, cloturer, rouvrir : la mise à jour
-      // des listes par le temps réel suffit.
+      // demarrer, remettre_en_attente, cloturer, rouvrir : la mise à jour des listes par le
+      // temps réel suffit.
       break;
   }
   // Message WhatsApp au client (module whatsapp) : marquer_imprime (prête, livraison ou retrait),

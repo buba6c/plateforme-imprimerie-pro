@@ -7,6 +7,7 @@ import Connexion from './pages/compte/Connexion';
 
 const ListeDossiers = lazy(() => import('./pages/dossiers/ListeDossiers'));
 const NouveauDossier = lazy(() => import('./pages/dossiers/NouveauDossier'));
+const AccueilPreparateur = lazy(() => import('./pages/dossiers/AccueilPreparateur'));
 const Modeles = lazy(() => import('./pages/dossiers/Modeles'));
 const FicheDossier = lazy(() => import('./pages/dossiers/FicheDossier'));
 const FileImpression = lazy(() => import('./pages/atelier/FileImpression'));
@@ -63,6 +64,7 @@ export default function App() {
         }
       >
         <Route index element={<Accueil />} />
+        <Route path="accueil" element={<Lazy><R roles={BUREAU}><AccueilPreparateur /></R></Lazy>} />
         <Route path="dossiers" element={<Lazy><ListeDossiers /></Lazy>} />
         <Route path="dossiers/nouveau" element={<Lazy><R roles={BUREAU}><NouveauDossier /></R></Lazy>} />
         <Route path="modeles" element={<Lazy><R roles={BUREAU}><Modeles /></R></Lazy>} />

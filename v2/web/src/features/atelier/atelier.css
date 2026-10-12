@@ -3,21 +3,54 @@
 .atelier-head-actions { display: flex; align-items: center; gap: var(--space-3); flex-wrap: wrap; }
 .atelier-maj { font-size: 12px; color: var(--text-muted); }
 
-.atelier-compteurs { display: flex; flex-wrap: wrap; gap: var(--space-1) var(--space-5); color: var(--text-muted); }
-.atelier-compteurs li { display: inline-flex; align-items: baseline; gap: 6px; }
-.atelier-compteurs strong { font-family: var(--font-mono); font-variant-numeric: tabular-nums; font-weight: 600; font-size: 15px; color: var(--ink); }
-.atelier-compteurs .atelier-compteurs__urgent { color: var(--text); }
+/* Bandeau de l'atelier : l'identité de la machine (icône, nom, couleur) et les compteurs colorés
+   comme les colonnes (violet à imprimer, indigo en impression, vert imprimé, rouge révision). */
+.atelier-entete {
+  --machine: var(--accent); --machine-on: var(--on-accent); --machine-soft: var(--accent-soft); --machine-ink: var(--accent-ink);
+  display: flex; align-items: flex-start; justify-content: space-between; gap: var(--space-4); flex-wrap: wrap;
+  padding: var(--space-4) var(--space-5); border-radius: var(--radius-lg);
+  background: var(--machine-soft); border: 1px solid color-mix(in srgb, var(--machine) 35%, var(--line));
+  border-left: 6px solid var(--machine);
+}
+.atelier-entete[data-machine="roland"] { --machine: var(--roland); --machine-on: var(--on-roland); --machine-soft: var(--roland-soft); --machine-ink: var(--roland-ink); }
+.atelier-entete[data-machine="xerox"] { --machine: var(--xerox); --machine-on: var(--on-xerox); --machine-soft: var(--xerox-soft); --machine-ink: var(--xerox-ink); }
+.atelier-entete__identite { display: flex; align-items: center; gap: var(--space-4); min-width: 0; }
+.atelier-entete__icone { display: inline-grid; place-items: center; flex: none; width: 64px; height: 64px; border-radius: 16px; background: var(--machine); color: var(--machine-on); box-shadow: var(--shadow-card); }
+.atelier-entete__sur { margin: 0; font-size: 13px; color: var(--machine-ink); }
+.atelier-entete__titre { margin: 0; font-size: 26px; line-height: 32px; font-weight: 700; letter-spacing: -0.02em; color: var(--machine-ink); }
+.atelier-entete .atelier-head-actions { margin-left: auto; }
+@media (max-width: 560px) {
+  .atelier-entete { padding: var(--space-3) var(--space-4); }
+  .atelier-entete__icone { width: 52px; height: 52px; }
+  .atelier-entete__titre { font-size: 22px; line-height: 28px; }
+}
+
+.atelier-compteurs { display: flex; flex-wrap: wrap; gap: 6px; margin: var(--space-2) 0 0; padding: 0; list-style: none; }
+.atelier-compteurs li { --c: var(--text-muted); --c-bg: var(--surface); --c-ink: var(--text); display: inline-flex; align-items: baseline; gap: 5px; padding: 4px 10px; border-radius: 999px; background: var(--c-bg); color: var(--c-ink); font-size: 13px; font-weight: 500; border: 1px solid color-mix(in srgb, var(--c) 40%, transparent); }
+.atelier-compteurs li[data-tone="pret"] { --c: var(--s-pret-impression); --c-bg: var(--s-pret-impression-bg); --c-ink: var(--s-pret-impression-ink); }
+.atelier-compteurs li[data-tone="encours"] { --c: var(--s-en-impression); --c-bg: var(--s-en-impression-bg); --c-ink: var(--s-en-impression-ink); }
+.atelier-compteurs li[data-tone="imprime"] { --c: var(--s-livre); --c-bg: var(--s-livre-bg); --c-ink: var(--s-livre-ink); }
+.atelier-compteurs li[data-tone="revision"] { --c: var(--s-a-revoir); --c-bg: var(--s-a-revoir-bg); --c-ink: var(--s-a-revoir-ink); }
+.atelier-compteurs strong { font-family: var(--font-mono); font-variant-numeric: tabular-nums; font-weight: 700; font-size: 15px; }
+.atelier-compteurs .atelier-compteurs__urgent { color: var(--danger-ink); font-weight: 600; }
 
 /* Plateau : trois colonnes sur grand écran. */
 .atelier-board { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 @media (max-width: 1100px) and (min-width: 761px) {
   .atelier-board { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
-.atelier-col-titre { margin: 0; display: inline-flex; align-items: center; gap: var(--space-2); font-size: 15px; font-weight: 600; color: var(--text); }
-.atelier-col-titre::before { content: ""; width: 8px; height: 8px; border-radius: 50%; border: 1.5px solid var(--text-muted); }
-.ev-column[data-colonne="encours"] .atelier-col-titre::before { background: var(--accent); border-color: var(--accent); }
-.ev-column[data-colonne="imprime"] .atelier-col-titre::before { background: var(--st-ship-solid); border-color: var(--st-ship-solid); }
-.ev-column[data-colonne="pret"] .atelier-col-titre::before { border-color: var(--info-ink); }
+/* Colonnes : chaque étape a sa couleur (celle du badge de statut), en tête de colonne et en
+   liseré sur les cartes. */
+.atelier-board .ev-column { --col: var(--text-muted); --col-bg: var(--surface-sunken); --col-ink: var(--text); }
+.atelier-board .ev-column[data-colonne="pret"] { --col: var(--s-pret-impression); --col-bg: var(--s-pret-impression-bg); --col-ink: var(--s-pret-impression-ink); }
+.atelier-board .ev-column[data-colonne="encours"] { --col: var(--s-en-impression); --col-bg: var(--s-en-impression-bg); --col-ink: var(--s-en-impression-ink); }
+.atelier-board .ev-column[data-colonne="imprime"] { --col: var(--s-livre); --col-bg: var(--s-livre-bg); --col-ink: var(--s-livre-ink); }
+.atelier-board .ev-column__head { padding: 8px 12px; border-radius: 10px; background: var(--col-bg); border-left: 5px solid var(--col); }
+.atelier-col-titre { margin: 0; display: inline-flex; align-items: center; gap: var(--space-2); font-size: 15px; font-weight: 700; color: var(--col-ink); }
+.atelier-board .ev-column__head .ev-count { background: var(--col); color: #fff; }
+.atelier-board .ev-column > .atelier-item > .ev-job { border-top: 3px solid var(--col); }
+.atelier-board .ev-column[data-colonne="encours"] > .atelier-item > .ev-job { background: color-mix(in srgb, var(--col-bg) 30%, var(--surface)); }
+.atelier-board .ev-column[data-colonne="imprime"] > .atelier-item > .ev-job { background: color-mix(in srgb, var(--col-bg) 25%, var(--surface)); }
 
 .atelier-vide { border: 1.5px dashed var(--line); border-radius: var(--radius-lg); }
 .atelier-vide .ev-empty { padding: var(--space-8) var(--space-5); }

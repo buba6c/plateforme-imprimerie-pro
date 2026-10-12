@@ -188,6 +188,20 @@ describe('règles de notification (A11)', () => {
     expect((await notificationsDe(ids[comptes.admin]!, d.id)).map((n) => n.type)).toEqual(['revision']);
   });
 
+  it('renvoyé en préparation par l’administrateur : le préparateur est prévenu, pas l’auteur', async () => {
+    const d = await dossier('en_cours');
+    await notifierTransitionDossier(admin(), 'renvoyer_preparation', { ...d, statut: 'pret_impression' }, d, 'Client a changé le texte');
+    const prep = await notificationsDe(ids[comptes.prep]!, d.id);
+    expect(prep.map((n) => n.type)).toEqual(['revision']);
+    expect(prep[0]?.titre).toContain('Renvoyé en préparation');
+    expect(prep[0]?.message).toBe('Client a changé le texte');
+    expect(await notificationsDe(ids[comptes.admin]!, d.id)).toHaveLength(0);
+    // Par le préparateur lui-même : personne n'est prévenu.
+    const d2 = await dossier('en_cours');
+    await notifierTransitionDossier({ id: ids[comptes.prep]!, role: 'preparateur' }, 'renvoyer_preparation', { ...d2, statut: 'pret_impression' }, d2, null);
+    expect(await notificationsDe(ids[comptes.prep]!, d2.id)).toHaveLength(0);
+  });
+
   it("remise en impression : imprimeurs, préparateur, et le livreur perd sa livraison", async () => {
     const livreur = ids[comptes.livreur]!;
     const d = await dossier('pret_impression', { livreur_id: livreur });
