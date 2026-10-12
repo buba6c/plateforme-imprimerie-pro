@@ -30,9 +30,10 @@ import { SpecsEditor } from '../../features/specs/SpecsEditor';
 import { FichiersEtBat, RemiseClient, UrgenceChoix, type ModeRemise } from '../../features/specs/Commande';
 import { SuggestionIA } from '../../features/ia/SuggestionIA';
 import { appliquerModele, EnregistrerModele, ModelesDossier, useModeles } from '../../features/modeles/ModelesDossier';
+import { Predefinis } from '../../features/modeles/Predefinis';
+import { MiniatureLocale } from '../../features/fichiers/MiniatureLocale';
 import { useLibelles, useParamsPrix, useTarifs } from '../../features/specs/useTarifs';
 import { deposerEnAttente } from '../../features/fichiers/enAttente';
-import { extension } from '../../features/fichiers/ListeFichiers';
 import { formatTaille } from '@evocom/shared';
 import { Alert, Button, Card, Checkbox, EmptyState, LoadingRows, MachineChip, PageHeader, Segmented, SelectField, TextareaField, TextField, useToast, MachineIcone } from '../../ui';
 import '../../features/dossiers-ui/dossiers-ui.css';
@@ -255,8 +256,12 @@ export default function NouveauDossier() {
     setErreurs(v.form);
     setErreursSpecs(v.specs);
     if (Object.keys(v.form).length || Object.keys(v.specs).length) {
-      setErreurGenerale({ titre: TITRE_A_CORRIGER, lignes: [] });
-      document.querySelector('[aria-invalid="true"]')?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+      setErreurGenerale({ titre: TITRE_A_CORRIGER, lignes: libellerErreurs(v.form, v.specs) });
+      window.setTimeout(() => {
+        const premier = document.querySelector<HTMLElement>('[aria-invalid="true"], .ev-error');
+        premier?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+        if (premier?.matches('input, select, textarea')) premier.focus({ preventScroll: true });
+      }, 50);
       return;
     }
     const corps = construire(f, conversion.specs);
@@ -354,8 +359,17 @@ export default function NouveauDossier() {
             onAppliquer={(machine, specs) => setF((x) => ({ ...x, machine, specs }))}
           />
           {!edition && (
-            <Card title="Partir d’un modèle" className="nd-section nd-modeles" actions={<span className="ev-muted" style={{ fontSize: 13 }}>Vos configurations habituelles, en un clic</span>}>
-              <ModelesDossier machineImposee={machineModifiable ? undefined : f.machine} onAppliquer={(m) => setF((x) => appliquerModele(x, m))} />
+            <Card title="Partir d’un prédéfini ou d’un modèle" className="nd-section nd-modeles" actions={<span className="ev-muted" style={{ fontSize: 13 }}>Vos configurations habituelles, en un clic</span>}>
+              <div className="stack">
+                <Predefinis
+                  machineImposee={machineModifiable ? undefined : f.machine}
+                  onAppliquer={(p) => {
+                    setF((x) => ({ ...x, machine: p.machine, specs: specsVersDraft(p.machine, p.specs), description: x.description || (p.description ?? '') }));
+                    toast.success('Prédéfini appliqué', 'Vérifiez les quantités, le client et le prix, puis créez le dossier.');
+                  }}
+                />
+                <ModelesDossier machineImposee={machineModifiable ? undefined : f.machine} onAppliquer={(m) => setF((x) => appliquerModele(x, m))} />
+              </div>
             </Card>
           )}
           <Card title={<><span className="nd-section__num">1</span>Machine</>} className="nd-section">
@@ -615,7 +629,7 @@ function DepotFichiers({ fichiers, onChange }: { fichiers: File[]; onChange: (f:
         <ul className="nd-depot__liste" aria-label="Fichiers à envoyer">
           {fichiers.map((x) => (
             <li key={`${x.name}-${x.size}`} className="nd-depot__item">
-              <span className="ev-file__type" aria-hidden="true">{extension(x.name)}</span>
+              <MiniatureLocale file={x} />
               <span className="nd-depot__nom">{x.name}</span>
               <span className="nd-depot__taille">{formatTaille(x.size)}</span>
               <button type="button" className="ev-icon-btn ev-icon-btn--sm" aria-label={`Retirer ${x.name}`} onClick={() => onChange(fichiers.filter((y) => y !== x))}>
@@ -630,6 +644,57 @@ function DepotFichiers({ fichiers, onChange }: { fichiers: File[]; onChange: (f:
 }
 
 const TITRE_A_CORRIGER = 'Certains champs sont à corriger.';
+
+const LIBELLES_CHAMPS: Record<string, string> = {
+  client_nom: 'Client (section 2) · nom',
+  client_telephone: 'Client (section 2) · téléphone',
+  client_email: 'Client (section 2) · e-mail',
+  description: 'Travail (section 3) · description',
+  consignes: 'Travail (section 3) · consignes',
+  montant: 'Prix · montant',
+  date_promise: 'Remise et délai (section 5) · date promise',
+  adresse_livraison: 'Remise et délai (section 5) · adresse de livraison',
+  mode_paiement_prevu: 'Remise et délai (section 5) · mode de paiement',
+  mode_remise: 'Remise et délai (section 5) · comment le client récupère son travail',
+  machine: 'Machine (section 1)',
+  specs: 'Spécifications (section 4)',
+};
+const LIBELLES_SPECS: Record<string, string> = {
+  support: 'support',
+  support_autre: 'précision du support',
+  largeur: 'largeur',
+  hauteur: 'hauteur',
+  unite: 'unité',
+  quantite: 'exemplaires',
+  pages: 'pages',
+  format: 'format',
+  format_largeur: 'largeur finie',
+  format_hauteur: 'hauteur finie',
+  papier: 'papier',
+  finitions: 'finitions',
+  options: 'options',
+  description: 'précisions',
+  'oeillets.espacement_cm': 'espacement des œillets',
+  'numerotation.depart': 'numéro de départ',
+  'numerotation.chiffres': 'nombre de chiffres',
+};
+
+/** Chaque erreur en clair, avec la section et le champ, pour savoir où corriger. */
+function libellerErreurs(form: Record<string, string>, specs: Record<string, string>): string[] {
+  const lignes: string[] = [];
+  for (const [k, m] of Object.entries(form)) lignes.push(`${LIBELLES_CHAMPS[k] ?? k} : ${m}`);
+  for (const [k, m] of Object.entries(specs)) {
+    const ligne = /^lignes\.(\d+)\.(.+)$/.exec(k);
+    if (ligne) {
+      const champ = ligne[2]!;
+      lignes.push(`Spécifications (section 4) · ligne ${Number(ligne[1]) + 1}, ${LIBELLES_SPECS[champ] ?? champ.replace(/_/g, ' ')} : ${m}`);
+    } else if (k.startsWith('lignes')) lignes.push(`Spécifications (section 4) : ${m}`);
+    else if (k.startsWith('forfaits')) lignes.push(`Forfaits (section 5 ou 6) : ${m}`);
+    else if (k.startsWith('remise')) lignes.push(`Remise commerciale (section 4) : ${m}`);
+    else lignes.push(`${k} : ${m}`);
+  }
+  return lignes;
+}
 const CHAMPS_FORM = ['client_nom', 'client_telephone', 'client_email', 'description', 'consignes', 'montant', 'date_promise', 'adresse_livraison', 'mode_paiement_prevu', 'mode_remise'];
 
 function construire(f: Formulaire, specs: unknown) {

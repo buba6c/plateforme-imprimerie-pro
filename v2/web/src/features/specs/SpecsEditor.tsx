@@ -333,6 +333,28 @@ function ChampSupportAutre({ valeur, onChange, erreur }: { valeur: string; onCha
 
 type Trouver = (code: string) => Tarif | undefined;
 
+/** Pictogramme d'une feuille : recto seul (une face marquée) ou recto-verso (les deux). */
+export function IconeFaces({ faces }: { faces: 'recto' | 'recto_verso' }) {
+  return (
+    <svg className="sp-faces" viewBox="0 0 40 28" width="40" height="28" aria-hidden="true">
+      <rect x="2" y="3" width="16" height="22" rx="2" fill="currentColor" fillOpacity="0.9" />
+      <rect x="5" y="7" width="10" height="2" rx="1" fill="#fff" fillOpacity="0.9" />
+      <rect x="5" y="12" width="10" height="2" rx="1" fill="#fff" fillOpacity="0.9" />
+      <rect x="5" y="17" width="7" height="2" rx="1" fill="#fff" fillOpacity="0.9" />
+      <rect x="22" y="3" width="16" height="22" rx="2" fill="currentColor" fillOpacity={faces === 'recto_verso' ? 0.9 : 0.18} stroke="currentColor" strokeOpacity="0.5" strokeWidth={faces === 'recto_verso' ? 0 : 1} />
+      {faces === 'recto_verso' && (
+        <>
+          <rect x="25" y="7" width="10" height="2" rx="1" fill="#fff" fillOpacity="0.9" />
+          <rect x="25" y="12" width="10" height="2" rx="1" fill="#fff" fillOpacity="0.9" />
+          <rect x="25" y="17" width="7" height="2" rx="1" fill="#fff" fillOpacity="0.9" />
+        </>
+      )}
+      <text x="10" y="27.5" textAnchor="middle" fontSize="4.5" fill="currentColor" fontWeight="700">R</text>
+      <text x="30" y="27.5" textAnchor="middle" fontSize="4.5" fill="currentColor" fontWeight="700">V</text>
+    </svg>
+  );
+}
+
 /** Rappel du tarif appliqué, avec un avertissement s'il manque ou n'a pas de prix. */
 function TarifApplique({ code, tarif, prefixe = 'Tarif', siProbleme }: { code: string; tarif: Trouver; prefixe?: string; siProbleme?: boolean }) {
   if (!code) return null;
@@ -579,8 +601,8 @@ function LigneXerox({ l, supports, finitions, tarif, maj, err }: {
               maj({ recto_verso, pages: recto_verso && l.pages.trim() === '1' ? '2' : l.pages });
             }}
             options={[
-              { value: 'recto', label: 'Recto seul', tone: 'info' },
-              { value: 'recto_verso', label: 'Recto-verso', tone: 'violet' },
+              { value: 'recto', label: 'Recto seul', help: 'une face imprimée', tone: 'info', icon: <IconeFaces faces="recto" /> },
+              { value: 'recto_verso', label: 'Recto-verso', help: 'les deux faces', tone: 'violet', icon: <IconeFaces faces="recto_verso" /> },
             ]}
           />
         </div>
@@ -616,8 +638,8 @@ function LigneXerox({ l, supports, finitions, tarif, maj, err }: {
               value={l.pelliculage_faces}
               onChange={(pelliculage_faces) => maj({ pelliculage_faces })}
               options={[
-                { value: 'recto', label: 'Recto' },
-                { value: 'recto_verso', label: 'Recto-verso' },
+                { value: 'recto', label: 'Recto', help: 'une face pelliculée', tone: 'info', icon: <IconeFaces faces="recto" /> },
+                { value: 'recto_verso', label: 'Recto-verso', help: 'les deux faces', tone: 'violet', icon: <IconeFaces faces="recto_verso" /> },
               ]}
             />
           </ChampGroupe>

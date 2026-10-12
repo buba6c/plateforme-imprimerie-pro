@@ -315,6 +315,21 @@ describe('corrections d\'intégration', () => {
     expect((await prep.post(`/api/dossiers/${autre.body.id}/montant`).send({ montant: 1000 })).status).toBe(404);
   });
 
+  it('prédéfinis : les configurations qui reviennent le plus, avec leur nombre de dossiers', async () => {
+    const prep = await agent(comptes.prep);
+    const r = await prep.get('/api/dossiers/predefinis?machine=xerox');
+    expect(r.status).toBe(200);
+    const flyers500 = r.body.items.find((p: any) => p.resume.includes('A4 couleur') && p.resume.includes('500 ex.'));
+    expect(flyers500).toBeTruthy();
+    expect(flyers500.nb).toBeGreaterThanOrEqual(2);
+    expect(flyers500).toMatchObject({ machine: 'xerox', specs: { lignes: expect.any(Array), forfaits: expect.any(Array) } });
+    expect(flyers500.dernier_at).toBeTruthy();
+    expect(r.body.items[0].nb).toBeGreaterThanOrEqual(r.body.items[r.body.items.length - 1].nb);
+    expect((await prep.get('/api/dossiers/predefinis?machine=roland')).body.items.every((p: any) => p.machine === 'roland')).toBe(true);
+    const liv = await agent(comptes.livreur);
+    expect((await liv.get('/api/dossiers/predefinis')).status).toBe(403);
+  });
+
   it('le résumé lisible des spécifications utilise les libellés', async () => {
     const admin = await agent(comptes.admin);
     const r = await admin.get('/api/dossiers?q=Boutique%20Keur%20Yaye');

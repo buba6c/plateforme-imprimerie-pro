@@ -37,6 +37,7 @@ Montants : entiers en FCFA. Dates : ISO 8601 (`date` = `AAAA-MM-JJ`).
 | POST | /dossiers | admin, preparateur | fiche complète (201) |
 | GET | /dossiers/:id | tous (filtré) | fiche : champs (dont `resume_specs`, résumé lisible) + `actions[]`, `peut_modifier`, `peut_supprimer`, `peut_deposer_fichiers`, `fichiers[]`, `historique[]`, `paiements[]`, `facture` |
 | PATCH | /dossiers/:id | admin, preparateur propriétaire (en_cours/a_revoir) | fiche |
+| GET | /dossiers/predefinis?machine | admin, preparateur | configurations les plus fréquentes des dossiers visibles (un an, au moins 2 dossiers) : `{items:[{cle,machine,specs,resume,description,nb,dernier_at}]}` triées par fréquence |
 | POST | /dossiers/:id/montant `{montant}` | admin ; préparateur propriétaire ; livreur (dossier visible, parti sans prix ou déjà saisi) | montant fixé à la main (`montant_source: saisi`), événement `modification` ; 409 si facture émise ou montant sous le déjà payé |
 | DELETE | /dossiers/:id `{motif?}` | admin ; préparateur propriétaire si en_cours sans paiement | 204 (corbeille) |
 | POST | /dossiers/:id/restaurer | admin | |

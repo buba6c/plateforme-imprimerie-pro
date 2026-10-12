@@ -208,6 +208,72 @@ export async function listerDossiers(user: AuthUser, f: ListeFiltres) {
   };
 }
 
+/** Signature d'une configuration : ce qui définit le type de travail, hors quantités et textes libres. */
+function signatureSpecs(machine: Machine, specs: Specs): string | null {
+  const lignes = (specs?.lignes ?? []) as (LigneRoland | LigneXerox)[];
+  if (!lignes.length) return null;
+  const l = lignes.map((x) => {
+    const base: Record<string, unknown> = {
+      support: x.support,
+      support_autre: (x as { support_autre?: string | null }).support_autre ?? null,
+      finitions: [...(x.finitions ?? [])].map((f) => f.code).sort(),
+      options: [...(x.options ?? [])].sort(),
+    };
+    if (machine === 'roland') {
+      const r = x as LigneRoland;
+      Object.assign(base, { largeur: r.largeur, hauteur: r.hauteur, unite: r.unite, bords: r.bords ?? null });
+    } else {
+      const xr = x as LigneXerox;
+      Object.assign(base, { pages: xr.pages, recto_verso: !!xr.recto_verso, format: xr.format ?? null, couleur: xr.couleur ?? null, papier: xr.papier ?? null, pelliculage: xr.pelliculage ?? null, type_document: xr.type_document ?? null });
+    }
+    return base;
+  });
+  const forfaits = [...(specs.forfaits ?? [])].map((f) => f.code).sort();
+  return JSON.stringify({ machine, l, forfaits });
+}
+
+/**
+ * Prédéfinis : les configurations les plus fréquentes parmi les dossiers visibles de l'utilisateur
+ * (un an), avec le nombre de dossiers et la dernière utilisation. Les quantités et la description
+ * du dossier le plus récent servent d'exemple.
+ */
+export async function predefinisDossiers(user: AuthUser, machine?: Machine, limit = 12) {
+  const params = await getParametres();
+  const vis = visibilite(user, 0, params.livreur_jours_historique);
+  const args: unknown[] = [...vis.params];
+  let where = `${vis.sql} AND d.created_at > now() - interval '365 days' AND jsonb_array_length(coalesce(d.specs->'lignes', '[]'::jsonb)) > 0`;
+  if (machine) {
+    args.push(machine);
+    where += ` AND d.machine = $${args.length}`;
+  }
+  const rows = await query<{ machine: Machine; specs: Specs; description: string | null; created_at: string }>(
+    `SELECT d.machine, d.specs, d.description, d.created_at FROM dossiers d WHERE ${where} ORDER BY d.created_at DESC LIMIT 3000`,
+    args,
+  );
+  const groupes = new Map<string, { machine: Machine; specs: Specs; description: string | null; nb: number; dernier_at: string }>();
+  for (const r of rows) {
+    const cle = signatureSpecs(r.machine, r.specs);
+    if (!cle) continue;
+    const g = groupes.get(cle);
+    if (g) g.nb += 1;
+    else groupes.set(cle, { machine: r.machine, specs: r.specs, description: r.description, nb: 1, dernier_at: r.created_at });
+  }
+  const libelles = await libellesTarifs();
+  return [...groupes.entries()]
+    .filter(([, g]) => g.nb >= 2)
+    .sort((a, b) => b[1].nb - a[1].nb || b[1].dernier_at.localeCompare(a[1].dernier_at))
+    .slice(0, limit)
+    .map(([cle, g], i) => ({
+      cle: `${i}-${cle.length}-${g.nb}`,
+      machine: g.machine,
+      specs: { lignes: g.specs.lignes, forfaits: g.specs.forfaits ?? [] },
+      resume: resumeSpecs(g.machine, g.specs, null, libelles),
+      description: g.description,
+      nb: g.nb,
+      dernier_at: g.dernier_at,
+    }));
+}
+
 /** Charge un dossier visible par l'utilisateur, ou lève 404. */
 export async function chargerDossier(user: AuthUser, id: number, db: Db = getPool(), forUpdate = false): Promise<DossierRow> {
   const params = await getParametres(db);

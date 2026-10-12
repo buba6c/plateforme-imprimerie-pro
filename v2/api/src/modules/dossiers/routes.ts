@@ -25,6 +25,12 @@ dossiersRouter.get('/', async (req, res) => {
   res.json(result);
 });
 
+/** Configurations les plus fréquentes des dossiers (prédéfinis du formulaire). */
+dossiersRouter.get('/predefinis', requireRole('admin', 'preparateur'), async (req, res) => {
+  const machine = qStr(req, 'machine');
+  res.json({ items: await svc.predefinisDossiers(me(req), machine && (MACHINES as readonly string[]).includes(machine) ? (machine as (typeof MACHINES)[number]) : undefined) });
+});
+
 dossiersRouter.post('/', requireRole('admin', 'preparateur'), async (req, res) => {
   const d = await svc.creerDossier(me(req), req.body);
   res.status(201).json(await svc.detailDossier(me(req), d.id));

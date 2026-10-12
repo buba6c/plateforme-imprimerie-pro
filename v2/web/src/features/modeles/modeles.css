@@ -25,3 +25,24 @@
 .modele__meta svg { width: 13px; height: 13px; }
 .modele__supprimer { position: absolute; top: 10px; right: 8px; }
 @media (prefers-reduced-motion: reduce) { .modele { transition: none; } .modele:hover { transform: none; } }
+
+/* Prédéfinis : piste horizontale à faire défiler */
+.predef { display: grid; gap: 8px; }
+.predef__tete { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.predef__titre { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; font-weight: 700; color: var(--text); }
+.predef__titre svg { width: 16px; height: 16px; color: var(--text-muted); }
+.predef__nav { display: inline-flex; gap: 4px; }
+.predef__piste { display: flex; gap: 10px; overflow-x: auto; padding: 4px 2px 8px; scroll-snap-type: x mandatory; scrollbar-width: thin; }
+.predef__carte {
+  --m-fond: var(--xerox-soft); --m-encre: var(--xerox-ink); --m-plein: var(--xerox);
+  flex: 0 0 240px; scroll-snap-align: start; display: grid; gap: 4px; align-content: start; padding: 10px 12px; text-align: left;
+  border: 1px solid var(--line); border-top: 4px solid var(--m-plein); border-radius: 12px; background: var(--surface); font: inherit; color: var(--text); cursor: pointer;
+  box-shadow: var(--shadow-card); transition: transform 200ms cubic-bezier(0.16, 1, 0.3, 1), border-color 200ms;
+}
+.predef__carte[data-machine="roland"] { --m-fond: var(--roland-soft); --m-encre: var(--roland-ink); --m-plein: var(--roland); }
+.predef__carte:hover { transform: translateY(-2px); border-color: color-mix(in srgb, var(--m-plein) 45%, var(--line)); }
+.predef__carte:focus-visible { outline: none; box-shadow: var(--focus-ring); }
+.predef__resume { font-family: var(--font-display); font-size: 14.5px; line-height: 19px; font-weight: 700; color: var(--ink); overflow-wrap: anywhere; }
+.predef__desc { font-size: 12.5px; color: var(--text-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.predef__nb { font-size: 12px; color: var(--m-encre); margin-top: 2px; }
+.predef__nb strong { font-size: 14px; }

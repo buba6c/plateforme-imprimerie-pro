@@ -84,3 +84,11 @@
 .fi-carte__actions { display: flex; gap: 2px; justify-content: flex-end; padding: 4px 8px 8px; }
 @media (prefers-reduced-motion: reduce) { .fi-carte { animation: none; transition: none; } .fi-carte:hover { transform: none; } }
 .pdf__mode { font-size: 12px; padding: 2px 8px; border-radius: 999px; background: var(--surface-sunken); color: var(--text-muted); white-space: nowrap; }
+
+/* Aperçu d'un fichier avant envoi */
+.fi-mini { display: inline-grid; place-items: center; flex: none; width: 64px; height: 48px; border-radius: 8px; overflow: hidden; background: var(--surface); border: 1px solid var(--line); }
+.fi-mini img { width: 100%; height: 100%; object-fit: cover; }
+.fi-mini__chargement { display: grid; place-items: center; gap: 2px; color: var(--text-muted); font-size: 10px; }
+.fi-mini__chargement svg { width: 16px; height: 16px; animation: fi-tourne 1s linear infinite; }
+@keyframes fi-tourne { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .fi-mini__chargement svg { animation: none; } }
