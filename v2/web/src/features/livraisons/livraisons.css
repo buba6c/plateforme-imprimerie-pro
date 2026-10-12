@@ -80,7 +80,7 @@
 .lv-card__tuile[data-tone="retard"] { --t-bg: var(--danger-soft); --t-ink: var(--danger-ink); }
 .lv-card__tuile-libelle { display: flex; align-items: center; gap: 5px; font-size: 11px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: var(--t-ink); }
 .lv-card__tuile-libelle svg { width: 14px; height: 14px; }
-.lv-card__tuile-valeur { font-size: 22px; line-height: 28px; font-weight: 700; color: var(--t-ink); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.lv-card__tuile-valeur { font-size: clamp(15px, 4.9vw, 22px); line-height: 1.3; font-weight: 700; color: var(--t-ink); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .lv-card__tuile[data-tone="neutre"] .lv-card__tuile-valeur { color: var(--text); }
 .lv-card__tuile-valeur--texte { font-size: 15px; line-height: 22px; font-weight: 600; white-space: normal; display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
 .lv-card__tuile small { font-size: 12px; color: var(--t-ink); opacity: 0.9; }
