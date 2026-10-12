@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api } from '../../lib/api';
-import type { Entrant, MessageWhatsApp, OptOut, PageMessages, ParametresWhatsApp, ReglagesWhatsApp, StatutMessage, StatutWhatsApp } from './types';
+import type { Entrant, MessageWhatsApp, OptOut, PageConnexions, PageMessages, ParametresWhatsApp, ReglagesWhatsApp, StatutMessage, StatutWhatsApp } from './types';
 
 export const CLE_STATUT = ['whatsapp', 'statut'] as const;
 export const CLE_PARAMETRES = ['parametres', 'whatsapp'] as const;
@@ -24,6 +24,15 @@ function useActionStatut(chemin: string) {
     onSuccess: (s) => {
       qc.setQueryData(CLE_STATUT, s);
     },
+  });
+}
+
+/** Journal des événements de connexion (code QR, connecté, fermée, perdue…). */
+export function useConnexionsWhatsApp() {
+  return useQuery({
+    queryKey: ['whatsapp', 'connexions'],
+    queryFn: () => api.get<PageConnexions>('/whatsapp/connexions', { limit: 30 }),
+    refetchInterval: 15_000,
   });
 }
 

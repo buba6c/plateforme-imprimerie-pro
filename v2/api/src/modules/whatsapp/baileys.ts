@@ -95,6 +95,13 @@ export const fabriqueBaileys: FabriqueSocket = async ({ dossierAuth, log, ev }) 
         sock.end(undefined);
       }
     },
-    estEnregistre: () => state.creds.registered === true,
+    // Après un scan, la bibliothèque remplit `me` sans forcément passer `registered` à vrai.
+    estEnregistre: () => state.creds.registered === true || typeof state.creds.me?.id === 'string',
+    estOuvert: () => {
+      const ws = (sock as unknown as { ws?: { isOpen?: boolean; readyState?: number } }).ws;
+      if (!ws) return true;
+      if (typeof ws.isOpen === 'boolean') return ws.isOpen;
+      return typeof ws.readyState === 'number' ? ws.readyState === 1 : true;
+    },
   };
 };

@@ -64,7 +64,8 @@ SNAP="$DEST/fichiers/$DATE"
 # Liens physiques vers l'instantané précédent ET vers le stockage lui-même : même le premier instantané
 # ne recopie pas les fichiers (sinon une copie complète des uploads importés peut remplir le disque).
 # Un fichier supprimé dans l'application reste récupérable dans les instantanés pendant BACKUP_JOURS jours.
-rsync -a --delete ${DERNIER:+--link-dest="$DERNIER"} --link-dest="$(cd "$STORAGE_DIR" && pwd)" "$STORAGE_DIR/" "$SNAP/"
+# Les identifiants WhatsApp (clés de session) restent sur le serveur : un nouveau scan du code QR suffit à les refaire.
+rsync -a --delete --exclude='whatsapp/auth/' ${DERNIER:+--link-dest="$DERNIER"} --link-dest="$(cd "$STORAGE_DIR" && pwd)" "$STORAGE_DIR/" "$SNAP/"
 # rsync -a recopie la date du dossier storage sur l'instantané : sans ce touch, un stockage de plus de
 # BACKUP_JOURS jours rendait l'instantané « ancien » et le nettoyage ci-dessous l'effaçait le soir même.
 touch "$SNAP"

@@ -24,7 +24,7 @@ export interface ParametresWhatsApp {
   modeles: Record<EvenementWhatsApp, string>;
   /** Heures d'envoi (HH:MM, fuseau des paramètres) : en dehors, les messages attendent. */
   heures: { debut: string; fin: string };
-  limites: { par_heure: number; par_jour: number };
+  limites: { par_heure: number; par_jour: number; par_numero_par_jour: number };
   /** Délai aléatoire entre deux envois, en secondes. */
   delai: { min_s: number; max_s: number };
   /** Ajoutée à la fin de chaque message (vide = rien). */
@@ -41,7 +41,7 @@ export const PARAMETRES_WHATSAPP_DEFAUT: ParametresWhatsApp = {
     livre: 'Bonjour {client}, votre commande {numero} ({travail}) a été livrée. Merci pour votre confiance !',
   },
   heures: { debut: '08:00', fin: '20:00' },
-  limites: { par_heure: 20, par_jour: 120 },
+  limites: { par_heure: 20, par_jour: 120, par_numero_par_jour: 3 },
   delai: { min_s: 25, max_s: 90 },
   signature: '',
 };
@@ -84,7 +84,7 @@ export const parametresWhatsAppSchema = z
       .partial()
       .strict('Champ inconnu'),
     limites: z
-      .object({ par_heure: entier('Limite par heure', 1, 60), par_jour: entier('Limite par jour', 1, 500) })
+      .object({ par_heure: entier('Limite par heure', 1, 60), par_jour: entier('Limite par jour', 1, 500), par_numero_par_jour: entier('Limite par client et par jour', 1, 20) })
       .partial()
       .strict('Champ inconnu'),
     delai: z

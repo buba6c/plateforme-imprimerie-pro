@@ -270,8 +270,9 @@ journalisées (`whatsapp_connexion`, `whatsapp_deconnexion`, `whatsapp_test`, `w
 
 | Méthode | Route | Rôles | Rôle |
 |---|---|---|---|
-| GET | /whatsapp/statut | admin | `{actif, etat: deconnecte\|qr\|connexion\|connecte, numero, qr (data URL PNG si en attente de scan), depuis, disponible, erreur, enregistre, file:{en_attente, envoyes_aujourdhui, echecs}}` |
+| GET | /whatsapp/statut | admin | `{actif, etat: deconnecte\|qr\|connexion\|connecte, numero, qr (data URL PNG si en attente de scan), depuis, disponible, erreur, enregistre, prochaine_tentative_at, veille_at, file:{en_attente, envoyes_aujourdhui, echecs}}` |
 | POST | /whatsapp/connecter | admin | ouvre la connexion (code QR si l'appareil n'est pas lié) ; renvoie le statut |
+| GET | /whatsapp/connexions?limit | admin | journal des événements de connexion, les plus récents d'abord : `{items:[{id,type: qr\|connecte\|fermee\|perdue\|deconnecte\|echec\|indisponible\|reprise, type_label, code, motif, numero, prochaine_tentative_at, created_at}], stats:{connexions_7j, fermetures_7j}}` (90 jours conservés) |
 | POST | /whatsapp/deconnecter | admin | ferme la session, déconnecte l'appareil côté WhatsApp et efface les identifiants ; statut |
 | POST | /whatsapp/test `{telephone}` | admin | met un message de test en file (mêmes règles) ; 201 message ; 422 si numéro invalide, module désactivé ou numéro en liste STOP |
 | GET | /whatsapp/messages?statut&q&page&limit | admin | `{items:[{id,dossier_id,numero,client_nom,evenement,evenement_label,telephone,texte,statut,motif,tentatives,planifie_at,envoye_at,created_at}], total, page, limit, compteurs:{statut:n}}` ; `q` cherche dans le téléphone, le numéro et le nom du client |
@@ -280,11 +281,20 @@ journalisées (`whatsapp_connexion`, `whatsapp_deconnexion`, `whatsapp_test`, `w
 | GET | /whatsapp/optout | admin | `[{telephone, motif, created_at}]` |
 | DELETE | /whatsapp/optout/:telephone | admin | retire un numéro de la liste STOP (204 ; 404 s'il n'y est pas) |
 | GET | /whatsapp/entrants?page | admin | `{items:[{id,telephone,texte,recu_at}], total, page, limit}` : réponses reçues (texte seul, 500 caractères) |
-| GET | /parametres/whatsapp | admin | section `whatsapp` : `{actif, modeles:{pret_livraison,pret_retrait,en_livraison,livre}, heures:{debut,fin}, limites:{par_heure,par_jour}, delai:{min_s,max_s}, signature}` + `defauts`, `variables`, `evenements` (libellés), `apercu` (modèles rendus avec un exemple) |
-| PUT | /parametres/whatsapp | admin | fusion partielle ; 400 `champs` si heure mal formée, fin ≤ début, délai max < min, lien raccourci dans un modèle, modèle < 10 ou > 700 caractères, limites hors bornes (1..60/h, 1..500/j, délais 5..600/5..900 s) |
+| GET | /parametres/whatsapp | admin | section `whatsapp` : `{actif, modeles:{pret_livraison,pret_retrait,en_livraison,livre}, heures:{debut,fin}, limites:{par_heure,par_jour,par_numero_par_jour}, delai:{min_s,max_s}, signature}` + `defauts`, `variables`, `evenements` (libellés), `apercu` (modèles rendus avec un exemple) |
+| PUT | /parametres/whatsapp | admin | fusion partielle ; 400 `champs` si heure mal formée, fin ≤ début, délai max < min, lien raccourci dans un modèle, modèle < 10 ou > 700 caractères, limites hors bornes (1..60/h, 1..500/j, 1..20 par client et par jour, délais 5..600/5..900 s) |
 
 Cette section n'apparaît pas dans `GET /parametres` ni dans l'export de configuration : elle est servie uniquement par
 `/parametres/whatsapp`.
+
+Stabilité de la connexion : l'appareil est reconnu comme lié dès que les identifiants portent le numéro (`me`), pas seulement
+`registered` (après un scan, la bibliothèque ne pose pas toujours ce drapeau : c'est ce qui faisait « tomber » la connexion à
+chaque redémarrage). Toute fermeture non voulue (réseau, code 515 « redémarrage demandé », 428, 408…) programme une reconnexion
+(30 s puis attente progressive jusqu'à 10 min) ; une veille toutes les minutes relance une connexion absente et détecte une liaison
+fermée sans événement (`perdue`). Seuls un retrait depuis le téléphone (401) et « Déconnecter » effacent les identifiants. Chaque
+événement va dans `whatsapp_connexions` (migration 014). Anti-spam : en plus des limites par heure et par jour, au plus
+`par_numero_par_jour` messages envoyés au même numéro sur 24 h (le suivant est `ignore` avec le motif). Les identifiants WhatsApp
+(`STORAGE_DIR/whatsapp/auth`) sont exclus des sauvegardes (deploy/backup.sh).
 
 Événements (un seul message par dossier et par événement, contrainte `UNIQUE (dossier_id, evenement)`), déclenchés
 après le COMMIT des transitions du circuit (`notifications/regles.ts`) : `marquer_imprime` → `pret_livraison` ou

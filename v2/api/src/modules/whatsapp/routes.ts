@@ -8,7 +8,7 @@ import { journal } from '../../lib/audit';
 import { me, requireAuth, requireRole } from '../../lib/auth';
 import { badRequest, conflict, notFound, unprocessable } from '../../lib/errors';
 import { intParam, qInt, qStr } from '../../lib/http';
-import { connecter, deconnecter, etatConnexion } from './connexion';
+import { connecter, deconnecter, etatConnexion, type EvenementConnexion } from './connexion';
 import type { Entrant } from './entrants';
 import { compteursFile, planifierTest, type MessageWhatsApp } from './file';
 import { VARIABLES_EXEMPLE, rendreModele } from './modeles';
@@ -147,6 +147,30 @@ whatsappRouter.post('/messages/:id/annuler', async (req, res) => {
     return { ...m, ...r! };
   });
   res.json(presenter(m));
+});
+
+export const TYPE_CONNEXION_LABELS: Record<EvenementConnexion['type'], string> = {
+  qr: 'Code QR affiché',
+  connecte: 'Connecté',
+  fermee: 'Connexion fermée',
+  perdue: 'Connexion perdue',
+  deconnecte: 'Appareil déconnecté',
+  echec: 'Échec de connexion',
+  indisponible: 'Bibliothèque indisponible',
+  reprise: 'Reprise au démarrage',
+};
+
+/** Journal des événements de connexion (les plus récents d'abord). */
+whatsappRouter.get('/connexions', async (req, res) => {
+  const limit = Math.min(200, Math.max(1, qInt(req, 'limit') ?? 50));
+  const items = await query<{ id: number; type: EvenementConnexion['type']; code: number | null; motif: string | null; numero: string | null; prochaine_tentative_at: string | null; created_at: string }>(
+    `SELECT id, type, code, motif, numero, prochaine_tentative_at, created_at FROM whatsapp_connexions ORDER BY created_at DESC, id DESC LIMIT ${limit}`,
+  );
+  const stats = await one<{ connexions_7j: number; fermetures_7j: number }>(
+    `SELECT count(*) FILTER (WHERE type = 'connecte')::int AS connexions_7j, count(*) FILTER (WHERE type IN ('fermee','perdue'))::int AS fermetures_7j
+     FROM whatsapp_connexions WHERE created_at > now() - interval '7 days'`,
+  );
+  res.json({ items: items.map((i) => ({ ...i, type_label: TYPE_CONNEXION_LABELS[i.type] ?? i.type })), stats: stats ?? { connexions_7j: 0, fermetures_7j: 0 } });
 });
 
 whatsappRouter.get('/optout', async (_req, res) => {

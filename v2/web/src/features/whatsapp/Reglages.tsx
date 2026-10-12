@@ -19,6 +19,7 @@ interface Brouillon {
   fin: string;
   par_heure: string;
   par_jour: string;
+  par_numero: string;
   min_s: string;
   max_s: string;
   signature: string;
@@ -32,6 +33,7 @@ function depuis(p: ParametresWhatsApp): Brouillon {
     fin: p.heures.fin,
     par_heure: String(p.limites.par_heure),
     par_jour: String(p.limites.par_jour),
+    par_numero: String(p.limites.par_numero_par_jour),
     min_s: String(p.delai.min_s),
     max_s: String(p.delai.max_s),
     signature: p.signature,
@@ -61,10 +63,12 @@ function Formulaire({ p }: { p: ParametresWhatsApp }) {
     const err: Record<string, string> = {};
     const parHeure = entier(f.par_heure, 1, 60);
     const parJour = entier(f.par_jour, 1, 500);
+    const parNumero = entier(f.par_numero, 1, 20);
     const minS = entier(f.min_s, 5, 600);
     const maxS = entier(f.max_s, 5, 900);
     if (typeof parHeure === 'string') err['limites.par_heure'] = parHeure;
     if (typeof parJour === 'string') err['limites.par_jour'] = parJour;
+    if (typeof parNumero === 'string') err['limites.par_numero_par_jour'] = parNumero;
     if (typeof minS === 'string') err['delai.min_s'] = minS;
     if (typeof maxS === 'string') err['delai.max_s'] = maxS;
     if (typeof minS === 'number' && typeof maxS === 'number' && minS > maxS) err['delai.max_s'] = 'Le délai maximum doit être au moins égal au minimum.';
@@ -87,7 +91,7 @@ function Formulaire({ p }: { p: ParametresWhatsApp }) {
       {
         actif: f.actif,
         heures: { debut: f.debut, fin: f.fin },
-        limites: { par_heure: parHeure as number, par_jour: parJour as number },
+        limites: { par_heure: parHeure as number, par_jour: parJour as number, par_numero_par_jour: parNumero as number },
         delai: { min_s: minS as number, max_s: maxS as number },
         signature: f.signature.trim(),
         modeles: Object.fromEntries(EVENEMENTS.map((ev) => [ev.id, f.modeles[ev.id].trim()])) as Record<EvenementWhatsApp, string>,
@@ -127,6 +131,7 @@ function Formulaire({ p }: { p: ParametresWhatsApp }) {
             <TextField label="Fin des envois" type="time" value={f.fin} onChange={(e) => maj({ fin: e.target.value })} error={erreurs['heures.fin']} />
             <TextField label="Messages par heure, au plus" inputMode="numeric" value={f.par_heure} onChange={(e) => maj({ par_heure: e.target.value })} error={erreurs['limites.par_heure']} help="Conseillé : 20." />
             <TextField label="Messages par jour, au plus" inputMode="numeric" value={f.par_jour} onChange={(e) => maj({ par_jour: e.target.value })} error={erreurs['limites.par_jour']} help="Conseillé : 120." />
+            <TextField label="Messages par client et par jour, au plus" inputMode="numeric" value={f.par_numero} onChange={(e) => maj({ par_numero: e.target.value })} error={erreurs['limites.par_numero_par_jour']} help="Au-delà, le message est ignoré (visible dans le journal). Conseillé : 3." />
             <TextField label="Pause minimale entre deux envois" inputMode="numeric" addon="s" value={f.min_s} onChange={(e) => maj({ min_s: e.target.value })} error={erreurs['delai.min_s']} help="La pause réelle est tirée au sort entre le minimum et le maximum." />
             <TextField label="Pause maximale entre deux envois" inputMode="numeric" addon="s" value={f.max_s} onChange={(e) => maj({ max_s: e.target.value })} error={erreurs['delai.max_s']} />
           </div>

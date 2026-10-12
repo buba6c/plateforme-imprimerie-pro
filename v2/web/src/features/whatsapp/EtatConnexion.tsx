@@ -1,12 +1,12 @@
 import { useState, type FormEvent } from 'react';
 import { Link } from 'react-router-dom';
-import { CheckCircle2, LoaderCircle, Power, QrCode, Send, Unplug, WifiOff } from 'lucide-react';
-import { formatDateHeure, formatRelatif } from '@evocom/shared';
+import { CheckCircle2, History, LoaderCircle, Power, QrCode, Send, Unplug, WifiOff } from 'lucide-react';
+import { formatDateHeure, formatHeure, formatRelatif } from '@evocom/shared';
 import { messageErreur } from '../../lib/api';
 import { Alert, Button, Card, ConfirmDialog, LoadingRows, TextField, useToast } from '../../ui';
 import { champsErreur } from '../admin/hooks';
-import { useConnecter, useDeconnecter, useEnvoyerTest, useStatutWhatsApp } from './api';
-import { ETAT_LABELS, type StatutWhatsApp } from './types';
+import { useConnecter, useConnexionsWhatsApp, useDeconnecter, useEnvoyerTest, useStatutWhatsApp } from './api';
+import { ETAT_LABELS, type EvenementConnexion, type StatutWhatsApp } from './types';
 
 const ICONES = { deconnecte: WifiOff, qr: QrCode, connexion: LoaderCircle, connecte: CheckCircle2 };
 
@@ -22,7 +22,9 @@ function CarteEtat({ s }: { s: StatutWhatsApp }) {
       : s.etat === 'qr'
         ? 'Le téléphone dédié doit scanner le code ci-contre.'
         : s.etat === 'connexion'
-          ? 'Patientez : la connexion s’ouvre, ou reprend après une coupure.'
+          ? s.prochaine_tentative_at
+            ? `Coupure : reconnexion automatique à ${formatHeure(s.prochaine_tentative_at)}. Rien à faire.`
+            : 'Patientez : la connexion s’ouvre, ou reprend après une coupure.'
           : s.enregistre
             ? 'L’appareil est déjà lié : cliquez sur Connecter pour reprendre.'
             : 'Aucun téléphone n’est lié pour l’instant.';
@@ -68,6 +70,13 @@ function CarteEtat({ s }: { s: StatutWhatsApp }) {
           <Alert tone="info">
             Les envois automatiques sont désactivés : les messages sont tracés mais rien ne part. Activez-les dans l’onglet Réglages.
           </Alert>
+        )}
+        {s.enregistre && (
+          <p className="adm-explain">
+            Reconnexion automatique : après une coupure réseau, un redémarrage du serveur ou une mise à jour, la connexion reprend seule (une veille la contrôle
+            toutes les minutes{s.veille_at ? `, dernier contrôle ${formatRelatif(s.veille_at)}` : ''}). Elle ne s’arrête que si l’appareil est retiré depuis le téléphone ou si vous cliquez sur
+            Déconnecter.
+          </p>
         )}
         <div className="wa-kpis" aria-label="File d’envoi">
           <div className="wa-kpi">
@@ -191,6 +200,60 @@ function CarteTest({ s }: { s: StatutWhatsApp }) {
   );
 }
 
+const TON_EVENEMENT: Record<EvenementConnexion['type'], string> = {
+  connecte: 'ok',
+  reprise: 'info',
+  qr: 'info',
+  fermee: 'attention',
+  perdue: 'attention',
+  echec: 'erreur',
+  deconnecte: 'erreur',
+  indisponible: 'erreur',
+};
+
+/** Ce qui s'est passé sur la connexion : chaque coupure, chaque reprise, avec l'heure. */
+function CarteJournalConnexion() {
+  const q = useConnexionsWhatsApp();
+  return (
+    <Card
+      title={
+        <span className="row" style={{ gap: 8 }}>
+          <History aria-hidden="true" style={{ width: 18, height: 18 }} /> Journal de la connexion
+        </span>
+      }
+      actions={
+        q.data ? (
+          <span className="ev-muted" style={{ fontSize: 13 }}>
+            7 jours : {q.data.stats.connexions_7j} connexion{q.data.stats.connexions_7j > 1 ? 's' : ''}, {q.data.stats.fermetures_7j} coupure{q.data.stats.fermetures_7j > 1 ? 's' : ''}
+          </span>
+        ) : undefined
+      }
+    >
+      {q.isError ? (
+        <Alert tone="error">Le journal n’a pas pu être lu : {messageErreur(q.error)}</Alert>
+      ) : !q.data ? (
+        <LoadingRows rows={3} />
+      ) : q.data.items.length === 0 ? (
+        <p className="adm-explain">Aucun événement pour l’instant : les connexions, coupures et reprises apparaîtront ici avec leur heure.</p>
+      ) : (
+        <ol className="wa-journal">
+          {q.data.items.map((e) => (
+            <li key={e.id} className="wa-journal__item" data-ton={TON_EVENEMENT[e.type] ?? 'info'}>
+              <span className="wa-journal__quand ev-ref">{formatDateHeure(e.created_at)}</span>
+              <span className="wa-journal__corps">
+                <strong>{e.type_label}</strong>
+                {e.numero && e.type === 'connecte' ? ` · ${e.numero}` : ''}
+                {e.motif ? <span className="wa-journal__motif">{e.motif}{e.code ? ` (code ${e.code})` : ''}</span> : null}
+                {e.prochaine_tentative_at && <span className="wa-journal__motif">Reconnexion automatique prévue à {formatHeure(e.prochaine_tentative_at)}</span>}
+              </span>
+            </li>
+          ))}
+        </ol>
+      )}
+    </Card>
+  );
+}
+
 export function EtatConnexion() {
   const q = useStatutWhatsApp();
   if (q.isLoading) return <LoadingRows rows={4} />;
@@ -201,6 +264,7 @@ export function EtatConnexion() {
       <div className="wa-grid">
         <div className="stack">
           <CarteEtat s={s} />
+          <CarteJournalConnexion />
           <CarteTest s={s} />
         </div>
         <div className="stack">

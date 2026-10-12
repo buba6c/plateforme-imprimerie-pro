@@ -209,6 +209,14 @@ export async function traiterFile(opts: { maintenant?: Date } = {}): Promise<Pas
     const tel = normaliserTelephone(m.telephone);
     if (!tel) return ignorer(`Numéro invalide : « ${m.telephone ?? ''} »`);
     if (await enOptOut(tel.e164, db)) return ignorer('Numéro en liste STOP');
+    const memeNumero = await one<{ n: number }>(
+      `SELECT count(*)::int AS n FROM whatsapp_messages WHERE telephone = $1 AND statut = 'envoye' AND envoye_at > $2::timestamptz - interval '24 hours'`,
+      [tel.e164, maintenant.toISOString()],
+      db,
+    );
+    if ((memeNumero?.n ?? 0) >= p.limites.par_numero_par_jour) {
+      return ignorer(`Déjà ${memeNumero!.n} message${memeNumero!.n > 1 ? 's' : ''} envoyé${memeNumero!.n > 1 ? 's' : ''} à ce numéro en 24 h (limite : ${p.limites.par_numero_par_jour})`);
+    }
 
     // Délai aléatoire avant le prochain envoi, réussi ou non.
     const [minS, maxS] = [Math.min(p.delai.min_s, p.delai.max_s), Math.max(p.delai.min_s, p.delai.max_s)];

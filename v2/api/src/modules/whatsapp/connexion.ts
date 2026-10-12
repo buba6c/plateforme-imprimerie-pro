@@ -1,6 +1,10 @@
 // Connexion unique au numéro WhatsApp dédié (une par processus), comme WhatsApp Web :
 // code QR à scanner, état d'authentification sur disque (STORAGE_DIR/whatsapp/auth, droits 700),
-// reconnexion automatique avec attente progressive (jamais plus d'une tentative par 30 s).
+// reconnexion automatique avec attente progressive (jamais plus d'une tentative par 30 s), et une
+// veille toutes les minutes qui relance la connexion si elle est tombée sans prévenir.
+//
+// Chaque événement de connexion (code QR, connecté, fermée, perdue, déconnecté, échec) est confié à
+// `surEvenement` (journal en base, voir index.ts) pour que l'administrateur voie ce qui s'est passé.
 //
 // La bibliothèque (Baileys) est chargée à la demande par `fabriqueBaileys` ; si elle manque ou refuse
 // de démarrer, l'API continue sans WhatsApp (`disponible: false`, motif affiché dans l'écran).
@@ -18,8 +22,10 @@ export interface SocketWhatsApp {
   envoyer(jid: string, texte: string): Promise<void>;
   /** Ferme la connexion ; avec `oublier`, déconnecte aussi l'appareil côté WhatsApp (logout). */
   fermer(oublier: boolean): Promise<void>;
-  /** Vrai une fois le code QR scanné (identifiants enregistrés sur disque). */
+  /** Vrai une fois le code QR scanné (appareil lié, identifiants enregistrés sur disque). */
   estEnregistre(): boolean;
+  /** Vrai tant que la liaison réseau est ouverte ; absent = inconnu (considéré ouvert). */
+  estOuvert?(): boolean;
 }
 
 export interface EvenementsSocket {
@@ -30,6 +36,17 @@ export interface EvenementsSocket {
 }
 
 export type FabriqueSocket = (opts: { dossierAuth: string; log: Logger; ev: EvenementsSocket }) => Promise<SocketWhatsApp>;
+
+export type TypeEvenementConnexion = 'qr' | 'connecte' | 'fermee' | 'perdue' | 'deconnecte' | 'echec' | 'indisponible' | 'reprise';
+
+export interface EvenementConnexion {
+  type: TypeEvenementConnexion;
+  code: number | null;
+  motif: string | null;
+  numero: string | null;
+  /** Prochaine tentative automatique, le cas échéant. */
+  prochaine_tentative_at: string | null;
+}
 
 export interface InstantaneConnexion {
   etat: EtatWhatsApp;
@@ -42,11 +59,17 @@ export interface InstantaneConnexion {
   erreur: string | null;
   /** Identifiants enregistrés sur disque (l'appareil a déjà été lié). */
   enregistre: boolean;
+  /** Reconnexion automatique programmée. */
+  prochaine_tentative_at: string | null;
+  /** Dernier contrôle de la veille. */
+  veille_at: string | null;
 }
 
 /** Attente minimale entre deux tentatives de connexion. */
 export const ATTENTE_MIN_MS = 30_000;
 const ATTENTE_MAX_MS = 10 * 60_000;
+/** Période de la veille (connexion tombée sans événement, reprise après un redémarrage). */
+export const INTERVALLE_VEILLE_MS = 60_000;
 
 /** Erreur signalée à la bibliothèque : la connexion n'est pas ouverte. */
 export class NonConnecte extends Error {
@@ -59,6 +82,7 @@ let log: Logger = { info() {}, warn() {}, error() {}, debug() {}, child() { retu
 let dossierAuth = '';
 let fabrique: FabriqueSocket | null = null;
 let surEntrant: ((jid: string, texte: string) => void) | null = null;
+let surEvenement: ((e: EvenementConnexion) => void) | null = null;
 
 let socket: SocketWhatsApp | null = null;
 let generation = 0; // identifie le socket courant : les événements d'un socket fermé sont ignorés
@@ -72,14 +96,33 @@ let erreur: string | null = null;
 let derniereTentative = 0;
 let attente = ATTENTE_MIN_MS;
 let minuterie: NodeJS.Timeout | null = null;
+let prochaineTentativeAt: Date | null = null;
 let connexionEnCours: Promise<void> | null = null;
+let veille: NodeJS.Timeout | null = null;
+let veilleAt: Date | null = null;
+let qrSignale = false;
 
-export function configurerConnexion(opts: { dossierAuth: string; log: Logger; fabrique?: FabriqueSocket; surEntrant?: (jid: string, texte: string) => void }) {
+export function configurerConnexion(opts: {
+  dossierAuth: string;
+  log: Logger;
+  fabrique?: FabriqueSocket;
+  surEntrant?: (jid: string, texte: string) => void;
+  surEvenement?: (e: EvenementConnexion) => void;
+}) {
   dossierAuth = opts.dossierAuth;
   log = opts.log;
   if (opts.fabrique) fabrique = opts.fabrique;
   if (opts.surEntrant) surEntrant = opts.surEntrant;
+  if (opts.surEvenement !== undefined) surEvenement = opts.surEvenement;
   preparerDossier();
+}
+
+function signaler(type: TypeEvenementConnexion, extra: Partial<Omit<EvenementConnexion, 'type'>> = {}) {
+  try {
+    surEvenement?.({ type, code: extra.code ?? null, motif: extra.motif ?? null, numero: extra.numero ?? numero, prochaine_tentative_at: extra.prochaine_tentative_at ?? null });
+  } catch (e) {
+    log.warn({ err: e }, 'WhatsApp : événement de connexion non journalisé');
+  }
 }
 
 function preparerDossier() {
@@ -94,12 +137,16 @@ function preparerDossier() {
   }
 }
 
-/** Identifiants enregistrés ET appareil lié (un code QR jamais scanné laisse `registered: false`). */
+/**
+ * Identifiants enregistrés ET appareil lié. Après un scan de code QR, la bibliothèque remplit `me`
+ * (le numéro lié) sans forcément passer `registered` à vrai : les deux signes sont acceptés.
+ * Un code QR jamais scanné ne laisse ni l'un ni l'autre.
+ */
 export function authEnregistree(): boolean {
   if (!dossierAuth) return false;
   try {
-    const creds = JSON.parse(fs.readFileSync(path.join(dossierAuth, 'creds.json'), 'utf8')) as { registered?: unknown };
-    return creds?.registered === true;
+    const creds = JSON.parse(fs.readFileSync(path.join(dossierAuth, 'creds.json'), 'utf8')) as { registered?: unknown; me?: { id?: unknown } | null };
+    return creds?.registered === true || (typeof creds?.me?.id === 'string' && creds.me.id.length > 0);
   } catch {
     return false;
   }
@@ -116,7 +163,17 @@ function effacerAuth() {
 }
 
 export function etatConnexion(): InstantaneConnexion {
-  return { etat, numero, qr: etat === 'qr' ? qr : null, depuis: depuis?.toISOString() ?? null, disponible, erreur, enregistre: authEnregistree() };
+  return {
+    etat,
+    numero,
+    qr: etat === 'qr' ? qr : null,
+    depuis: depuis?.toISOString() ?? null,
+    disponible,
+    erreur,
+    enregistre: authEnregistree(),
+    prochaine_tentative_at: minuterie && prochaineTentativeAt ? prochaineTentativeAt.toISOString() : null,
+    veille_at: veilleAt?.toISOString() ?? null,
+  };
 }
 
 export function estConnecte(): boolean {
@@ -133,13 +190,16 @@ async function chargerFabrique(): Promise<FabriqueSocket> {
 function annulerMinuterie() {
   if (minuterie) clearTimeout(minuterie);
   minuterie = null;
+  prochaineTentativeAt = null;
 }
 
-function programmerReconnexion(motif: string) {
+function programmerReconnexion(motif: string, code: number | null = null, journaliser = true) {
   annulerMinuterie();
   const delai = Math.max(attente, ATTENTE_MIN_MS - (Date.now() - derniereTentative));
   attente = Math.min(attente * 2, ATTENTE_MAX_MS);
+  prochaineTentativeAt = new Date(Date.now() + delai);
   log.info({ delai, motif }, 'WhatsApp : nouvelle tentative programmée');
+  if (journaliser) signaler('fermee', { code, motif, prochaine_tentative_at: prochaineTentativeAt.toISOString() });
   minuterie = setTimeout(() => void connecter({ parUtilisateur: false }), delai);
   minuterie.unref();
 }
@@ -152,7 +212,7 @@ export async function connecter(opts: { parUtilisateur: boolean } = { parUtilisa
   if (connexionEnCours) await connexionEnCours;
   if (socket) return etatConnexion();
   if (!opts.parUtilisateur && Date.now() - derniereTentative < ATTENTE_MIN_MS) {
-    programmerReconnexion('attente minimale');
+    programmerReconnexion('attente minimale', null, false);
     return etatConnexion();
   }
   annulerMinuterie();
@@ -161,6 +221,7 @@ export async function connecter(opts: { parUtilisateur: boolean } = { parUtilisa
   etat = 'connexion';
   erreur = null;
   qr = null;
+  qrSignale = false;
   const gen = ++generation;
   connexionEnCours = (async () => {
     let courant: SocketWhatsApp | null = null;
@@ -174,6 +235,10 @@ export async function connecter(opts: { parUtilisateur: boolean } = { parUtilisa
           surQr: (brut) => {
             if (gen !== generation) return;
             etat = 'qr';
+            if (!qrSignale) {
+              qrSignale = true;
+              signaler('qr', { motif: 'Code QR affiché, en attente du scan' });
+            }
             QRCode.toDataURL(brut, { margin: 1, width: 360, errorCorrectionLevel: 'M' }).then(
               (url) => {
                 if (gen === generation && etat === 'qr') qr = url;
@@ -190,10 +255,11 @@ export async function connecter(opts: { parUtilisateur: boolean } = { parUtilisa
             erreur = null;
             attente = ATTENTE_MIN_MS;
             log.info({ numero: n }, 'WhatsApp connecté');
+            signaler('connecte', { numero: n });
           },
           surFermeture: (info) => {
             if (gen !== generation) return;
-            const enregistre = courant ? courant.estEnregistre() : authEnregistree();
+            const enregistre = (courant ? courant.estEnregistre() : false) || authEnregistree();
             socket = null;
             qr = null;
             depuis = null;
@@ -204,18 +270,23 @@ export async function connecter(opts: { parUtilisateur: boolean } = { parUtilisa
               etat = 'deconnecte';
               erreur = 'Appareil déconnecté depuis le téléphone : scannez un nouveau code QR pour reprendre.';
               log.warn({ code: info.code }, 'WhatsApp : appareil déconnecté');
+              signaler('deconnecte', { code: info.code, motif: info.motif });
               return;
             }
-            if (voulu && enregistre) {
+            if (enregistre) {
+              // Appareil lié : toute fermeture non voulue (réseau, redémarrage demandé par WhatsApp,
+              // session à rafraîchir) est suivie d'une reconnexion automatique.
+              voulu = true;
               etat = 'connexion';
               erreur = info.motif;
-              programmerReconnexion(info.motif);
+              programmerReconnexion(info.motif, info.code);
               return;
             }
             voulu = false;
             etat = 'deconnecte';
-            erreur = enregistre ? info.motif : 'Le code QR a expiré sans être scanné : cliquez de nouveau sur « Connecter ».';
+            erreur = 'Le code QR a expiré sans être scanné : cliquez de nouveau sur « Connecter ».';
             log.info({ code: info.code, motif: info.motif }, 'WhatsApp : connexion fermée');
+            signaler('fermee', { code: info.code, motif: info.motif });
           },
           surEntrant: (jid, texte) => {
             if (gen !== generation) return;
@@ -242,13 +313,15 @@ export async function connecter(opts: { parUtilisateur: boolean } = { parUtilisa
         voulu = false;
         etat = 'deconnecte';
         log.error({ err: e }, 'WhatsApp indisponible : bibliothèque absente');
+        signaler('indisponible', { motif: erreur });
         return;
       }
       erreur = `Connexion impossible : ${message}`;
       log.error({ err: e }, 'WhatsApp : démarrage de la connexion en échec');
+      signaler('echec', { motif: message });
       if (voulu && authEnregistree()) {
         etat = 'connexion';
-        programmerReconnexion(message);
+        programmerReconnexion(message, null, false);
       } else {
         voulu = false;
         etat = 'deconnecte';
@@ -269,12 +342,14 @@ export async function deconnecter(): Promise<InstantaneConnexion> {
   socket = null;
   if (s) await s.fermer(true).catch((e) => log.warn({ err: e }, 'WhatsApp : fermeture en erreur'));
   effacerAuth();
+  const n = numero;
   etat = 'deconnecte';
   numero = null;
   qr = null;
   depuis = null;
   erreur = null;
   attente = ATTENTE_MIN_MS;
+  signaler('deconnecte', { numero: n, motif: "Déconnecté par l'administrateur" });
   return etatConnexion();
 }
 
@@ -282,6 +357,7 @@ export async function deconnecter(): Promise<InstantaneConnexion> {
 export async function arreterConnexion(): Promise<void> {
   voulu = false;
   annulerMinuterie();
+  arreterVeille();
   generation++;
   const s = socket;
   socket = null;
@@ -299,13 +375,61 @@ export async function envoyerTexte(jid: string, texte: string): Promise<void> {
 
 /** Au démarrage de l'API : reprend la connexion si l'appareil a déjà été lié. */
 export async function reprendreSiEnregistre(): Promise<void> {
-  if (authEnregistree()) await connecter({ parUtilisateur: true });
+  if (!authEnregistree()) return;
+  signaler('reprise', { motif: "Reprise de la connexion au démarrage de l'application" });
+  await connecter({ parUtilisateur: true });
+}
+
+/**
+ * Un passage de veille : relance la connexion si elle est tombée sans événement (liaison fermée,
+ * tentative jamais programmée) tant que l'appareil est lié. Exporté pour les tests.
+ */
+export async function passageVeille(): Promise<'rien' | 'perdue' | 'relance'> {
+  veilleAt = new Date();
+  if (connexionEnCours || !authEnregistree()) return 'rien';
+  if (socket && etat === 'connecte' && socket.estOuvert && !socket.estOuvert()) {
+    // La bibliothèque n'a pas signalé la fermeture : on la constate ici.
+    const s = socket;
+    socket = null;
+    depuis = null;
+    etat = 'connexion';
+    erreur = 'Connexion perdue sans avertissement : reprise automatique.';
+    log.warn('WhatsApp : connexion perdue, détectée par la veille');
+    signaler('perdue', { motif: erreur });
+    await s.fermer(false).catch(() => {});
+    voulu = true;
+    programmerReconnexion('connexion perdue', null, false);
+    return 'perdue';
+  }
+  if (!socket && !minuterie && etat !== 'qr') {
+    voulu = true;
+    log.info('WhatsApp : connexion absente, relance par la veille');
+    await connecter({ parUtilisateur: false });
+    return 'relance';
+  }
+  return 'rien';
+}
+
+export function demarrerVeille() {
+  if (veille) return;
+  veille = setInterval(() => {
+    passageVeille().catch((e) => log.error({ err: e }, 'WhatsApp : veille en erreur'));
+  }, INTERVALLE_VEILLE_MS);
+  veille.unref();
+}
+
+export function arreterVeille() {
+  if (veille) clearInterval(veille);
+  veille = null;
 }
 
 /** Réservé aux tests : remplace la bibliothèque par un faux et remet l'état à zéro. */
 export const __tests = {
   definirFabrique(f: FabriqueSocket | null) {
     fabrique = f;
+  },
+  definirSurEvenement(f: ((e: EvenementConnexion) => void) | null) {
+    surEvenement = f;
   },
   async reinitialiser() {
     await arreterConnexion();
@@ -323,4 +447,9 @@ export const __tests = {
   },
   derniereTentative: () => derniereTentative,
   reconnexionProgrammee: () => minuterie !== null,
+  /** Fait passer la prochaine tentative automatique sans attendre. */
+  oublierAttente() {
+    derniereTentative = 0;
+    attente = ATTENTE_MIN_MS;
+  },
 };

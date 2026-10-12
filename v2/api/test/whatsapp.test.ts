@@ -7,7 +7,19 @@ import supertest from 'supertest';
 import { getPool } from '../src/db/pool';
 import { invalidateParametres, PARAMETRES_DEFAUT } from '../src/lib/params';
 import { invalidateTarifs } from '../src/lib/tarifs';
-import { __tests as connexionTests, configurerConnexion, connecter, etatConnexion, type EvenementsSocket, type FabriqueSocket } from '../src/modules/whatsapp/connexion';
+import {
+  __tests as connexionTests,
+  authEnregistree,
+  configurerConnexion,
+  connecter,
+  etatConnexion,
+  passageVeille,
+  reprendreSiEnregistre,
+  type EvenementConnexion,
+  type EvenementsSocket,
+  type FabriqueSocket,
+} from '../src/modules/whatsapp/connexion';
+import { journaliserConnexion } from '../src/modules/whatsapp';
 import { configurerEntrants, surEntrant, traiterEntrant } from '../src/modules/whatsapp/entrants';
 import { __tests as fileTests, configurerFile, planifierWhatsApp, traiterFile } from '../src/modules/whatsapp/file';
 import { invalidateParametresWhatsApp, PARAMETRES_WHATSAPP_DEFAUT, type ParametresWhatsApp } from '../src/modules/whatsapp/parametres';
@@ -25,6 +37,7 @@ const A = {} as Record<'admin' | 'prep' | 'xerox' | 'livreur', Agent>;
 const envois: { jid: string; texte: string }[] = [];
 let echouer: Error | null = null;
 let enregistre = false;
+let ouvert = true;
 let fabriqueAppels = 0;
 let ev: EvenementsSocket | null = null;
 let fermetures: boolean[] = [];
@@ -41,6 +54,7 @@ const fausseFabrique: FabriqueSocket = async (opts) => {
       fermetures.push(oublier);
     },
     estEnregistre: () => enregistre,
+    estOuvert: () => ouvert,
   };
 };
 
@@ -88,7 +102,7 @@ function base(): Date {
 
 async function viderTout() {
   const pool = getPool();
-  await pool.query(`TRUNCATE whatsapp_messages, whatsapp_optout, whatsapp_entrants, notifications, journal, paiements, factures, dossier_events, fichiers, devis, dossiers, clients, compteurs RESTART IDENTITY CASCADE`);
+  await pool.query(`TRUNCATE whatsapp_messages, whatsapp_optout, whatsapp_entrants, whatsapp_connexions, notifications, journal, paiements, factures, dossier_events, fichiers, devis, dossiers, clients, compteurs RESTART IDENTITY CASCADE`);
   for (const [cle, valeur] of Object.entries(PARAMETRES_DEFAUT)) {
     await pool.query(`INSERT INTO parametres (cle, valeur) VALUES ($1, $2) ON CONFLICT (cle) DO UPDATE SET valeur = EXCLUDED.valeur`, [cle, JSON.stringify(valeur)]);
   }
@@ -126,6 +140,7 @@ afterAll(async () => {
 beforeEach(() => {
   envois.length = 0;
   echouer = null;
+  ouvert = true;
   fermetures = [];
   fileTests.reinitialiserDelai();
   fileTests.definirAleatoire(() => 0.5);
@@ -160,7 +175,7 @@ describe('droits et réglages', () => {
     const p = await reglages({ actif: true, heures: { debut: '08:00', fin: '20:00' }, delai: { min_s: 5, max_s: 5 }, signature: 'L’équipe Evocom' });
     expect(p.actif).toBe(true);
     expect(p.signature).toBe('L’équipe Evocom');
-    expect(p.limites).toEqual({ par_heure: 20, par_jour: 120 });
+    expect(p.limites).toEqual({ par_heure: 20, par_jour: 120, par_numero_par_jour: 3 });
     const relu = await getPool().query(`SELECT valeur FROM parametres WHERE cle = 'whatsapp'`);
     expect(relu.rows[0].valeur.actif).toBe(true);
     const j = await getPool().query(`SELECT action FROM journal WHERE action = 'whatsapp_parametres_modifies'`);
@@ -262,11 +277,73 @@ describe('connexion (socket simulé)', () => {
     connexionTests.definirFabrique(fausseFabrique);
     await connexionTests.reinitialiser();
   });
+
+  it('après un scan, « me » dans les identifiants suffit : reprise au démarrage, reconnexion après une coupure, journal', async () => {
+    await connexionTests.reinitialiser();
+    fs.mkdirSync(AUTH, { recursive: true });
+    // Ce que la bibliothèque laisse réellement après un scan : `me` rempli, `registered` encore faux.
+    fs.writeFileSync(path.join(AUTH, 'creds.json'), JSON.stringify({ registered: false, me: { id: '221768661175:38@s.whatsapp.net' } }));
+    expect(authEnregistree()).toBe(true);
+    const journalEv: EvenementConnexion[] = [];
+    connexionTests.definirSurEvenement((e) => journalEv.push(e));
+    const avant = fabriqueAppels;
+    await reprendreSiEnregistre();
+    expect(fabriqueAppels).toBe(avant + 1);
+    expect(journalEv.map((e) => e.type)).toEqual(['reprise', 'qr']);
+    ev!.surOuverture('+221768661175');
+    expect(journalEv.at(-1)).toMatchObject({ type: 'connecte', numero: '+221768661175' });
+    expect((await A.admin.get('/api/whatsapp/statut')).body).toMatchObject({ etat: 'connecte', enregistre: true });
+
+    // Coupure passagère (redémarrage demandé par WhatsApp) : reconnexion programmée et journalisée avec son heure.
+    enregistre = false; // le faux socket ne sait rien ; les identifiants sur disque suffisent
+    ev!.surFermeture({ deconnecte: false, code: 515, motif: 'Redémarrage demandé par WhatsApp' });
+    const e = etatConnexion();
+    expect(e.etat).toBe('connexion');
+    expect(e.prochaine_tentative_at).toBeTruthy();
+    expect(connexionTests.reconnexionProgrammee()).toBe(true);
+    expect(journalEv.at(-1)).toMatchObject({ type: 'fermee', code: 515, motif: 'Redémarrage demandé par WhatsApp' });
+    expect(journalEv.at(-1)!.prochaine_tentative_at).toBe(e.prochaine_tentative_at);
+
+    connexionTests.definirSurEvenement(null);
+    await connexionTests.reinitialiser();
+    fs.rmSync(AUTH, { recursive: true, force: true });
+  });
+
+  it('la veille relance une connexion jamais reprise et détecte une liaison tombée sans prévenir', async () => {
+    await connexionTests.reinitialiser();
+    fs.mkdirSync(AUTH, { recursive: true });
+    fs.writeFileSync(path.join(AUTH, 'creds.json'), JSON.stringify({ me: { id: '221700000001:1@s.whatsapp.net' } }));
+    const journalEv: EvenementConnexion[] = [];
+    connexionTests.definirSurEvenement((e) => journalEv.push(e));
+    // 1. Rien n'est connecté : la veille relance.
+    const avant = fabriqueAppels;
+    connexionTests.oublierAttente();
+    expect(await passageVeille()).toBe('relance');
+    expect(fabriqueAppels).toBe(avant + 1);
+    ev!.surOuverture('+221700000001');
+    expect(etatConnexion().etat).toBe('connecte');
+    // 2. Connectée et ouverte : rien à faire.
+    expect(await passageVeille()).toBe('rien');
+    expect(etatConnexion().veille_at).toBeTruthy();
+    // 3. La liaison est fermée sans que la bibliothèque l'ait dit : la veille le constate et programme la reprise.
+    ouvert = false;
+    expect(await passageVeille()).toBe('perdue');
+    expect(etatConnexion()).toMatchObject({ etat: 'connexion' });
+    expect(connexionTests.reconnexionProgrammee()).toBe(true);
+    expect(fermetures.at(-1)).toBe(false);
+    expect(journalEv.some((x) => x.type === 'perdue')).toBe(true);
+    // 4. Une reconnexion déjà programmée n'est pas doublée.
+    expect(await passageVeille()).toBe('rien');
+    ouvert = true;
+    connexionTests.definirSurEvenement(null);
+    await connexionTests.reinitialiser();
+    fs.rmSync(AUTH, { recursive: true, force: true });
+  });
 });
 
 describe('file et règles anti-spam', () => {
   beforeAll(async () => {
-    await reglages({ actif: true, heures: { debut: '00:00', fin: '23:59' }, limites: { par_heure: 20, par_jour: 120 }, delai: { min_s: 30, max_s: 60 }, signature: '' });
+    await reglages({ actif: true, heures: { debut: '00:00', fin: '23:59' }, limites: { par_heure: 20, par_jour: 120, par_numero_par_jour: 3 }, delai: { min_s: 30, max_s: 60 }, signature: '' });
   });
 
   it('planifie un seul message par (dossier, événement) avec le texte personnalisé', async () => {
@@ -353,14 +430,31 @@ describe('file et règles anti-spam', () => {
     const envoyes = (await messages(`WHERE statut = 'envoye'`)).length;
     expect(envoyes).toBeGreaterThanOrEqual(2);
 
-    await reglages({ limites: { par_heure: envoyes, par_jour: 120 } });
+    await reglages({ limites: { par_heure: envoyes, par_jour: 120, par_numero_par_jour: 3 } });
     expect((await traiterFile({ maintenant: t0 })).resultat).toBe('limite_heure');
     // Envois vieux de plus d'une heure : la limite horaire est libérée, pas la journalière.
     await getPool().query(`UPDATE whatsapp_messages SET envoye_at = $1 WHERE statut = 'envoye'`, [new Date(t0.getTime() - 90 * 60_000).toISOString()]);
-    await reglages({ limites: { par_heure: 20, par_jour: envoyes } });
+    await reglages({ limites: { par_heure: 20, par_jour: envoyes, par_numero_par_jour: 3 } });
     expect((await traiterFile({ maintenant: t0 })).resultat).toBe('limite_jour');
-    await reglages({ limites: { par_heure: 20, par_jour: 120 } });
+    await reglages({ limites: { par_heure: 20, par_jour: 120, par_numero_par_jour: 3 } });
     expect((await traiterFile({ maintenant: t0 })).resultat).toBe('envoye');
+  });
+
+  it('pas plus de N messages par numéro et par jour : le suivant est ignoré, avec le motif', async () => {
+    await connexionOuverte();
+    await getPool().query(`UPDATE whatsapp_messages SET statut = 'annule', motif = 'test' WHERE statut = 'en_attente'`);
+    await reglages({ limites: { par_heure: 20, par_jour: 120, par_numero_par_jour: 1 } });
+    await jusquImprime({ client_telephone: '77 555 55 55' });
+    const t0 = base();
+    expect((await traiterFile({ maintenant: t0 })).resultat).toBe('envoye');
+    fileTests.reinitialiserDelai();
+    const d2 = await jusquImprime({ client_telephone: '77 555 55 55' });
+    const p = await traiterFile({ maintenant: new Date(Math.max(Date.now(), t0.getTime()) + 1000) });
+    expect(p.resultat).toBe('ignore');
+    expect(p.motif).toMatch(/Déjà 1 message envoyé à ce numéro en 24 h \(limite : 1\)/);
+    expect((await messages(`WHERE dossier_id = ${d2.id}`))[0]).toMatchObject({ statut: 'ignore' });
+    expect(envois).toHaveLength(1);
+    await reglages({ limites: { par_heure: 20, par_jour: 120, par_numero_par_jour: 3 } });
   });
 
   it('abandonne après 3 tentatives, avec le motif', async () => {
@@ -443,6 +537,23 @@ describe('routes : journal, test, annulation', () => {
     await viderTout();
     await reglages({ actif: true, heures: { debut: '00:00', fin: '23:59' }, delai: { min_s: 5, max_s: 5 } });
     await connexionOuverte();
+  });
+
+  it('journal des connexions : chaque événement en base, les plus récents d’abord, réservé à l’administrateur', async () => {
+    await getPool().query(`TRUNCATE whatsapp_connexions RESTART IDENTITY`);
+    const noter = journaliserConnexion(log);
+    noter({ type: 'connecte', code: null, motif: null, numero: '+221700000001', prochaine_tentative_at: null });
+    await new Promise((f) => setTimeout(f, 30));
+    noter({ type: 'fermee', code: 515, motif: 'Redémarrage demandé par WhatsApp', numero: '+221700000001', prochaine_tentative_at: new Date(Date.now() + 30_000).toISOString() });
+    await new Promise((f) => setTimeout(f, 60));
+    const r = await A.admin.get('/api/whatsapp/connexions');
+    expect(r.status).toBe(200);
+    expect(r.body.items).toHaveLength(2);
+    expect(r.body.items[0]).toMatchObject({ type: 'fermee', type_label: 'Connexion fermée', code: 515, motif: 'Redémarrage demandé par WhatsApp' });
+    expect(r.body.items[0].prochaine_tentative_at).toBeTruthy();
+    expect(r.body.items[1]).toMatchObject({ type: 'connecte', type_label: 'Connecté', numero: '+221700000001' });
+    expect(r.body.stats).toEqual({ connexions_7j: 1, fermetures_7j: 1 });
+    expect((await A.prep.get('/api/whatsapp/connexions')).status).toBe(403);
   });
 
   it('message de test : mêmes règles, numéro vérifié', async () => {

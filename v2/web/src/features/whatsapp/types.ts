@@ -15,14 +15,36 @@ export interface StatutWhatsApp {
   disponible: boolean;
   erreur: string | null;
   enregistre: boolean;
+  /** Reconnexion automatique programmée. */
+  prochaine_tentative_at: string | null;
+  /** Dernier passage de la veille (contrôle de la connexion toutes les minutes). */
+  veille_at: string | null;
   file: { en_attente: number; envoyes_aujourdhui: number; echecs: number };
+}
+
+export type TypeConnexion = 'qr' | 'connecte' | 'fermee' | 'perdue' | 'deconnecte' | 'echec' | 'indisponible' | 'reprise';
+
+export interface EvenementConnexion {
+  id: number;
+  type: TypeConnexion;
+  type_label: string;
+  code: number | null;
+  motif: string | null;
+  numero: string | null;
+  prochaine_tentative_at: string | null;
+  created_at: string;
+}
+
+export interface PageConnexions {
+  items: EvenementConnexion[];
+  stats: { connexions_7j: number; fermetures_7j: number };
 }
 
 export interface ReglagesWhatsApp {
   actif: boolean;
   modeles: Record<EvenementWhatsApp, string>;
   heures: { debut: string; fin: string };
-  limites: { par_heure: number; par_jour: number };
+  limites: { par_heure: number; par_jour: number; par_numero_par_jour: number };
   delai: { min_s: number; max_s: number };
   signature: string;
 }
