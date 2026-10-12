@@ -117,6 +117,12 @@ export async function planifierWhatsApp(evenement: EvenementWhatsApp, dossierId:
   }
 }
 
+/** Dossier annulé : ses messages encore en attente ne partent pas. Renvoie le nombre annulé. */
+export async function annulerMessagesEnAttente(dossierId: number, motif: string, db: Db = getPool()): Promise<number> {
+  const r = await db.query(`UPDATE whatsapp_messages SET statut = 'annule', motif = $2 WHERE dossier_id = $1 AND statut = 'en_attente'`, [dossierId, motif]);
+  return r.rowCount ?? 0;
+}
+
 /** Message de test vers un numéro (mêmes règles que les autres). Lève une erreur lisible si impossible. */
 export async function planifierTest(telephoneBrut: string, db: Db = getPool()): Promise<{ message: MessageWhatsApp | null; erreur: string | null }> {
   const tel = normaliserTelephone(telephoneBrut);

@@ -20,6 +20,20 @@ Montants : entiers en FCFA. Dates : ISO 8601 (`date` = `AAAA-MM-JJ`).
 - **Livreur** : inchangé (encaisse « à valider » à la livraison, voit le reste à payer de ses tournées).
 - **Imprimeurs** : inchangés (leur machine, sans téléphone ni montant). Leur interface prend la couleur de leur
   machine (Roland rose, Xerox bleu) et l'atelier affiche l'icône de la machine.
+- **Statut « annulé »** (`annule`, colonne `annule_at`, migration 015) : un dossier annulé n'est jamais supprimé ; il
+  reste dans les listes (onglet Annulés, admin et préparateur) avec fichiers, paiements et historique. Action `annuler`
+  (motif obligatoire, `tone: danger`) : le préparateur sur ses dossiers tant qu'ils ne sont pas à l'atelier
+  (`en_cours`, `a_revoir`, `pret_impression`), l'administrateur jusqu'à `en_livraison` ; jamais depuis `livre`/`termine`.
+  Action `reprendre` (motif) : `annule` → `en_cours`. Effets : urgence retirée, messages WhatsApp en attente annulés,
+  notification `annulation` aux imprimeurs de la machine (si à l'atelier), au préparateur et aux administrateurs,
+  `livraison_annulee` au livreur de la tournée. `forcer-statut` vers `annule` pose `annule_at`. Les statistiques
+  (retards, urgents) ignorent les annulés ; l'import reprend « Annulé » de l'ancienne plateforme.
+- **Libérer de l'espace** (Sauvegardes et état) : `GET /systeme/nettoyage?mois=3|6|12|24` (aperçu : fichiers à la
+  corbeille + fichiers des dossiers supprimés ; fichiers des commandes livrées/clôturées/annulées depuis plus de N mois),
+  `POST /systeme/nettoyage {cible: corbeille|anciens, mois?, mot_de_passe}` (admin ; mot de passe, 5 refus/heure → 429 ;
+  lot de 2 000 fichiers les plus lourds d'abord, `reste` à relancer). Les lignes sont marquées purgées (trace), le disque
+  est nettoyé ensuite, un événement `fichier/nettoyage` est posé sur chaque dossier concerné ; les dossiers ne sont
+  jamais supprimés (un dossier de la corbeille reste restaurable, sans ses fichiers).
 - **Accueil du préparateur** (`/accueil`, page d'entrée) : ses dossiers à corriger (`a_revoir`, avec le motif du
   renvoi), en préparation, envoyés à l'atelier, en livraison, ses livrés de la semaine et ses notifications.
   Il est prévenu (`revision`) quand un dossier est renvoyé en révision par l'atelier ou en préparation par

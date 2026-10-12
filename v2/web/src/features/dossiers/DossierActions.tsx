@@ -3,7 +3,7 @@
 // table de transitions que celle qui les autorise.
 
 import { useState } from 'react';
-import { Printer, Send, Truck, CheckCircle2, RotateCcw, Undo2, Lock, PackageCheck, CalendarClock } from 'lucide-react';
+import { Printer, Send, Truck, CheckCircle2, RotateCcw, Undo2, Lock, PackageCheck, CalendarClock, Ban, RotateCw } from 'lucide-react';
 import {
   ACTIONS_BY_ID,
   formatFCFA,
@@ -34,6 +34,8 @@ const ICONS: Partial<Record<ActionId, React.ReactNode>> = {
   cloturer: <Lock />,
   reimprimer: <Printer />,
   rouvrir: <Undo2 />,
+  annuler: <Ban />,
+  reprendre: <RotateCw />,
 };
 
 function demainMatin(): string {
@@ -128,10 +130,15 @@ export function DossierActions({ dossier, size = 'md', principaleSeulement, bloc
           description={
             courante.id === 'demander_revision'
               ? `Le dossier ${dossier.numero} repart chez le préparateur avec votre commentaire.`
-              : `Expliquez pourquoi, pour l'historique du dossier ${dossier.numero}.`
+              : courante.id === 'annuler'
+                ? `Le dossier ${dossier.numero} sera marqué annulé : il n'est pas supprimé, il reste consultable (onglet Annulés) avec ses fichiers et son historique, et pourra être repris. Les personnes qui l'avaient en main sont prévenues.`
+                : courante.id === 'reprendre'
+                  ? `Le dossier ${dossier.numero} revient en préparation : il faudra le valider de nouveau pour l'envoyer à l'impression.`
+                  : `Expliquez pourquoi, pour l'historique du dossier ${dossier.numero}.`
           }
-          label={courante.id === 'demander_revision' ? 'Ce qu\'il faut corriger' : 'Motif'}
+          label={courante.id === 'demander_revision' ? 'Ce qu\'il faut corriger' : courante.id === 'annuler' ? 'Motif de l’annulation' : 'Motif'}
           confirmLabel={courante.id === 'demander_revision' ? 'Envoyer en révision' : courante.label}
+          danger={courante.tone === 'danger'}
           busy={mutation.isPending}
           onClose={() => setOuverte(null)}
           onValider={(commentaire) => executer(courante.id, { commentaire })}
@@ -141,8 +148,8 @@ export function DossierActions({ dossier, size = 'md', principaleSeulement, bloc
   );
 }
 
-function CommentaireDialog({ titre, description, label, confirmLabel, busy, onClose, onValider }: {
-  titre: string; description: string; label: string; confirmLabel: string; busy: boolean; onClose: () => void; onValider: (c: string) => void;
+function CommentaireDialog({ titre, description, label, confirmLabel, danger, busy, onClose, onValider }: {
+  titre: string; description: string; label: string; confirmLabel: string; danger?: boolean; busy: boolean; onClose: () => void; onValider: (c: string) => void;
 }) {
   const [texte, setTexte] = useState('');
   const ok = texte.trim().length >= 3;
@@ -154,8 +161,8 @@ function CommentaireDialog({ titre, description, label, confirmLabel, busy, onCl
       description={description}
       footer={
         <>
-          <Button onClick={onClose}>Annuler</Button>
-          <Button variant="primary" busy={busy} disabled={!ok} onClick={() => onValider(texte.trim())}>
+          <Button onClick={onClose}>{danger ? 'Fermer sans annuler' : 'Annuler'}</Button>
+          <Button variant={danger ? 'danger' : 'primary'} busy={busy} disabled={!ok} onClick={() => onValider(texte.trim())}>
             {confirmLabel}
           </Button>
         </>

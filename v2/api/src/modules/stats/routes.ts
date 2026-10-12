@@ -98,10 +98,10 @@ statsRouter.get('/apercu', async (req, res) => {
     ),
     one<{ n: number }>(
       `SELECT count(*)::int AS n FROM dossiers
-       WHERE deleted_at IS NULL AND date_promise < (now() AT TIME ZONE $1::text)::date AND statut NOT IN ('livre', 'termine')`,
+       WHERE deleted_at IS NULL AND date_promise < (now() AT TIME ZONE $1::text)::date AND statut NOT IN ('livre', 'termine', 'annule')`,
       [tz],
     ),
-    one<{ n: number }>(`SELECT count(*)::int AS n FROM dossiers WHERE deleted_at IS NULL AND urgent AND statut NOT IN ('livre', 'termine')`),
+    one<{ n: number }>(`SELECT count(*)::int AS n FROM dossiers WHERE deleted_at IS NULL AND urgent AND statut NOT IN ('livre', 'termine', 'annule')`),
   ]);
 
   const zero = () => Object.fromEntries(STATUTS.map((s) => [s, 0])) as Record<Statut, number>;

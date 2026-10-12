@@ -56,6 +56,9 @@
   --s-termine: #64748b;
   --s-termine-bg: #e2e8f0;
   --s-termine-ink: #334155;
+  --s-annule: #78716c;
+  --s-annule-bg: #f5f5f4;
+  --s-annule-ink: #44403c;
   --coral: #ff4f70;
   --on-coral: #2b0510;
   --danger: #d92d20;
@@ -159,6 +162,9 @@
     --s-termine: #94a3b8;
     --s-termine-bg: #253247;
     --s-termine-ink: #cbd5e1;
+    --s-annule: #a8a29e;
+    --s-annule-bg: #2a2523;
+    --s-annule-ink: #d6d3d1;
     --coral: #ff6b85;
     --on-coral: #2a0610;
     --danger: #f0574a;
@@ -242,6 +248,9 @@
   --s-termine: #94a3b8;
   --s-termine-bg: #253247;
   --s-termine-ink: #cbd5e1;
+  --s-annule: #a8a29e;
+  --s-annule-bg: #2a2523;
+  --s-annule-ink: #d6d3d1;
   --coral: #ff6b85;
   --on-coral: #2a0610;
   --danger: #f0574a;

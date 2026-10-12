@@ -57,6 +57,7 @@ export const TYPES_NOTIFICATION = [
   'report_livraison',
   'livraison_programmee',
   'livraison_annulee',
+  'annulation',
 ] as const;
 export type TypeNotification = (typeof TYPES_NOTIFICATION)[number];
 export type ReglesNotifications = Record<TypeNotification, boolean>;

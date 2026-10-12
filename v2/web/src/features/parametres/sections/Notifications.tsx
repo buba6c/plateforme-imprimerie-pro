@@ -16,6 +16,7 @@ const TYPES: { type: string; titre: string; qui: string }[] = [
   { type: 'report_livraison', titre: 'Livraison reportée', qui: 'Livreur désigné, quand la date de livraison change.' },
   { type: 'livraison_programmee', titre: 'Livraison programmée', qui: 'Livreur désigné, quand l’administrateur programme la livraison.' },
   { type: 'livraison_annulee', titre: 'Livraison retirée de la tournée', qui: 'Livreur qui avait la livraison dans sa tournée.' },
+  { type: 'annulation', titre: 'Dossier annulé ou repris', qui: 'Imprimeurs ou livreur qui l’avaient en main, préparateur et administrateurs.' },
 ];
 
 export function SectionNotifications({ p, onModifie }: SectionProps) {

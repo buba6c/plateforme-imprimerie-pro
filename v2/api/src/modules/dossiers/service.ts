@@ -118,6 +118,7 @@ export function presenter(row: DossierRow, user: AuthUser, libelles: Libelles = 
     livraison_prevue_at: row.livraison_prevue_at,
     livre_at: row.livre_at,
     termine_at: row.termine_at,
+    annule_at: (row as DossierRow & { annule_at?: string | null }).annule_at ?? null,
     nb_fichiers: row.nb_fichiers,
     devis_id: row.devis_id,
     importe: row.legacy_id !== null && row.legacy_id !== undefined,
@@ -348,6 +349,8 @@ export async function detailDossier(user: AuthUser, id: number) {
 
 export function peutModifier(user: AuthUser, d: Pick<DossierRow, 'statut' | 'preparateur_id' | 'deleted_at'>): boolean {
   if (d.deleted_at) return false;
+  // Un dossier annulé ne bouge plus : on le reprend d'abord (action « reprendre »), puis on le modifie.
+  if (d.statut === 'annule') return false;
   if (user.role === 'admin') return true;
   return user.role === 'preparateur' && d.preparateur_id === user.id && STATUTS_MODIFIABLES.includes(d.statut);
 }
@@ -497,9 +500,11 @@ export async function modifierDossier(user: AuthUser, id: number, body: unknown)
     const d = await chargerDossier(user, id, db, true);
     if (!peutModifier(user, d)) {
       throw forbidden(
-        user.role === 'preparateur' && d.preparateur_id === user.id
-          ? 'Le dossier est validé : demandez à un administrateur de le renvoyer en préparation pour le modifier.'
-          : "Vous ne pouvez pas modifier ce dossier.",
+        d.statut === 'annule'
+          ? 'Le dossier est annulé : reprenez-le d’abord pour le modifier.'
+          : user.role === 'preparateur' && d.preparateur_id === user.id
+            ? 'Le dossier est validé : demandez à un administrateur de le renvoyer en préparation pour le modifier.'
+            : "Vous ne pouvez pas modifier ce dossier.",
       );
     }
     const machine = (input.machine ?? d.machine) as Machine;
@@ -674,6 +679,14 @@ export async function executerAction(user: AuthUser, id: number, actionId: strin
         set('date_fin_impression = NULL');
         set('date_debut_impression = NULL');
         break;
+      case 'annuler':
+        set('annule_at = now()');
+        set('urgent = false');
+        break;
+      case 'reprendre':
+        set('annule_at = NULL');
+        set('commentaire_revision = NULL');
+        break;
       default:
         break;
     }
@@ -722,7 +735,9 @@ export async function forcerStatut(user: AuthUser, id: number, statut: string, c
          date_validation = CASE WHEN $1 IN ('pret_impression','en_impression','pret_livraison','en_livraison','livre','termine') THEN coalesce(date_validation, now()) ELSE date_validation END,
          date_fin_impression = CASE WHEN $1 IN ('pret_livraison','en_livraison','livre','termine') THEN coalesce(date_fin_impression, now()) WHEN $1 IN ('en_cours','a_revoir','pret_impression','en_impression') THEN NULL ELSE date_fin_impression END,
          livre_at = CASE WHEN $1 IN ('livre','termine') THEN coalesce(livre_at, now()) ELSE NULL END,
-         termine_at = CASE WHEN $1 = 'termine' THEN coalesce(termine_at, now()) ELSE NULL END
+         termine_at = CASE WHEN $1 = 'termine' THEN coalesce(termine_at, now()) ELSE NULL END,
+         annule_at = CASE WHEN $1 = 'annule' THEN coalesce(annule_at, now()) ELSE NULL END,
+         urgent = CASE WHEN $1 = 'annule' THEN false ELSE urgent END
        WHERE id = $2 RETURNING *`,
       [statut, id],
       db,

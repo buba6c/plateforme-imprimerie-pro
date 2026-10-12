@@ -7,7 +7,7 @@ import { EN_CLAIR } from './enClair';
 
 type D = Pick<
   DossierResume,
-  'statut' | 'mode_remise' | 'created_at' | 'date_validation' | 'date_debut_impression' | 'date_fin_impression' | 'livraison_prevue_at' | 'livre_at' | 'termine_at'
+  'statut' | 'mode_remise' | 'created_at' | 'date_validation' | 'date_debut_impression' | 'date_fin_impression' | 'livraison_prevue_at' | 'livre_at' | 'termine_at' | 'annule_at'
 >;
 
 interface Etape {
@@ -18,7 +18,15 @@ interface Etape {
   date: (d: D) => string | null;
 }
 
-function etapes(retrait: boolean): Etape[] {
+function etapes(retrait: boolean, annule: boolean): Etape[] {
+  // Dossier annulé : la frise se réduit à la préparation puis l'annulation, pour ne pas laisser croire
+  // qu'une impression ou une livraison est encore à venir.
+  if (annule) {
+    return [
+      { cle: 'preparation', titre: 'Préparation', statuts: ['en_cours', 'a_revoir'], couleur: 'en_cours', date: (d) => d.created_at },
+      { cle: 'annule', titre: 'Annulé', statuts: ['annule'], couleur: 'annule', date: (d) => d.annule_at ?? null },
+    ];
+  }
   return [
     { cle: 'preparation', titre: 'Préparation', statuts: ['en_cours', 'a_revoir'], couleur: 'en_cours', date: (d) => d.created_at },
     { cle: 'impression', titre: 'Impression', statuts: ['pret_impression', 'en_impression'], couleur: 'en_impression', date: (d) => d.date_debut_impression ?? d.date_validation },
@@ -30,7 +38,7 @@ function etapes(retrait: boolean): Etape[] {
 }
 
 export function ParcoursDossier({ d }: { d: D }) {
-  const liste = etapes(d.mode_remise === 'retrait');
+  const liste = etapes(d.mode_remise === 'retrait', d.statut === 'annule');
   const courante = Math.max(0, liste.findIndex((e) => e.statuts.includes(d.statut)));
   return (
     <ol className="parcours" aria-label="Parcours de la commande">

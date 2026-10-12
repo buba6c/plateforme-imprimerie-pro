@@ -87,7 +87,7 @@ function decrire(e: Evenement, ctx: { machine: Machine; libelle: (m: Machine, c:
         return { titre: 'Statut forcé par l’administrateur', ton: 'warning', note: e.commentaire };
       }
       const def = e.action ? ACTIONS_BY_ID[e.action as ActionId] : undefined;
-      const ton: Ton = e.action === 'demander_revision' ? 'warning' : e.vers_statut === 'livre' || e.vers_statut === 'termine' ? 'success' : 'accent';
+      const ton: Ton = e.action === 'demander_revision' || e.action === 'annuler' ? 'warning' : e.vers_statut === 'livre' || e.vers_statut === 'termine' ? 'success' : 'accent';
       return { titre: def?.journal ?? 'Changement de statut', ton, note: e.commentaire };
     }
     case 'commentaire':
@@ -105,6 +105,14 @@ function decrire(e: Evenement, ctx: { machine: Machine; libelle: (m: Machine, c:
           return { titre: `Réimpression annulée ${nom}` };
         case 'restauration':
           return { titre: `Fichier restauré ${nom}` };
+        case 'nettoyage': {
+          const nb = Number(data?.nb ?? 0);
+          return {
+            titre: `${nb > 1 ? `${nb} fichiers effacés` : 'Fichier effacé'} du serveur pour libérer de l’espace${data?.taille ? ` (${formatTaille(Number(data.taille))})` : ''}`,
+            ton: 'warning',
+            details: Array.isArray(data?.noms) && data.noms.length ? <span className="ev-muted" style={{ fontSize: 12 }}>{(data.noms as string[]).join(', ')}</span> : null,
+          };
+        }
         default:
           return { titre: `Fichier ${nom}` };
       }

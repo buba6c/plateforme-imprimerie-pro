@@ -80,3 +80,11 @@
 @media (prefers-reduced-motion: reduce) {
   .sante-jauge > span { transition: none; }
 }
+
+/* Libérer de l'espace : deux blocs (corbeille, commandes anciennes), bouton rouge à droite. */
+.nettoyage-bloc { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); flex-wrap: wrap; padding: 12px 14px; border-radius: var(--radius-lg); border: 1px solid var(--line); border-left: 5px solid var(--n); background: var(--surface); --n: var(--text-muted); }
+.nettoyage-bloc[data-tone="corbeille"] { --n: var(--s-termine); }
+.nettoyage-bloc[data-tone="anciens"] { --n: var(--s-livre); }
+.nettoyage-bloc__texte { display: grid; gap: 6px; min-width: 0; flex: 1 1 220px; }
+.nettoyage-bloc__texte strong { font-size: 14px; }
+.nettoyage-bloc .ev-btn { flex: none; }

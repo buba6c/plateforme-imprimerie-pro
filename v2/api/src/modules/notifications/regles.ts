@@ -10,10 +10,10 @@ import { STATUT_LABELS, type ActionId, type Machine, type Role, type Statut } fr
 import { getPool, type Db } from '../../db/pool';
 import { getParametres } from '../../lib/params';
 import { notifier, type Destinataires, type NotificationInput } from '../../realtime';
-import { evenementWhatsApp, planifierWhatsApp } from '../whatsapp/file';
+import { annulerMessagesEnAttente, evenementWhatsApp, planifierWhatsApp } from '../whatsapp/file';
 
 /** Types émis par ces règles en plus de ceux de lib/params.ts (TYPES_NOTIFICATION). */
-export const TYPES_NOTIFICATION_REGLES = ['statut_force', 'report_livraison', 'livraison_programmee', 'livraison_annulee'] as const;
+export const TYPES_NOTIFICATION_REGLES = ['statut_force', 'report_livraison', 'livraison_programmee', 'livraison_annulee', 'annulation'] as const;
 
 /** Champs du dossier utiles aux règles (une ligne de `dossiers` convient). */
 export interface DossierNotif {
@@ -154,6 +154,16 @@ export async function notifierTransitionDossier(
     case 'reimprimer':
       await notifierReimpression(auteur, avant, d, commentaire, db);
       break;
+    case 'annuler':
+      await notifierAnnulation(auteur, avant, d, commentaire, db);
+      break;
+    case 'reprendre':
+      await envoyer(
+        db,
+        { userIds: ids(d.preparateur_id), roles: ['admin'], exclure: auteur.id },
+        { type: 'annulation', titre: `Dossier repris : ${d.numero}`, message: commentaire ?? d.client_nom, dossier_id: d.id },
+      );
+      break;
     case 'renvoyer_preparation':
       // Par l'administrateur : le préparateur retrouve le dossier dans « En préparation ».
       await envoyer(
@@ -190,6 +200,28 @@ export async function notifierReimpression(auteur: Auteur, avant: DossierNotif, 
       { type: 'livraison_annulee', titre: `Livraison annulée : ${apres.numero}`, message: 'Le dossier repart en impression.', dossier_id: apres.id },
     );
   }
+}
+
+/**
+ * Dossier annulé : ceux qui l'avaient entre les mains (imprimeurs de la machine s'il était à l'atelier,
+ * livreur de la tournée s'il était en livraison), le préparateur et les administrateurs. Les messages
+ * WhatsApp encore en attente pour ce dossier sont annulés.
+ */
+export async function notifierAnnulation(auteur: Auteur, avant: DossierNotif, apres: DossierNotif, motif: string | null, db: Db = getPool()): Promise<void> {
+  const message = motif ? `${apres.client_nom} · ${motif}` : apres.client_nom;
+  const deja = new Set<number>([auteur.id]);
+  if (STATUTS_IMPRESSION.includes(avant.statut)) {
+    (await envoyer(db, { machine: apres.machine, exclure: auteur.id }, { type: 'annulation', titre: `Dossier annulé, ne pas imprimer : ${apres.numero}`, message, dossier_id: apres.id })).forEach((id) => deja.add(id));
+  }
+  if (avant.livreur_id && STATUTS_LIVRAISON.includes(avant.statut) && !deja.has(avant.livreur_id)) {
+    (await envoyer(db, { userIds: [avant.livreur_id] }, { type: 'livraison_annulee', titre: `Livraison annulée : ${apres.numero}`, message, dossier_id: apres.id })).forEach((id) => deja.add(id));
+  }
+  await envoyer(
+    db,
+    { userIds: ids(apres.preparateur_id).filter((id) => !deja.has(id)), roles: ['admin'], exclure: auteur.id },
+    { type: 'annulation', titre: `Dossier annulé : ${apres.numero}`, message, dossier_id: apres.id },
+  );
+  await annulerMessagesEnAttente(apres.id, 'Dossier annulé', db).catch(() => {});
 }
 
 /** Livraison programmée par un administrateur : le livreur désigné, sinon tous les livreurs. */

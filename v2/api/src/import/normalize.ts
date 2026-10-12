@@ -91,6 +91,9 @@ const ALIAS_STATUT: Record<string, Statut> = {
   livre: 'livre',
   termine: 'termine',
   fini: 'termine',
+  annule: 'annule',
+  annulee: 'annule',
+  annulation: 'annule',
 };
 
 /** 'Prêt impression' → 'pret_impression', 'À revoir' → 'a_revoir'. */

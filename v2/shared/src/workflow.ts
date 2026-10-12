@@ -16,7 +16,9 @@ export type ActionId =
   | 'remettre_client'
   | 'cloturer'
   | 'rouvrir'
-  | 'reimprimer';
+  | 'reimprimer'
+  | 'annuler'
+  | 'reprendre';
 
 export interface ActionDef {
   id: ActionId;
@@ -24,6 +26,8 @@ export interface ActionDef {
   /** Phrase affichée dans l'historique, au passé. */
   journal: string;
   from: readonly Statut[];
+  /** Statuts de départ permis aux rôles autres qu'administrateur (sous-ensemble de `from`). */
+  fromNonAdmin?: readonly Statut[];
   to: Statut;
   roles: readonly Role[];
   /** Le préparateur doit être le propriétaire du dossier (l'admin passe toujours). */
@@ -178,6 +182,30 @@ export const ACTIONS: readonly ActionDef[] = [
     requiresComment: true,
     tone: 'secondary',
   },
+  {
+    id: 'annuler',
+    label: 'Annuler le dossier',
+    journal: 'Dossier annulé',
+    from: ['en_cours', 'a_revoir', 'pret_impression', 'en_impression', 'pret_livraison', 'en_livraison'],
+    // Le préparateur n'annule que ce qui n'a pas encore été imprimé ; au-delà, l'administrateur.
+    fromNonAdmin: ['en_cours', 'a_revoir', 'pret_impression'],
+    to: 'annule',
+    roles: ['preparateur', 'admin'],
+    ownerOnly: true,
+    requiresComment: true,
+    tone: 'danger',
+  },
+  {
+    id: 'reprendre',
+    label: 'Reprendre le dossier',
+    journal: 'Dossier repris après annulation',
+    from: ['annule'],
+    to: 'en_cours',
+    roles: ['preparateur', 'admin'],
+    ownerOnly: true,
+    requiresComment: true,
+    tone: 'secondary',
+  },
 ];
 
 /** Accès sûr par identifiant (pas d'héritage d'Object.prototype : « constructor » n'est pas une action). */
@@ -222,6 +250,9 @@ export function verifierAction(
   }
   if (!action.from.includes(dossier.statut)) {
     return { ok: false, code: 'statut', message: "Cette action n'est pas possible dans l'état actuel du dossier." };
+  }
+  if (action.fromNonAdmin && user.role !== 'admin' && !action.fromNonAdmin.includes(dossier.statut)) {
+    return { ok: false, code: 'statut', message: 'Le dossier est déjà passé à l’atelier ou en livraison : seul un administrateur peut l’annuler.' };
   }
   if (action.remise && (dossier.mode_remise ?? 'livraison') !== action.remise) {
     return {

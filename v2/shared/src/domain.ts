@@ -46,6 +46,7 @@ export const STATUTS = [
   'en_livraison',
   'livre',
   'termine',
+  'annule',
 ] as const;
 export type Statut = (typeof STATUTS)[number];
 
@@ -58,6 +59,7 @@ export const STATUT_LABELS: Record<Statut, string> = {
   en_livraison: 'En livraison',
   livre: 'Livré',
   termine: 'Terminé',
+  annule: 'Annulé',
 };
 
 export type Etape = 'preparation' | 'impression' | 'livraison' | 'cloture';
@@ -71,7 +73,11 @@ export const STATUT_ETAPE: Record<Statut, Etape> = {
   en_livraison: 'livraison',
   livre: 'cloture',
   termine: 'cloture',
+  annule: 'cloture',
 };
+
+/** Statuts où le dossier ne bouge plus : livré, clôturé ou annulé. */
+export const STATUTS_FINIS: readonly Statut[] = ['livre', 'termine', 'annule'];
 
 export const ETAPE_LABELS: Record<Etape, string> = {
   preparation: 'Préparation',

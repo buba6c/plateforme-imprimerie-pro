@@ -185,6 +185,11 @@
 .ev-status[data-statut="en_livraison"] { --s: var(--s-en-livraison); background: var(--s-en-livraison-bg); color: var(--s-en-livraison-ink); }
 .ev-status[data-statut="livre"] { --s: var(--s-livre); background: var(--s-livre-bg); color: var(--s-livre-ink); }
 .ev-status[data-statut="termine"] { --s: var(--s-termine); background: var(--s-termine-bg); color: var(--s-termine-ink); }
+.ev-status[data-statut="annule"] { --s: var(--s-annule); background: var(--s-annule-bg); color: var(--s-annule-ink); text-decoration: line-through; text-decoration-thickness: 1.5px; }
+.ev-status[data-statut="annule"]::before {
+  content: ""; border: 0; width: 8px; height: 8px; border-radius: 0; background: transparent;
+  background-image: linear-gradient(45deg, transparent 42%, var(--s) 42%, var(--s) 58%, transparent 58%), linear-gradient(-45deg, transparent 42%, var(--s) 42%, var(--s) 58%, transparent 58%);
+}
 .ev-status::before { border-color: var(--s, currentColor); }
 .ev-status[data-statut="a_revoir"]::before { border-radius: 1px; transform: rotate(45deg); background: var(--s); }
 .ev-status[data-statut="en_impression"]::before, .ev-status[data-statut="en_livraison"]::before, .ev-status[data-statut="livre"]::before { background: var(--s); }

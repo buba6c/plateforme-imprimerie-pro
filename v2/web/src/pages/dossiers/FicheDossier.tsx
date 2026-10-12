@@ -108,7 +108,7 @@ export default function FicheDossier() {
   }
 
   const proprietaire = user.role === 'preparateur' && d.preparateur_id === user.id;
-  const peutUrgence = (user.role === 'admin' || proprietaire) && !['livre', 'termine'].includes(d.statut);
+  const peutUrgence = (user.role === 'admin' || proprietaire) && !['livre', 'termine', 'annule'].includes(d.statut);
   const peutReporter = (user.role === 'admin' || user.role === 'livreur') && d.statut === 'en_livraison';
   const voirFichiers = user.role !== 'livreur';
   const voirMontants = d.montant !== undefined;

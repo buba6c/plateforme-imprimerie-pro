@@ -42,6 +42,7 @@ export interface DossierResume {
   livraison_prevue_at: string | null;
   livre_at: string | null;
   termine_at: string | null;
+  annule_at?: string | null;
   adresse_livraison?: string | null;
   notes_livraison?: string | null;
   nb_fichiers: number;

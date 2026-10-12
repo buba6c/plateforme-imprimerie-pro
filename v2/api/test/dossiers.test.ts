@@ -72,7 +72,7 @@ describe('dossiers et circuit', () => {
     expect(r.status).toBe(201);
     expect(r.body.numero).toMatch(/^CMD-\d{4}-\d{4}$/);
     expect(r.body.statut).toBe('en_cours');
-    expect(r.body.actions).toEqual(['valider']);
+    expect(r.body.actions).toEqual(['valider', 'annuler']);
     // Le préparateur voit le prix du dossier (il le calcule ou le saisit lui-même), jamais les paiements.
     expect(r.body.montant).toBe(45000);
     expect(r.body.montant_source).toBe('calcul');

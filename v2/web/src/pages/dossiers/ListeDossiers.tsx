@@ -31,6 +31,7 @@ function ongletsPour(role: Role): Onglet[] {
         { id: 'livraison', label: 'En livraison', statuts: ['pret_livraison', 'en_livraison'] },
         { id: 'livres', label: 'Livrés', statuts: ['livre'] },
         { id: 'termines', label: 'Terminés', statuts: ['termine'] },
+        { id: 'annules', label: 'Annulés', statuts: ['annule'] },
       ];
     case 'preparateur':
       return [
@@ -38,6 +39,7 @@ function ongletsPour(role: Role): Onglet[] {
         { id: 'production', label: 'En production', statuts: ['pret_impression', 'en_impression'] },
         { id: 'livraison', label: 'En livraison', statuts: ['pret_livraison', 'en_livraison'] },
         { id: 'livres', label: 'Livrés', statuts: ['livre', 'termine'] },
+        { id: 'annules', label: 'Annulés', statuts: ['annule'] },
         { id: 'tous', label: 'Tous', statuts: null },
       ];
     case 'imprimeur_roland':

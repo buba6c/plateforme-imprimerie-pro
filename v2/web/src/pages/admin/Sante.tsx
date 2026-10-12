@@ -6,6 +6,7 @@ import { api, messageErreur } from '../../lib/api';
 import { Alert, Button, Card, LoadingRows, PageHeader } from '../../ui';
 import type { Sante as S } from '../../features/admin/types';
 import { CarteEspaceDisque, CarteHistorique, CarteSauvegarderMaintenant } from '../../features/admin/SanteSauvegardes';
+import { CarteNettoyage } from '../../features/admin/CarteNettoyage';
 import '../../features/admin/admin.css';
 
 const MAX_AGE_H = 26;
@@ -94,7 +95,10 @@ export default function Sante() {
               <CarteSauvegarderMaintenant />
               <CarteHistorique />
             </div>
-            <CarteEspaceDisque />
+            <div className="sante-sections">
+              <CarteEspaceDisque />
+              <CarteNettoyage />
+            </div>
           </div>
 
           <div className="adm-health">

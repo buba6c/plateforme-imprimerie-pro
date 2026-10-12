@@ -940,6 +940,7 @@ const COLONNES_DOSSIER = [
   'notes_livraison',
   'livre_at',
   'termine_at',
+  'annule_at',
   'devis_id',
   'legacy_id',
   'legacy_folder_id',
@@ -1085,6 +1086,7 @@ async function importerDossiers(ctx: Ctx, resume: ResumeHisto) {
         horodatage(r.date_validation_preparateur) ?? (statut !== 'en_cours' ? (h?.get('pret_impression')?.premier ?? null) : null);
       const livreAt = ferme ? (preciserDate(horodatage(r.date_livraison_reelle), [histoLivre, updated]) ?? histoLivre ?? updated) : null;
       const termineAt = statut === 'termine' ? (h?.get('termine')?.dernier ?? updated) : null;
+      const annuleAt = statut === 'annule' ? (h?.get('annule')?.dernier ?? updated) : null;
 
       // Commentaires
       const revision = texteLong(r.commentaire_revision) ?? texteLong(r.revision_comment) ?? (statut === 'a_revoir' ? texteLong(r.commentaire) : null);
@@ -1140,6 +1142,7 @@ async function importerDossiers(ctx: Ctx, resume: ResumeHisto) {
         notes_livraison: notesLivraison,
         livre_at: livreAt,
         termine_at: termineAt,
+        annule_at: annuleAt,
         devis_id: ctx.devisParDossier.get(id) ?? null,
         legacy_id: id,
         legacy_folder_id: folder && estUuid(folder) ? folder : null,

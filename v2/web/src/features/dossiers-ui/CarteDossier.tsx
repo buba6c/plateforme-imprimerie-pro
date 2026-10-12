@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { formatDate, formatFCFA, resumeLigne, type LigneRoland, type LigneXerox, type Machine, resumeAncien } from '@evocom/shared';
+import { formatDate, formatFCFA, resumeLigne, STATUTS_FINIS, type LigneRoland, type LigneXerox, type Machine, resumeAncien } from '@evocom/shared';
 import type { DossierResume } from '../../lib/types';
 import { MachineChip, PaymentBadge, Ref, StatusBadge, UrgentTag } from '../../ui';
 import { DossierActions } from '../dossiers/DossierActions';
@@ -18,8 +18,6 @@ export function resumeSpecs(d: Pick<DossierResume, 'machine' | 'specs' | 'descri
   const first = resumeLigne(d.machine, l0, libelle(d.machine, l0.support));
   return lignes.length > 1 ? `${first} · +${lignes.length - 1} ligne${lignes.length > 2 ? 's' : ''}` : first;
 }
-
-const STATUTS_FINIS = ['livre', 'termine'];
 
 /** Date promise dépassée pour un dossier pas encore livré. */
 export function enRetard(d: Pick<DossierResume, 'date_promise' | 'statut'>): boolean {

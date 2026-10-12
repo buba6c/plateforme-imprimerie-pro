@@ -3,7 +3,7 @@
 import { formatDate, MACHINE_LABELS, type Statut } from '@evocom/shared';
 import type { DossierResume } from '../../lib/types';
 
-type D = Pick<DossierResume, 'machine' | 'nb_fichiers' | 'commentaire_revision' | 'livraison_prevue_at' | 'livreur_nom' | 'livre_at' | 'termine_at' | 'mode_remise'>;
+type D = Pick<DossierResume, 'machine' | 'nb_fichiers' | 'commentaire_revision' | 'livraison_prevue_at' | 'livreur_nom' | 'livre_at' | 'termine_at' | 'annule_at' | 'mode_remise'>;
 
 export const EN_CLAIR: Record<Statut, { etiquette: string; suite: (d: D) => string }> = {
   en_cours: { etiquette: 'À préparer', suite: (d) => (d.nb_fichiers ? 'Fichiers reçus : à valider pour l’impression' : 'En attente des fichiers du client') },
@@ -20,4 +20,5 @@ export const EN_CLAIR: Record<Statut, { etiquette: string; suite: (d: D) => stri
   },
   livre: { etiquette: 'Livré', suite: (d) => (d.livre_at ? `Remis au client le ${formatDate(d.livre_at)}` : 'Remis au client') },
   termine: { etiquette: 'Terminé', suite: () => 'Commande close' },
+  annule: { etiquette: 'Annulé', suite: (d) => (d.annule_at ? `Annulée le ${formatDate(d.annule_at)} : ne pas imprimer ni livrer` : 'Annulée : ne pas imprimer ni livrer') },
 };

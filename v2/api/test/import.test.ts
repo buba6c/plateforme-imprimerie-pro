@@ -191,8 +191,10 @@ describe("import de l'ancienne plateforme", () => {
     expect(statut[18]).toBe('pret_livraison'); // 'imprime'
     expect(statut[21]).toBe('livre'); // 'livre'
     expect(statut[27]).toBe('pret_livraison'); // 'pret livraison'
-    expect(statut[26]).toBe('en_cours'); // 'Annulé' : inconnu
-    expect(reel.rapport!.anomalies.some((a) => a.code === 'statut_inconnu' && a.legacy_id === '26')).toBe(true);
+    expect(statut[26]).toBe('annule'); // 'Annulé' : statut annulé de la v2, avec sa date
+    expect(reel.rapport!.anomalies.some((a) => a.code === 'statut_inconnu' && a.legacy_id === '26')).toBe(false);
+    const annule = await cible.query(`SELECT annule_at FROM dossiers WHERE legacy_id = '26'`);
+    expect(annule.rows[0]?.annule_at).toBeTruthy();
     const avant = reel.rapport!.statuts.correspondances.map((c) => c.avant);
     expect(avant).toEqual(expect.arrayContaining(['Livré', 'livre', 'Imprimé', 'imprime', 'nouveau', 'Terminé', 'termine']));
     const total = Object.values(reel.rapport!.statuts.apres).reduce((s, n) => s + n, 0);

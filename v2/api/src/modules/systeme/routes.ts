@@ -11,13 +11,14 @@ import { one } from '../../db/pool';
 import { me, requireAuth, requireRole } from '../../lib/auth';
 import { journal } from '../../lib/audit';
 import { badRequest, conflict, forbidden, HttpError, zodDetails } from '../../lib/errors';
-import { intParam, qBool } from '../../lib/http';
+import { intParam, qBool, qStr } from '../../lib/http';
 import { contentDisposition } from '../fichiers/routes';
 import { apercuImport, appliquerImport, exporterConfiguration, importSchema } from './configuration';
 import { avancerNumerotation, etatNumerotation, numerotationSchema } from './numerotation';
 import { etatReinitialisation, PHRASE, reinitialiser, VARIABLE, verifierTentatives } from './reinitialisation';
 import { fichierSauvegarde, lancerSauvegarde, listeSauvegardes } from './sauvegardes';
 import { etatStockage } from './stockage';
+import { apercuNettoyage, CIBLES, lireMois, nettoyer } from './nettoyage';
 
 export const systemeRouter = Router();
 systemeRouter.use(requireAuth, requireRole('admin'));
@@ -146,4 +147,24 @@ systemeRouter.get('/sauvegardes/:id/telecharger', async (req, res) => {
 
 systemeRouter.get('/stockage', async (req, res) => {
   res.json(await etatStockage(config().storageDir, qBool(req, 'rafraichir') === true));
+});
+
+// ---------------------------------------------------------------------------
+// Libérer de l'espace : vider la corbeille, effacer les fichiers des commandes finies depuis longtemps
+
+systemeRouter.get('/nettoyage', async (req, res) => {
+  res.json(await apercuNettoyage(lireMois(qStr(req, 'mois') ?? undefined)));
+});
+
+const nettoyageSchema = z.object({
+  cible: z.enum(CIBLES, { errorMap: () => ({ message: 'Choisissez « corbeille » ou « anciens ».' }) }),
+  mois: z.number().int().optional(),
+  mot_de_passe: z.string({ required_error: 'Saisissez votre mot de passe', invalid_type_error: 'Mot de passe : texte attendu' }).max(200).default(''),
+});
+
+systemeRouter.post('/nettoyage', async (req, res) => {
+  const parsed = nettoyageSchema.safeParse(req.body ?? {});
+  if (!parsed.success) throw badRequest('Demande de nettoyage invalide.', { champs: zodDetails(parsed.error) });
+  const { cible, mois, mot_de_passe } = parsed.data;
+  res.json(await nettoyer(req, me(req), cible, lireMois(mois), mot_de_passe, path.resolve(config().storageDir)));
 });
