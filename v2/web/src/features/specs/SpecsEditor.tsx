@@ -310,8 +310,25 @@ function titreLigne(machine: Machine, l: LigneRolandDraft | LigneXeroxDraft, i: 
 
 function optionsSupport(supports: Tarif[], code: string) {
   const opts = supports.map((t) => ({ value: t.code, label: avecPrix(t.libelle, prixTexte(t)) }));
-  if (code && !supports.some((t) => t.code === code)) opts.unshift({ value: code, label: `${code} (retiré de la grille)` });
+  if (code && code !== 'autre' && !supports.some((t) => t.code === code)) opts.unshift({ value: code, label: `${code} (retiré de la grille)` });
+  opts.push({ value: 'autre', label: 'Autre support (à préciser, prix à saisir)' });
   return opts;
+}
+
+/** Libellé libre du support « autre » (hors grille). */
+function ChampSupportAutre({ valeur, onChange, erreur }: { valeur: string; onChange: (v: string) => void; erreur: string | null }) {
+  return (
+    <ChampTexte
+      className="sp-col-support"
+      label="Précisez le support ou le travail"
+      required
+      value={valeur}
+      onChange={onChange}
+      placeholder="Ex. Plaque PVC 5 mm, Drapeau, Tampon…"
+      erreur={erreur}
+      aide="Hors grille : le prix du dossier est à saisir à la main en bas de page."
+    />
+  );
 }
 
 type Trouver = (code: string) => Tarif | undefined;
@@ -319,6 +336,13 @@ type Trouver = (code: string) => Tarif | undefined;
 /** Rappel du tarif appliqué, avec un avertissement s'il manque ou n'a pas de prix. */
 function TarifApplique({ code, tarif, prefixe = 'Tarif', siProbleme }: { code: string; tarif: Trouver; prefixe?: string; siProbleme?: boolean }) {
   if (!code) return null;
+  if (code === 'autre') {
+    return (
+      <p className="sp-tarif" data-alerte="true">
+        {prefixe} : support hors grille, prix du dossier à saisir à la main.
+      </p>
+    );
+  }
   const t = tarif(code);
   const probleme = !t || t.prix === null || t.actif === false;
   if (siProbleme && !probleme) return null;
@@ -365,6 +389,7 @@ function LigneRoland({ l, i, supports, tarif, maj, err, params }: {
           placeholder="Choisir un support"
           erreur={err('support')}
         />
+        {l.support === 'autre' && <ChampSupportAutre valeur={l.support_autre} onChange={(support_autre) => maj({ support_autre })} erreur={err('support_autre')} />}
         <ChampTexte label="Largeur" required value={l.largeur} onChange={(largeur) => maj({ largeur })} inputMode="decimal" mono erreur={err('largeur')} />
         <ChampTexte label="Hauteur" required value={l.hauteur} onChange={(hauteur) => maj({ hauteur })} inputMode="decimal" mono erreur={err('hauteur')} />
         <ChampSelect
@@ -432,8 +457,8 @@ function LigneXerox({ l, supports, finitions, tarif, maj, err }: {
   const exemplaires = lireEntier(l.quantite);
   const ok = pages > 0 && exemplaires > 0;
   // Ligne enregistrée avant les formats (support choisi directement) : on garde la liste des tarifs.
-  const parGrille = !l.format && !!l.support;
-  const formatValeur = l.format || (parGrille ? '__grille' : '');
+  const parGrille = !l.format && !!l.support && l.support !== 'autre';
+  const formatValeur = l.format || (l.support === 'autre' ? '__autre' : parGrille ? '__grille' : '');
 
   const changerType = (type: TypeDocument | '') => {
     if (!type) return maj({ type_document: '' });
@@ -447,6 +472,7 @@ function LigneXerox({ l, supports, finitions, tarif, maj, err }: {
     maj(patch);
   };
   const changerFormat = (v: string) => {
+    if (v === '__autre') return maj({ format: '', couleur: '', support: 'autre' });
     if (v === '__grille') return maj({ format: '', support: l.support || supports[0]?.code || '' });
     const format = v as FormatXerox | '';
     if (!format) return maj({ format: '' });
@@ -490,6 +516,7 @@ function LigneXerox({ l, supports, finitions, tarif, maj, err }: {
           options={[
             ...FORMATS_XEROX.map((f) => ({ value: f, label: FORMAT_XEROX_LABELS[f] })),
             { value: '__grille', label: 'Autre tarif de la grille' },
+            { value: '__autre', label: 'Autre support (à préciser, prix à saisir)' },
           ]}
           placeholder="Choisir un format"
           erreur={!l.format ? err('support') : null}
@@ -523,6 +550,7 @@ function LigneXerox({ l, supports, finitions, tarif, maj, err }: {
             erreur={err('support')}
           />
         )}
+        {l.support === 'autre' && <ChampSupportAutre valeur={l.support_autre} onChange={(support_autre) => maj({ support_autre })} erreur={err('support_autre')} />}
       </div>
       {l.format && l.format !== 'perso' && (
         <TarifApplique code={l.support} tarif={tarif} prefixe={dims ? `${FORMAT_XEROX_LABELS[l.format]} (${dims[0]} × ${dims[1]} mm)` : 'Tarif'} />

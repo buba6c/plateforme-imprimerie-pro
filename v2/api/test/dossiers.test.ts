@@ -66,43 +66,52 @@ describe('dossiers et circuit', () => {
   let rolandId: number;
   let xeroxId: number;
 
-  it('le préparateur crée un dossier Roland : le prix est calculé (45 000) mais il ne le voit pas', async () => {
+  it('le préparateur crée un dossier Roland : le prix est calculé (45 000) et il le voit, sans les paiements', async () => {
     const prep = await agent(comptes.prep);
-    const admin = await agent(comptes.admin);
     const r = await prep.post('/api/dossiers').send(bache);
     expect(r.status).toBe(201);
     expect(r.body.numero).toMatch(/^CMD-\d{4}-\d{4}$/);
     expect(r.body.statut).toBe('en_cours');
     expect(r.body.actions).toEqual(['valider']);
-    // Le préparateur ne voit ni prix ni paiements ; l'administrateur voit le montant calculé.
-    for (const k of ['montant', 'montant_source', 'detail_prix', 'solde', 'deja_paye', 'situation_paiement']) expect(r.body).not.toHaveProperty(k);
+    // Le préparateur voit le prix du dossier (il le calcule ou le saisit lui-même), jamais les paiements.
+    expect(r.body.montant).toBe(45000);
+    expect(r.body.montant_source).toBe('calcul');
+    expect(r.body.detail_prix.ok).toBe(true);
+    for (const k of ['solde', 'deja_paye', 'en_attente_validation', 'situation_paiement']) expect(r.body).not.toHaveProperty(k);
     rolandId = r.body.id;
-    const vu = await admin.get(`/api/dossiers/${rolandId}`);
-    expect(vu.body.montant).toBe(45000);
-    expect(vu.body.montant_source).toBe('calcul');
     const x = await prep.post('/api/dossiers').send(flyers);
     expect(x.status).toBe(201);
+    expect(x.body.montant).toBe(50000);
     xeroxId = x.body.id;
-    expect((await admin.get(`/api/dossiers/${xeroxId}`)).body.montant).toBe(50000);
   });
 
-  it('prix incalculable : le préparateur crée quand même (montant à définir), l’administrateur doit saisir le montant', async () => {
+  it('prix incalculable : refusé tant que le montant n’est pas saisi à la main, par le préparateur comme par l’administrateur', async () => {
     const prep = await agent(comptes.prep);
     const admin = await agent(comptes.admin);
     const spec = { ...bache, specs: { lignes: [{ ...bache.specs.lignes[0], support: 'mesh_m2' }], forfaits: [] } };
-    // Le préparateur n'a pas la main sur le prix : un montant envoyé est ignoré, le dossier reste « à définir ».
-    const r = await prep.post('/api/dossiers').send({ ...spec, montant: 30000 });
-    expect(r.status).toBe(201);
-    const vu = await admin.get(`/api/dossiers/${r.body.id}`);
-    expect(vu.body.montant).toBeNull();
-    expect(vu.body.montant_source).toBeNull();
-    // L'administrateur, lui, est bloqué tant qu'il ne saisit pas le montant.
-    const ko = await admin.post('/api/dossiers').send(spec);
-    expect(ko.status).toBe(422);
-    expect(ko.body.details.erreurs[0]).toContain('Bâche mesh');
-    const ok = await admin.post('/api/dossiers').send({ ...spec, montant: 30000 });
+    for (const a of [prep, admin]) {
+      const ko = await a.post('/api/dossiers').send(spec);
+      expect(ko.status).toBe(422);
+      expect(ko.body.details.erreurs[0]).toContain('Bâche mesh');
+    }
+    // Le préparateur saisit le prix convenu avec le client.
+    const ok = await prep.post('/api/dossiers').send({ ...spec, montant: 30000 });
     expect(ok.status).toBe(201);
-    expect(ok.body.montant_source).toBe('saisi');
+    expect(ok.body).toMatchObject({ montant: 30000, montant_source: 'saisi' });
+    expect((await admin.get(`/api/dossiers/${ok.body.id}`)).body).toMatchObject({ montant: 30000, montant_source: 'saisi' });
+  });
+
+  it('support « autre » (hors grille) : libellé libre, prix saisi à la main', async () => {
+    const prep = await agent(comptes.prep);
+    const ligne = { support: 'autre', support_autre: 'Plaque PVC 5 mm', largeur: 100, hauteur: 50, unite: 'cm', quantite: 2, finitions: [], options: [] };
+    const ko = await prep.post('/api/dossiers').send({ ...bache, client_nom: 'Garage Autre', specs: { lignes: [ligne], forfaits: [] } });
+    expect(ko.status).toBe(422);
+    expect(ko.body.details.erreurs[0]).toContain('« Plaque PVC 5 mm » hors grille');
+    const ok = await prep.post('/api/dossiers').send({ ...bache, client_nom: 'Garage Autre', specs: { lignes: [ligne], forfaits: [] }, montant: 18000 });
+    expect(ok.status).toBe(201);
+    expect(ok.body).toMatchObject({ montant: 18000, montant_source: 'saisi' });
+    expect(ok.body.specs.lignes[0]).toMatchObject({ support: 'autre', support_autre: 'Plaque PVC 5 mm' });
+    expect(ok.body.resume_specs).toContain('Plaque PVC 5 mm · 100 × 50 cm · 2 ex.');
   });
 
   it('les imprimeurs ne voient pas les dossiers non validés', async () => {
@@ -218,10 +227,9 @@ describe('dossiers et circuit', () => {
   it('modifie un dossier en préparation, trace le changement et recalcule le prix', async () => {
     const prep = await agent(comptes.prep);
     const specs = { ...flyers.specs, lignes: [{ ...flyers.specs.lignes[0], quantite: 1000 }] };
-    // Le « montant: 1 » envoyé par le préparateur est ignoré : seul le recalcul compte.
-    const r = await prep.patch(`/api/dossiers/${xeroxId}`).send({ specs, urgent: true, montant: 1 });
+    const r = await prep.patch(`/api/dossiers/${xeroxId}`).send({ specs, urgent: true });
     expect(r.status).toBe(200);
-    expect(r.body).not.toHaveProperty('montant');
+    expect(r.body.montant).toBe(100000);
     expect(r.body.urgent).toBe(true);
     const admin = await agent(comptes.admin);
     const vu = (await admin.get(`/api/dossiers/${xeroxId}`)).body;

@@ -320,14 +320,13 @@ describe('assistant IA : propositions', () => {
     expect(u.extrait.length).toBeLessThanOrEqual(120);
     expect(description.length).toBeGreaterThan(200);
 
-    // Le préparateur reçoit la même proposition, mais jamais le prix.
+    // Le préparateur reçoit la même proposition, avec le prix calculé par la grille (il remplit le dossier).
     const p = await A.prep.post('/api/ia/suggestion').send({ description });
     expect(p.status).toBe(200);
     expect(p.body.specs.lignes).toHaveLength(1);
     expect(p.body.specs.lignes[0].support).toBe('bache_m2');
-    expect(p.body.prix).toBeNull();
+    expect(p.body.prix.total).toBe(71_000);
     expect(p.body).not.toHaveProperty('erreur_prix');
-    expect(JSON.stringify(p.body)).not.toMatch(/71\s?000/);
   });
 
   it('respecte la machine imposée et renvoie une erreur de prix lisible quand aucune ligne ne reste', async () => {

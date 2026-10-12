@@ -74,7 +74,7 @@ export default function ListeDossiers() {
   const mobile = useMediaQuery('(max-width: 767px)');
   const imprimeur = user.role === 'imprimeur_roland' || user.role === 'imprimeur_xerox';
   const bureau = user.role === 'admin' || user.role === 'preparateur';
-  const montrerMontant = user.role === 'admin' || user.role === 'livreur';
+  const montrerMontant = user.role === 'admin' || user.role === 'livreur' || user.role === 'preparateur';
 
   const onglets = useMemo(() => ongletsPour(user.role), [user.role]);
   const q = sp.get('q') ?? '';

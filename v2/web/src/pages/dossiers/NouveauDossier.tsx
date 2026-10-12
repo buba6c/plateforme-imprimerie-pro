@@ -135,7 +135,7 @@ export default function NouveauDossier() {
   const { params, parDefaut } = useParamsPrix();
   const libelle = useLibelles(tarifs.data);
 
-  const voitPrix = user.role === 'admin';
+  const voitPrix = user.role === 'admin' || user.role === 'preparateur';
   const [f, setF] = useState<Formulaire>(formulaireVide);
   // Arrivée depuis la page Modèles (?modele=ID) : le modèle est appliqué dès qu'il est chargé.
   const [sp] = useSearchParams();

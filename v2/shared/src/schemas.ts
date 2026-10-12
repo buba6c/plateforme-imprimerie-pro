@@ -59,8 +59,13 @@ export const oeilletsSchema = z.object({
 });
 export type Oeillets = z.infer<typeof oeilletsSchema>;
 
+/** Code de support « hors grille » : le libellé est dans `support_autre` et le prix du dossier est saisi à la main. */
+export const SUPPORT_AUTRE = 'autre';
+
 export const ligneRolandSchema = z.object({
   support: z.string().trim().min(1, 'Choisissez un support').max(64),
+  /** Libellé libre quand support = « autre » (support ou travail hors grille). */
+  support_autre: texteOpt(120),
   largeur: z.number({ invalid_type_error: 'Largeur invalide' }).positive('Largeur invalide').max(100_000),
   hauteur: z.number({ invalid_type_error: 'Hauteur invalide' }).positive('Hauteur invalide').max(100_000),
   unite: z.enum(UNITES_DIMENSION).default('cm'),
@@ -76,6 +81,8 @@ export type LigneRoland = z.infer<typeof ligneRolandSchema>;
 
 export const ligneXeroxSchema = z.object({
   support: z.string().trim().min(1, 'Choisissez un format').max(64),
+  /** Libellé libre quand support = « autre » (support ou travail hors grille). */
+  support_autre: texteOpt(120),
   pages: z.number().int().positive('Nombre de pages invalide').max(10_000),
   recto_verso: z.boolean().default(false),
   quantite: z.number().int().positive('Nombre d\'exemplaires invalide').max(1_000_000),

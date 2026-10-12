@@ -32,6 +32,8 @@ export interface ChoixDraft {
 export interface LigneRolandDraft {
   key: string;
   support: string;
+  /** Libellé libre quand support = « autre ». */
+  support_autre: string;
   largeur: string;
   hauteur: string;
   unite: UniteDimension;
@@ -48,6 +50,8 @@ export interface LigneRolandDraft {
 export interface LigneXeroxDraft {
   key: string;
   support: string;
+  /** Libellé libre quand support = « autre ». */
+  support_autre: string;
   pages: string;
   recto_verso: boolean;
   quantite: string;
@@ -97,6 +101,7 @@ export function ligneRolandVide(): LigneRolandDraft {
   return {
     key: nouvelleCle(),
     support: '',
+    support_autre: '',
     largeur: '',
     hauteur: '',
     unite: 'cm',
@@ -114,6 +119,7 @@ export function ligneXeroxVide(): LigneXeroxDraft {
   return {
     key: nouvelleCle(),
     support: '',
+    support_autre: '',
     pages: '1',
     recto_verso: false,
     quantite: '',
@@ -165,6 +171,7 @@ export function specsVersDraft(machine: Machine, specs: Partial<Specs> | null | 
     d.roland = (lignes as LigneRoland[]).map((l) => ({
       key: nouvelleCle(),
       support: l.support ?? '',
+      support_autre: l.support_autre ?? '',
       largeur: txt(l.largeur),
       hauteur: txt(l.hauteur),
       unite: l.unite ?? 'cm',
@@ -180,6 +187,7 @@ export function specsVersDraft(machine: Machine, specs: Partial<Specs> | null | 
     d.xerox = (lignes as LigneXerox[]).map((l) => ({
       key: nouvelleCle(),
       support: l.support ?? '',
+      support_autre: l.support_autre ?? '',
       pages: txt(l.pages),
       recto_verso: !!l.recto_verso,
       quantite: txt(l.quantite),
@@ -232,6 +240,7 @@ function ligneVersApi(machine: Machine, l: LigneRolandDraft | LigneXeroxDraft) {
     const r = l as LigneRolandDraft;
     const out: Record<string, unknown> = {
       support: r.support,
+      ...(r.support === 'autre' ? { support_autre: r.support_autre.trim() || null } : {}),
       largeur: lireDecimal(r.largeur),
       hauteur: lireDecimal(r.hauteur),
       unite: r.unite,
@@ -249,6 +258,7 @@ function ligneVersApi(machine: Machine, l: LigneRolandDraft | LigneXeroxDraft) {
   const x = l as LigneXeroxDraft;
   const out: Record<string, unknown> = {
     support: x.support,
+    ...(x.support === 'autre' ? { support_autre: x.support_autre.trim() || null } : {}),
     pages: lireEntier(x.pages),
     recto_verso: x.recto_verso,
     quantite: lireEntier(x.quantite),

@@ -132,7 +132,6 @@ describe('paramètres', () => {
 
   it("enregistre, journalise et s'applique au calcul des prix (arrondi_pas 0)", async () => {
     const spec = { machine: 'roland', specs: { lignes: [{ support: 'bache_m2', largeur: 110, hauteur: 130, unite: 'cm', quantite: 1 }] } };
-    expect((await A.prep.post('/api/tarifs/estimer').send(spec)).status).toBe(403);
     const avant = await A.admin.post('/api/tarifs/estimer').send(spec);
     expect(avant.body.total_ttc).toBe(10100); // 1,43 m² x 7 000 = 10 010, arrondi à 100
 
@@ -234,8 +233,7 @@ describe('paiements', () => {
   it('le livreur encaisse « à valider », le préparateur jamais ; refus du dépassement, validation et solde', async () => {
     const d = await A.prep.post('/api/dossiers').send(bache);
     dossierId = d.body.id;
-    expect(d.body).not.toHaveProperty('montant');
-    expect((await A.admin.get(`/api/dossiers/${dossierId}`)).body.montant).toBe(45000);
+    expect(d.body.montant).toBe(45000);
 
     // Seuls l'administrateur et le livreur enregistrent un paiement.
     expect((await A.prep.post(`/api/dossiers/${dossierId}/paiements`).send({ montant: 20000, mode: 'especes' })).status).toBe(403);
@@ -272,10 +270,11 @@ describe('paiements', () => {
     expect(fiche.body.situation_paiement).toBe('partiel');
     expect(fiche.body.historique.map((e: any) => e.action)).toEqual(expect.arrayContaining(['encaisse', 'valide']));
 
-    // Le préparateur ouvre son dossier, mais sans montant, sans paiements et sans l'historique d'argent.
+    // Le préparateur ouvre son dossier : le prix, mais ni paiements, ni solde, ni l'historique d'argent.
     const prep = await A.prep.get(`/api/dossiers/${dossierId}`);
     expect(prep.status).toBe(200);
-    for (const k of ['montant', 'deja_paye', 'solde', 'situation_paiement', 'detail_prix']) expect(prep.body).not.toHaveProperty(k);
+    expect(prep.body.montant).toBe(45000);
+    for (const k of ['deja_paye', 'solde', 'en_attente_validation', 'situation_paiement']) expect(prep.body).not.toHaveProperty(k);
     expect(prep.body.paiements).toEqual([]);
     expect(prep.body.historique.map((e: any) => e.type)).not.toContain('paiement');
 

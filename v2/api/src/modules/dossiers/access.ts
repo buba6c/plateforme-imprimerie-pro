@@ -38,9 +38,14 @@ export function visibilite(user: AuthUser, offset = 0, joursLivreur = 7): Clause
   }
 }
 
-/** Prix et paiements : l'administrateur, et le livreur pour ce qu'il doit encaisser. Jamais les préparateurs. */
+/** Paiements, soldes et situation : l'administrateur, et le livreur pour ce qu'il doit encaisser. Jamais les préparateurs. */
 export function peutVoirMontants(user: AuthUser): boolean {
   return user.role === 'admin' || user.role === 'livreur';
+}
+
+/** Prix du dossier (montant, source, détail) : aussi le préparateur, qui le calcule ou le saisit lui-même. */
+export function peutVoirPrix(user: AuthUser): boolean {
+  return user.role === 'admin' || user.role === 'preparateur' || user.role === 'livreur';
 }
 
 /** Qui enregistre ou gère l'argent (encaissements, validation, factures, devis) : l'administrateur seul. */

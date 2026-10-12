@@ -20,7 +20,7 @@ tarifsRouter.get('/libelles', async (_req, res) => {
   res.json(await query(`SELECT id, machine, categorie, code, libelle, unite, actif, ordre, description FROM tarifs ORDER BY machine, categorie, ordre, libelle`));
 });
 
-tarifsRouter.get('/', requireRole('admin'), async (_req, res) => {
+tarifsRouter.get('/', requireRole('admin', 'preparateur'), async (_req, res) => {
   res.json(await query(`SELECT * FROM tarifs ORDER BY machine, categorie, ordre, libelle`));
 });
 
@@ -86,7 +86,7 @@ tarifsRouter.patch('/:id', requireRole('admin'), async (req, res) => {
 });
 
 /** Estimation de prix à partir des spécifications, sans rien enregistrer. */
-tarifsRouter.post('/estimer', requireRole('admin'), async (req, res) => {
+tarifsRouter.post('/estimer', requireRole('admin', 'preparateur'), async (req, res) => {
   const body = z.object({ machine: z.enum(MACHINES), specs: z.unknown() }).parse(req.body);
   const specs = specsSchemaFor(body.machine).parse(body.specs) as Specs;
   const [tarifs, params] = await Promise.all([getTarifs(), getParametres()]);

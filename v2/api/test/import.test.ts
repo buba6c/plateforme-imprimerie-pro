@@ -426,7 +426,8 @@ describe("import de l'ancienne plateforme", () => {
     const miens = (await cible.query(`SELECT count(*)::int AS n FROM dossiers d JOIN users u ON u.id = d.preparateur_id WHERE u.email = 'preparateur@evocom.test' AND d.deleted_at IS NULL`)).rows[0].n;
     expect(miens).toBeGreaterThan(0);
     expect(liste.body.total).toBe(miens);
-    expect(liste.body.items.every((d: any) => d.montant === undefined)).toBe(true);
+    expect(liste.body.items.every((d: any) => d.deja_paye === undefined && d.solde === undefined)).toBe(true);
+    expect(liste.body.items.some((d: any) => typeof d.montant === 'number')).toBe(true);
 
     const admin = supertest.agent(app);
     expect((await admin.post('/api/auth/login').send({ email: 'admin@evocom.test', password: 'Test1234!' })).status).toBe(200);

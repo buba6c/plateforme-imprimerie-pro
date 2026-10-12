@@ -7,12 +7,14 @@ Montants : entiers en FCFA. Dates : ISO 8601 (`date` = `AAAA-MM-JJ`).
 ## Rôles : qui voit quoi (règle du 12 octobre 2026)
 
 - **Préparateur** : ne voit que **ses propres dossiers et fichiers** (filtre SQL sur `preparateur_id`, 404 ailleurs) ;
-  **jamais de montant** (`montant`, `montant_source`, `detail_prix`, `solde`, `deja_paye`, `en_attente_validation`,
-  `situation_paiement` absents, `paiements` vide, événements `paiement` retirés de l'historique) ; **n'encaisse pas**
-  (403, y compris `encaissement` joint à `remettre_client`) ; **ne fixe pas le prix** (`montant` ignoré à la création
-  et à la modification ; un prix incalculable laisse le dossier « montant à définir » sans erreur) ; **pas d'accès**
-  aux devis, aux factures, aux fiches clients (hors `/clients/recherche`), à `/tarifs` ni à `/tarifs/estimer`
-  (la grille sans prix vient de `/tarifs/libelles`). Les modèles de dossier restent partagés entre préparateurs.
+  **il fixe et voit le prix du dossier** (`montant`, `montant_source`, `detail_prix` ; grille avec prix via `/tarifs` et
+  `/tarifs/estimer` ; prix incalculable = 422 tant que le montant n'est pas saisi, comme pour l'administrateur) ;
+  **jamais les paiements** (`solde`, `deja_paye`, `en_attente_validation`, `situation_paiement` absents, `paiements`
+  vide, événements `paiement` retirés de l'historique) ; **n'encaisse pas** (403, y compris `encaissement` joint à
+  `remettre_client`) ; **pas d'accès** aux devis, aux factures, aux fiches clients (hors `/clients/recherche`), à la
+  caisse ni à la modification des tarifs. Les modèles de dossier restent partagés entre préparateurs.
+- **Support « autre »** : une ligne peut porter `support: "autre"` et `support_autre` (libellé libre, 120 caractères) ;
+  le moteur ne calcule pas (erreur « hors grille : saisissez le prix du dossier à la main ») et le montant est saisi.
 - **Administrateur** : voit tout et gère seul l'argent (encaissements validés d'office, validation des paiements,
   devis, factures, prix).
 - **Livreur** : inchangé (encaisse « à valider » à la livraison, voit le reste à payer de ses tournées).
@@ -47,10 +49,10 @@ Montants : entiers en FCFA. Dates : ISO 8601 (`date` = `AAAA-MM-JJ`).
 | GET | /fichiers/:id/contenu[?telecharger=1] | tous sauf livreur, si le dossier est visible | flux, Range accepté |
 | PATCH | /fichiers/:id `{a_reimprimer}` | admin, imprimeur de la machine, préparateur propriétaire | 204 |
 | DELETE | /fichiers/:id | comme l'envoi | 204 |
-| GET | /tarifs | admin | toutes les lignes, avec les prix |
+| GET | /tarifs | admin, preparateur | toutes les lignes, avec les prix |
 | GET | /tarifs/libelles | tous | `[{id,machine,categorie,code,libelle,unite,actif,ordre,description}]` : la grille sans les prix (c'est celle des préparateurs et des imprimeurs) |
 | POST / PATCH | /tarifs[/:id] | admin | |
-| POST | /tarifs/estimer `{machine,specs}` | admin | `ResultatPrix` ou `{ok:false,erreurs}` |
+| POST | /tarifs/estimer `{machine,specs}` | admin, preparateur | `ResultatPrix` ou `{ok:false,erreurs}` |
 
 Socket.IO (`/socket.io`, cookie) : événements `dossier {type,id,numero,statut,machine}`, `paiement {dossier_id}`,
 `notification {id,type,titre,message,dossier_id,created_at}`.
@@ -122,7 +124,7 @@ Le prix est toujours recalculé par le moteur (`calculerPrix`) et la grille, jam
 | GET | /ia/config | admin | `{actif, modele, modeles[], cle_configuree, cle_fin, cle_lisible, updated_at, updated_by_nom}` ; la clé n'est jamais renvoyée |
 | PUT | /ia/config `{actif?, modele?: gpt-4o-mini\|gpt-4o\|gpt-4.1-mini, cle?: string\|null}` | admin | configuration ; `cle: null` efface la clé et désactive ; 409 si activation sans clé ; clé `sk-…` (20 à 300 caractères), chiffrée AES-256-GCM ; journalisé `ia_config_modifiee` sans la clé |
 | POST | /ia/test `{cle?, modele?}` | admin | `{ok, modele, duree_ms}` ; teste la clé fournie ou l'enregistrée ; 409 si absente ou illisible |
-| POST | /ia/suggestion `{description (1 à 2000), machine?: roland\|xerox}` | admin, preparateur | `{machine, specs, prix: {total, …ResultatPrix}\|null, erreur_prix?, avertissements[], remarques?}` (`prix` toujours `null` et `erreur_prix` absent pour le préparateur) ; codes de tarif inconnus ou sans prix retirés avec un avertissement |
+| POST | /ia/suggestion `{description (1 à 2000), machine?: roland\|xerox}` | admin, preparateur | `{machine, specs, prix: {total, …ResultatPrix}\|null, erreur_prix?, avertissements[], remarques?}` ; codes de tarif inconnus ou sans prix retirés avec un avertissement |
 | GET | /ia/config | admin | `{actif, fournisseur: openai\|gemini, secours, secours_possible, fournisseurs:{openai:{modele,modeles,cle_configuree,cle_fin,cle_lisible}, gemini:{…}}, …champs du fournisseur actif à plat, updated_at, updated_by_nom}` — jamais les clés |
 | PUT | /ia/config `{actif?, fournisseur?, secours?, openai?:{cle?\|null, modele?}, gemini?:{cle?\|null, modele?}}` (forme courte `{cle, modele}` = OpenAI) | admin | 409 si le fournisseur choisi n'a pas de clé ; effacer la clé du fournisseur actif désactive l'assistant ; journal `ia_config_modifiee` |
 | POST | /ia/test `{fournisseur?, cle?, modele?}` | admin | appel minimal au fournisseur (par défaut le fournisseur actif) ; `{ok, fournisseur, modele, duree_ms}` |

@@ -127,17 +127,12 @@ describe('cloisonnement des livreurs', () => {
 });
 
 describe('prix', () => {
-  it('« revenir au prix calculé » avec les spécifications fonctionne (administrateur) ; le préparateur ne touche pas au prix', async () => {
+  it('« revenir au prix calculé » avec les spécifications fonctionne, pour le préparateur comme pour l’administrateur', async () => {
     const o = await dossier({ montant: 99999 });
-    // Le montant envoyé par le préparateur à la création a été ignoré : prix calculé.
-    expect(o.montant).not.toBe(99999);
-    await A.admin.patch(`/api/dossiers/${o.id}`).send({ montant: 99999 }).expect(200);
-    // Un « montant: null » du préparateur est ignoré aussi : le prix saisi reste.
-    const p = await A.prep.patch(`/api/dossiers/${o.id}`).send({ montant: null, specs });
-    expect(p.status, JSON.stringify(p.body)).toBe(200);
-    expect(p.body).not.toHaveProperty('montant');
+    // Le préparateur saisit le prix convenu à la création.
+    expect(o.montant).toBe(99999);
     expect((await A.admin.get(`/api/dossiers/${o.id}`)).body).toMatchObject({ montant: 99999, montant_source: 'saisi' });
-    const r = await A.admin.patch(`/api/dossiers/${o.id}`).send({ montant: null, specs });
+    const r = await A.prep.patch(`/api/dossiers/${o.id}`).send({ montant: null, specs });
     expect(r.status, JSON.stringify(r.body)).toBe(200);
     expect(r.body.montant).not.toBe(99999);
     expect(r.body.montant_source).toBe('calcul');
@@ -149,8 +144,7 @@ describe('prix', () => {
     const s2 = { ...specs, lignes: [{ ...specs.lignes[0], description: 'Papier 170 g' }] };
     const r = await A.prep.patch(`/api/dossiers/${o.id}`).send({ specs: s2 });
     expect(r.status).toBe(200);
-    expect(r.body).not.toHaveProperty('montant');
-    expect((await A.admin.get(`/api/dossiers/${o.id}`)).body.montant).toBe(12345);
+    expect(r.body.montant).toBe(12345);
   });
 
   it('le montant d’un dossier facturé est figé', async () => {

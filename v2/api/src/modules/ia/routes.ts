@@ -384,9 +384,9 @@ iaRouter.post('/suggestion', requireRole('admin', 'preparateur'), async (req, re
   res.json({
     machine: s.machine,
     specs: s.specs,
-    // Le prix n'est montré qu'à l'administrateur ; le préparateur reçoit seulement les spécifications.
-    prix: calcul.ok && me(req).role === 'admin' ? { total: calcul.total_ttc, ...calcul } : null,
-    ...(calcul.ok || me(req).role !== 'admin' ? {} : { erreur_prix: calcul.erreurs.join(' ') }),
+    // Prix calculé avec la grille (le préparateur, qui remplit le dossier, le voit aussi).
+    prix: calcul.ok ? { total: calcul.total_ttc, ...calcul } : null,
+    ...(calcul.ok ? {} : { erreur_prix: calcul.erreurs.join(' ') }),
     avertissements: s.avertissements,
     ...(s.remarques ? { remarques: s.remarques } : {}),
     fournisseur: resultat.fournisseur,

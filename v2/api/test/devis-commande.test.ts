@@ -88,10 +88,11 @@ describe('migration 008 et grille de départ', () => {
     expect(doublons.rowCount).toBe(0);
   });
 
-  it('100 cartes de visite valent 100 fois le prix unitaire (A3) ; l’estimation est réservée à l’administrateur', async () => {
-    expect((await A.prep.post('/api/tarifs/estimer').send({ machine: 'xerox', specs: { lignes: [], forfaits: [] } })).status).toBe(403);
-    expect((await A.prep.get('/api/tarifs')).status).toBe(403);
-    // La grille sans prix reste disponible pour remplir un dossier.
+  it('100 cartes de visite valent 100 fois le prix unitaire (A3) ; grille et estimation ouvertes au préparateur', async () => {
+    expect((await A.prep.post('/api/tarifs/estimer').send({ machine: 'xerox', specs: { lignes: [], forfaits: [] } })).status).toBe(200);
+    expect((await A.prep.get('/api/tarifs')).status).toBe(200);
+    expect((await A.livreur.get('/api/tarifs')).status).toBe(403);
+    // La grille sans prix reste disponible à tous les rôles pour lire un dossier.
     const lib = await A.prep.get('/api/tarifs/libelles');
     expect(lib.status).toBe(200);
     expect(lib.body.length).toBeGreaterThan(10);

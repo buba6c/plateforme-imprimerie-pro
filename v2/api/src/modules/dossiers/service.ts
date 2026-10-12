@@ -34,7 +34,7 @@ import { getTarifs } from '../../lib/tarifs';
 import { notifier, signalDossier, signalPaiement } from '../../realtime';
 import { notifierAffectation, notifierReport, notifierStatutForce, notifierTransitionDossier, notifierUrgence } from '../notifications/regles';
 import type { AuthUser } from '../../types';
-import { peutVoirContactClient, peutVoirFichiers, peutVoirMontants, visibilite } from './access';
+import { peutVoirContactClient, peutVoirFichiers, peutVoirMontants, peutVoirPrix, visibilite } from './access';
 
 // ---------------------------------------------------------------------------
 // Lecture
@@ -85,6 +85,7 @@ export function resumeSpecs(machine: Machine, specs: any, description: string | 
 /** Mise en forme pour l'API : retire ce que le rôle ne doit pas voir. */
 export function presenter(row: DossierRow, user: AuthUser, libelles: Libelles = new Map()) {
   const montants = peutVoirMontants(user);
+  const prix = peutVoirPrix(user);
   const contact = peutVoirContactClient(user);
   const out: Record<string, unknown> = {
     id: row.id,
@@ -130,16 +131,17 @@ export function presenter(row: DossierRow, user: AuthUser, libelles: Libelles = 
     out.adresse_livraison = row.adresse_livraison;
     out.notes_livraison = row.notes_livraison;
   }
-  if (montants) {
-    const solde = row.montant === null ? null : Math.max(0, row.montant - row.deja_paye);
+  if (prix) {
     out.montant = row.montant;
     out.montant_source = row.montant_source;
     out.mode_paiement_prevu = row.mode_paiement_prevu;
+    if (user.role !== 'livreur') out.detail_prix = row.detail_prix;
+  }
+  if (montants) {
     out.deja_paye = row.deja_paye;
     out.en_attente_validation = row.en_attente_validation;
-    out.solde = solde;
+    out.solde = row.montant === null ? null : Math.max(0, row.montant - row.deja_paye);
     out.situation_paiement = situationPaiement(row.montant, row.deja_paye);
-    if (user.role !== 'livreur') out.detail_prix = row.detail_prix;
   }
   return out;
 }
@@ -356,12 +358,12 @@ export async function evenement(
 export async function creerDossier(user: AuthUser, body: unknown, opts: { devis_id?: number | null; montant_source?: string } = {}) {
   if (user.role !== 'admin' && user.role !== 'preparateur') throw forbidden('Seuls les préparateurs et les administrateurs créent des dossiers.');
   const input = dossierCreateSchema.parse(body);
-  // Un préparateur ne fixe jamais le prix : il vient du calcul, sinon l'administrateur le renseigne.
-  if (user.role !== 'admin') input.montant = null;
+  // Le prix vient du calcul avec la grille ; quand il ne peut pas être calculé (support hors grille,
+  // tarif sans prix), la personne qui crée le dossier (préparateur ou administrateur) le saisit à la main.
   const specs = specsSchemaFor(input.machine).parse(input.specs ?? { lignes: [], forfaits: [] }) as Specs;
   const created = await tx(async (db) => {
     const prix = await prixPour(input.machine, specs, db);
-    if (prix && !prix.ok && user.role === 'admin' && (input.montant === null || input.montant === undefined)) {
+    if (prix && !prix.ok && (input.montant === null || input.montant === undefined)) {
       throw unprocessable('Le prix ne peut pas être calculé. Corrigez les lignes ou saisissez le montant à la main.', { erreurs: prix.erreurs });
     }
     let montant: number | null = null;
@@ -426,7 +428,6 @@ const CHAMPS_SUIVIS = [
 
 export async function modifierDossier(user: AuthUser, id: number, body: unknown) {
   const input = dossierUpdateSchema.parse(body);
-  if (user.role !== 'admin') delete input.montant;
   const updated = await tx(async (db) => {
     const d = await chargerDossier(user, id, db, true);
     if (!peutModifier(user, d)) {
@@ -484,14 +485,7 @@ export async function modifierDossier(user: AuthUser, id: number, body: unknown)
           set('montant_source', 'calcul');
         }
       } else if (prix && !prix.ok && !montantSaisi && !revenirAuCalcul && suitLaGrille) {
-        if (user.role !== 'admin') {
-          // Le préparateur n'a pas la main sur le prix : le dossier reste « montant à définir » pour l'administrateur.
-          changes.montant = { avant: d.montant, apres: null };
-          set('montant', null);
-          set('detail_prix', null);
-        } else {
-          throw unprocessable('Le prix ne peut pas être calculé. Corrigez les lignes ou saisissez le montant à la main.', { erreurs: prix.erreurs });
-        }
+        throw unprocessable('Le prix ne peut pas être calculé. Corrigez les lignes ou saisissez le montant à la main.', { erreurs: prix.erreurs });
       }
     }
     if (input.client_nom !== undefined || input.client_id !== undefined) {

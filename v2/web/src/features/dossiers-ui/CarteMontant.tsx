@@ -39,6 +39,8 @@ export function CarteMontant({ d, peutEncaisser, peutFacturer, params, libelleGr
   const [paiement, setPaiement] = useState(false);
   const [facturation, setFacturation] = useState(false);
   const montant = d.montant ?? null;
+  // Le préparateur voit le prix, jamais les paiements (deja_paye absent de la réponse).
+  const voitPaiements = d.deja_paye !== undefined;
   const dejaPaye = d.deja_paye ?? 0;
   const attente = d.en_attente_validation ?? 0;
   const reste = montant === null ? null : Math.max(0, montant - dejaPaye - attente);
@@ -65,7 +67,7 @@ export function CarteMontant({ d, peutEncaisser, peutFacturer, params, libelleGr
         <h2 className="ev-card__title">
           <span className="fd-titre">
             <span className="fd-titre__icone"><Wallet aria-hidden="true" /></span>
-            Montant et paiements
+            {voitPaiements ? 'Montant et paiements' : 'Prix du dossier'}
           </span>
         </h2>
         {d.situation_paiement && <PaymentBadge situation={d.situation_paiement} enAttente={attente} />}
@@ -77,8 +79,12 @@ export function CarteMontant({ d, peutEncaisser, peutFacturer, params, libelleGr
             <span className="ev-num">{formatFCFA(montant)}</span>
             {montant !== null && d.montant_source && <div className="ev-muted" style={{ fontSize: 12 }}>{SOURCE[d.montant_source] ?? d.montant_source}</div>}
           </dd>
-          <dt>Déjà payé</dt>
-          <dd className="ev-num">{formatFCFA(dejaPaye)}</dd>
+          {voitPaiements && (
+            <>
+              <dt>Déjà payé</dt>
+              <dd className="ev-num">{formatFCFA(dejaPaye)}</dd>
+            </>
+          )}
           {attente > 0 && (
             <>
               <dt>À valider</dt>
@@ -86,10 +92,12 @@ export function CarteMontant({ d, peutEncaisser, peutFacturer, params, libelleGr
             </>
           )}
         </dl>
-        <div className="fd-solde">
-          <span>Reste à payer</span>
-          <span className="ev-num">{montant === null ? '—' : formatFCFA(d.solde ?? 0)}</span>
-        </div>
+        {voitPaiements && (
+          <div className="fd-solde">
+            <span>Reste à payer</span>
+            <span className="ev-num">{montant === null ? '—' : formatFCFA(d.solde ?? 0)}</span>
+          </div>
+        )}
         {montant === null && <p className="ev-help" style={{ margin: 0 }}>Montant à définir : modifiez le dossier pour le calculer ou le saisir.</p>}
 
         {detail && (

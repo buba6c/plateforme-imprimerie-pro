@@ -10,7 +10,8 @@ import type { Tarif } from '../../lib/types';
  * autres rôles, qui n'appellent jamais la route complète.
  */
 export function useTarifs(enabled = true) {
-  const admin = useAuth().user?.role === 'admin';
+  const role = useAuth().user?.role;
+  const admin = role === 'admin' || role === 'preparateur';
   return useQuery({
     queryKey: ['tarifs', admin ? 'complet' : 'libelles'],
     queryFn: async () => {

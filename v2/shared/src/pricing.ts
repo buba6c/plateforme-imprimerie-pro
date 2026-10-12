@@ -449,9 +449,16 @@ export function nombreOeillets(
   return { parExemplaire: n, total: n * q };
 }
 
+/** Support « autre » (hors grille) : pas de calcul possible, le prix du dossier est saisi à la main. */
+function supportHorsGrille(ctx: Ctx, l: { support: string; support_autre?: string | null }, n: number): boolean {
+  if (l.support !== 'autre') return false;
+  ctx.erreurs.push(`Ligne ${n} : support « ${l.support_autre?.trim() || 'Autre'} » hors grille : saisissez le prix du dossier à la main.`);
+  return true;
+}
+
 function lignesRoland(ctx: Ctx, l: LigneRoland, i: number, params: ParamsPrix, out: LignePrix[]) {
   const n = i + 1;
-  const support = chercher(ctx, l.support, ['support'], `Ligne ${n}`);
+  const support = supportHorsGrille(ctx, l, n) ? null : chercher(ctx, l.support, ['support'], `Ligne ${n}`);
   const largeur = toMm(l.largeur, l.unite);
   const hauteur = toMm(l.hauteur, l.unite);
   const surfaceUnitaire = Math.max(largeur * hauteur, Math.round(params.surface_min_m2 * 1_000_000));
@@ -501,7 +508,7 @@ function lignesRoland(ctx: Ctx, l: LigneRoland, i: number, params: ParamsPrix, o
 
 function lignesXerox(ctx: Ctx, l: LigneXerox, i: number, out: LignePrix[]) {
   const n = i + 1;
-  const support = chercher(ctx, l.support, ['support'], `Ligne ${n}`);
+  const support = supportHorsGrille(ctx, l, n) ? null : chercher(ctx, l.support, ['support'], `Ligne ${n}`);
   const faces = l.pages * l.quantite;
   const feuillesParEx = Math.ceil(l.pages / (l.recto_verso ? 2 : 1));
   const feuilles = feuillesParEx * l.quantite;
@@ -668,15 +675,22 @@ export function ventilerTTC(ttc: number, params: Pick<ParamsPrix, 'tva_applicabl
 // Résumés lisibles
 
 /** Résumé court d'une ligne de spécification, pour les cartes et les tableaux. */
+/** Libellé d'un support : le libellé libre pour « autre », sinon celui de la grille ou le code. */
+export function libelleSupportLigne(l: { support: string; support_autre?: string | null }, libelleGrille?: string): string {
+  if (l.support === 'autre') return l.support_autre?.trim() || 'Autre support';
+  return libelleGrille ?? l.support;
+}
+
 export function resumeLigne(machine: Machine, l: LigneRoland | LigneXerox, libelleSupport?: string): string {
+  const support = libelleSupportLigne(l, libelleSupport);
   if (machine === 'roland') {
     const r = l as LigneRoland;
     const bords = r.bords && r.bords !== 'aucun' ? ` · ${BORDS_LABELS[r.bords].toLowerCase()}` : '';
-    return `${libelleSupport ?? r.support} · ${r.largeur} × ${r.hauteur} ${r.unite} · ${r.quantite} ex.${bords}`;
+    return `${support} · ${r.largeur} × ${r.hauteur} ${r.unite} · ${r.quantite} ex.${bords}`;
   }
   const x = l as LigneXerox;
   const papier = x.papier && x.papier !== 'ordinaire_80' ? ` · ${PAPIER_LABELS[x.papier]}` : '';
-  return `${libelleSupport ?? x.support}${papier} · ${x.pages} p.${x.recto_verso ? ' recto-verso' : ''} · ${x.quantite} ex.`;
+  return `${support}${papier} · ${x.pages} p.${x.recto_verso ? ' recto-verso' : ''} · ${x.quantite} ex.`;
 }
 
 /**

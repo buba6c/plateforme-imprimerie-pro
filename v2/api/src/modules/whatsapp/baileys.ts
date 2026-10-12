@@ -32,7 +32,7 @@ export const fabriqueBaileys: FabriqueSocket = async ({ dossierAuth, log, ev }) 
   const { state, saveCreds } = await b.useMultiFileAuthState(dossierAuth);
   let version: [number, number, number] | undefined;
   try {
-    version = (await b.fetchLatestBaileysVersion({ timeout: 5000 })).version;
+    version = (await b.fetchLatestBaileysVersion({ signal: AbortSignal.timeout(5000) })).version;
   } catch {
     /* hors ligne : version embarquée dans la bibliothèque */
   }
@@ -43,7 +43,6 @@ export const fabriqueBaileys: FabriqueSocket = async ({ dossierAuth, log, ev }) 
     version,
     auth: { creds: state.creds, keys: b.makeCacheableSignalKeyStore(state.keys, logLib as unknown as Parameters<typeof b.makeCacheableSignalKeyStore>[1]) },
     logger: logLib as unknown as Parameters<typeof b.makeWASocket>[0]['logger'],
-    printQRInTerminal: false,
     browser: b.Browsers.ubuntu('Chrome'),
     // Ne se déclare pas « en ligne » : le téléphone continue de recevoir ses notifications.
     markOnlineOnConnect: false,
