@@ -113,3 +113,11 @@
   .sa-chip { box-shadow: none; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
   .sa-section { break-inside: avoid; }
 }
+
+/* Spécifications des dossiers v2 : mêmes blocs, quelques ajouts */
+.sa__num { display: inline-grid; place-items: center; min-width: 26px; height: 22px; padding: 0 6px; border-radius: 6px; background: rgb(255 255 255 / 0.22); font-family: var(--font-mono); font-size: 12px; font-weight: 700; }
+.sa-section__icone { width: 15px; height: 15px; color: var(--sa-c); }
+.sa-faces-valeur { display: flex; align-items: center; gap: 8px; }
+.sa-faces-valeur .sp-faces { color: var(--t-c); }
+.sa-texte { margin: 0; font-size: 14px; line-height: 20px; color: var(--text); white-space: pre-wrap; overflow-wrap: anywhere; }
+.sa__entete h3 .sp-faces { display: none; }
