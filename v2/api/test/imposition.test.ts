@@ -238,11 +238,14 @@ describe('imposition : formats et plans (sans serveur)', () => {
     expect(plan.calepinage).toMatchObject({ auto: true, poses: 4, fonds_perdus_mm: 2, reperes_ok: true });
     expect(plan.calepinage!.raison).toMatch(/réduits à 2 mm/);
     expect(plan.calepinage!.alternatives.some((a) => a.fonds_perdus_mm === 3 && a.poses === 4)).toBe(true);
-    // Avec la marge de 10 mm d'autrefois, 4 poses exigeraient moins de 1 mm de fonds perdus : l'optimiseur
-    // garde 3 mm (2 poses) plutôt que de descendre sous le plancher de l'atelier (1,5 mm).
+    // Avec la marge de 10 mm d'autrefois, 4 poses tiennent tout juste avec 1 mm de fonds perdus (le plancher) ;
+    // avec un plancher de 1,5 mm l'optimiseur garderait 3 mm et 2 poses.
     const etroit = calculerPlan({ ...p, marge_mm: 10 }, 2, undefined, src);
-    expect(etroit.poses_par_face).toBe(2);
-    expect(etroit.calepinage!.fonds_perdus_mm).toBe(3);
+    expect(etroit.poses_par_face).toBe(4);
+    expect(etroit.calepinage!.fonds_perdus_mm).toBe(1);
+    const plancher = calculerPlan({ ...p, marge_mm: 10 }, 2, undefined, src, { marge_technique_mm: 5, fonds_perdus_min_mm: 1.5, reperes_obligatoires: true });
+    expect(plancher.poses_par_face).toBe(2);
+    expect(plancher.calepinage!.fonds_perdus_mm).toBe(3);
     // Réglage manuel : rien n'est touché.
     const manuel = calculerPlan({ ...p, marge_mm: 10, calepinage: 'manuel' }, 2, undefined, src);
     expect(manuel.calepinage).toMatchObject({ auto: false, fonds_perdus_mm: 3 });
@@ -267,17 +270,17 @@ describe('imposition : formats et plans (sans serveur)', () => {
     const boites = poses.map((q) => ({ x: q.x, y: q.y, w: q.rotation === 90 ? q.hauteur : q.largeur, h: q.rotation === 90 ? q.largeur : q.hauteur }));
     for (const a of boites) for (const b of boites) if (a !== b) expect(a.x + a.w <= b.x + 0.01 || b.x + b.w <= a.x + 0.01 || a.y + a.h <= b.y + 0.01 || b.y + b.h <= a.y + 0.01).toBe(true);
     expect(calculerPlan({ ...p, rotation_poses: 'aucune' }, 1, undefined, sourceMarge(0)).poses_par_face).toBe(8);
-    // En automatique, descendre à 1,5 mm logerait 12 tickets droits mais sans repères lisibles : par défaut
-    // les repères priment (9 poses), et le rapport cite les 12 possibles ; l'atelier peut inverser la règle.
+    // En automatique, 1 mm de fonds perdus loge 12 tickets droits avec des repères lisibles ; avec un plancher
+    // de 1,5 mm, 12 poses n'auraient plus de repères : les repères priment (9 poses) et le rapport cite les 12.
     const opt = calculerPlan({ ...p, calepinage: 'auto' }, 1, undefined, sourceMarge(0));
-    expect(opt.poses_par_face).toBe(9);
-    expect(opt.calepinage!.reperes_ok).toBe(true);
-    expect(opt.calepinage!.raison).toMatch(/12 poses seraient possibles/);
-    expect(opt.calepinage!.alternatives.some((a) => a.poses === 12 && a.reperes_ok === false)).toBe(true);
+    expect(opt.poses_par_face).toBe(12);
+    expect(opt.calepinage).toMatchObject({ fonds_perdus_mm: 1, reperes_ok: true });
+    expect(opt.calepinage!.raison).toMatch(/12 poses au lieu de 8/);
+    const prudent = calculerPlan({ ...p, calepinage: 'auto' }, 1, undefined, sourceMarge(0), { marge_technique_mm: 5, fonds_perdus_min_mm: 1.5, reperes_obligatoires: true });
+    expect(prudent.poses_par_face).toBe(9);
+    expect(prudent.calepinage!.raison).toMatch(/12 poses seraient possibles/);
     const max = calculerPlan({ ...p, calepinage: 'auto' }, 1, undefined, sourceMarge(0), { marge_technique_mm: 5, fonds_perdus_min_mm: 1.5, reperes_obligatoires: false });
-    expect(max.poses_par_face).toBe(12);
     expect(max.calepinage).toMatchObject({ fonds_perdus_mm: 1.5, poses: 12, reperes_ok: false });
-    expect(max.calepinage!.raison).toMatch(/12 poses au lieu de 8/);
     // Tête-bêche par colonne : une colonne sur deux tournée de 180°.
     const tb = calculerPlan({ ...base, tete_beche: 'colonnes', rotation_poses: 'aucune', recto_verso: false }, 1, undefined, sourceMarge(0));
     const r0 = tb.feuilles[0]!.recto.poses;
@@ -485,6 +488,20 @@ describe('imposition : formats et plans (sans serveur)', () => {
     expect(dev.depliant!.pieces_par_feuille).toBeGreaterThanOrEqual(2);
     // Le schéma zod accepte le dépliant.
     expect(paramsSchema.safeParse({ ...dep, pliage: 'roule_3' }).success).toBe(true);
+  });
+
+  it('trois flyers différents dans un fichier : séquence recto seul, feuilles à imprimer = exemplaires', () => {
+    const p = { ...base, fini: { largeur: 150, hauteur: 200 }, methode_fonds_perdus: 'intelligent' as const, marge_mm: 5, mode: 'sequence' as const, recto_verso: false, quantite: 1000 };
+    // 150 × 200 mm sur SRA3 : quatre poses avec 1 mm de fonds perdus et des repères lisibles (le plancher par défaut est 1 mm).
+    const plan = calculerPlan(p, 3, undefined, { ...sourceMarge(0), fini: { largeur: 150, hauteur: 200 } });
+    expect(plan.nb_feuilles).toBe(1);
+    expect(plan.poses_par_face).toBe(4);
+    expect(plan.calepinage).toMatchObject({ fonds_perdus_mm: 1, reperes_ok: true });
+    const pages = plan.feuilles[0]!.recto.poses.map((q) => q.page).filter((x) => x !== null);
+    expect(pages).toEqual([1, 2, 3]);
+    expect(plan.feuilles[0]!.verso).toBeNull();
+    expect(plan.feuilles_a_imprimer).toBe(1000);
+    if (plan.poses_par_face > 3) expect(plan.avertissements.some((m) => /pose.* vide/.test(m))).toBe(true);
   });
 
   it('refuse une pose qui ne tient pas sur la feuille', () => {

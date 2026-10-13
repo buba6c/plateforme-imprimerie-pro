@@ -15,6 +15,22 @@ const FEUILLES: { code: Feuille; largeur: number; hauteur: number }[] = [
 const tient = (fw: number, fh: number, w: number, h: number) => (fw >= w && fh >= h) || (fw >= h && fh >= w);
 
 /**
+ * Opération proposée d'après le fichier : un livret seulement quand le fichier ressemble à un document
+ * (format page A4/A5/A3, ou taille au moins A5 pour un format inconnu, et au moins 4 pages, par
+ * multiples de 4 pour un format inconnu). Trois pages de 150 × 200 mm sont trois flyers, pas une brochure.
+ */
+export function operationParDefaut(r: ReponseAnalyse): Operation {
+  const a = r.analyse;
+  if (r.paires) return 'poses';
+  const fam = a.format?.famille;
+  const petit = Math.min(a.fini.largeur, a.fini.hauteur);
+  const grand = Math.max(a.fini.largeur, a.fini.hauteur);
+  if (fam === 'page' && a.nb_pages >= 4) return 'livret';
+  if (!fam && petit >= 140 && grand >= 190 && a.nb_pages >= 4 && (a.nb_pages % 4 === 0 || a.nb_pages >= 8)) return 'livret';
+  return 'poses';
+}
+
+/**
  * Fonds perdus demandés : ceux du fichier s'il en a, sinon 3 mm fabriqués bord par bord. La décision
  * « avec ou sans » revient au serveur (coupe « auto », d'après la marge blanche mesurée) : le plan la
  * rapporte et l'écran l'affiche.

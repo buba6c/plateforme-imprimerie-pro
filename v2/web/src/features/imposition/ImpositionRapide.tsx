@@ -8,7 +8,7 @@ import { Check, FileCheck2, Settings2 } from 'lucide-react';
 import { messageErreur } from '../../lib/api';
 import type { Fichier } from '../../lib/types';
 import { Alert, Button, Dialog, Skeleton, useToast } from '../../ui';
-import { libelleCoupe, reglagesPour, resumeAuto, texteAdaptation } from './auto';
+import { libelleCoupe, operationParDefaut, reglagesPour, resumeAuto, texteAdaptation } from './auto';
 import { useAnalyse, useGenerer, usePlan, useTeleverserLibre } from './hooks';
 import { SchemaFeuille } from './SchemaFeuille';
 import { OPERATION_LABELS, type Operation, type ParamsImposition, type Piece } from './types';
@@ -55,9 +55,7 @@ export function ImpositionRapide({ dossierId, fichier, fichierLocal, onClose, on
   useEffect(() => {
     const d = analyse.data;
     if (!d || params) return;
-    const fam = d.analyse.format?.famille;
-    const op: Operation = (fam === 'page' || !fam) && d.analyse.nb_pages > 2 ? 'livret' : 'poses';
-    setParams(reglagesPour(op, d, d.params_defaut));
+    setParams(reglagesPour(operationParDefaut(d), d, d.params_defaut));
   }, [analyse.data, params]);
   const plan = usePlan(pieces, params);
   const generer = useGenerer();

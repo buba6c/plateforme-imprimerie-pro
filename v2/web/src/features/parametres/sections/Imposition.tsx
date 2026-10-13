@@ -54,7 +54,7 @@ export function SectionImposition({ p, onModifie }: SectionProps) {
               value={f.fonds_perdus_min_mm}
               onChange={(e) => setF({ ...f, fonds_perdus_min_mm: e.target.value })}
               error={erreurs['imposition.fonds_perdus_min_mm']}
-              help="Pour loger une colonne ou un rang de plus, le calepinage automatique peut réduire les fonds perdus demandés, jamais en dessous de cette valeur. 1,5 mm est sûr au massicot."
+              help="Pour loger une colonne ou un rang de plus, le calepinage automatique peut réduire les fonds perdus demandés, jamais en dessous de cette valeur. 1 mm par défaut ; 0,5 mm reste possible pour des visuels sans détail au bord."
             />
           </div>
           <Checkbox

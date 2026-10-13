@@ -346,7 +346,7 @@ export interface AtelierImposition {
   /** Ne jamais sacrifier les repères de coupe pour gagner des poses (sinon, le plus de poses l'emporte). */
   reperes_obligatoires?: boolean;
 }
-export const ATELIER_DEFAUT: AtelierImposition = { marge_technique_mm: 5, fonds_perdus_min_mm: 1.5, reperes_obligatoires: true };
+export const ATELIER_DEFAUT: AtelierImposition = { marge_technique_mm: 5, fonds_perdus_min_mm: 1, reperes_obligatoires: true };
 
 const arr = (v: number) => Math.round(v * 100) / 100;
 
@@ -824,6 +824,8 @@ export function planPoses(p: ParamsImposition, nbPages: number, mt = ATELIER_DEF
       }
       feuilles.push({ numero: s + 1, recto: { cote: 'recto', poses: recto, plis: [] }, verso: verso ? { cote: 'verso', poses: verso, plis: [] } : null });
     }
+    const posesVides = nbFeuilles * n - elements.length;
+    if (p.mode === 'sequence' && posesVides > 0 && elements.length > 1) avertissements.push(`${posesVides} pose${posesVides > 1 ? 's' : ''} vide${posesVides > 1 ? 's' : ''} sur la dernière feuille : ${elements.length} visuels pour ${n} poses par feuille.`);
   }
   if (g.partages && p.mode !== 'repetition') avertissements.push('Fonds perdus partagés avec des visuels différents côte à côte : une dérive de coupe laisserait voir le voisin. Préférez des fonds perdus séparés.');
   const quantite = p.quantite && p.quantite > 0 ? p.quantite : null;
@@ -841,7 +843,8 @@ export function planPoses(p: ParamsImposition, nbPages: number, mt = ATELIER_DEF
     poses_par_face: n,
     nb_feuilles: feuilles.length,
     nb_pages_sortie: feuilles.reduce((t, f) => t + 1 + (f.verso ? 1 : 0), 0),
-    feuilles_a_imprimer: quantite ? (p.mode === 'repetition' ? Math.ceil(quantite / n) : p.mode === 'coupe_empile' && !p.numerotation ? feuilles.length * quantite : feuilles.length) : null,
+    // Séquence : chaque feuille porte une fois chaque visuel qu'elle contient ; Q exemplaires de chacun = Q tirages de chaque feuille.
+    feuilles_a_imprimer: quantite ? (p.mode === 'repetition' ? Math.ceil(quantite / n) : p.mode === 'sequence' || (p.mode === 'coupe_empile' && !p.numerotation) ? feuilles.length * quantite : feuilles.length) : null,
     pages_blanches: 0,
     feuilles,
     avertissements,

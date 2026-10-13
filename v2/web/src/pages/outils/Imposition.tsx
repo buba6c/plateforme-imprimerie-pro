@@ -21,7 +21,7 @@ import { OptionCartes } from '../../features/imposition/OptionCartes';
 import { PictoAjustement, PictoCalage, PictoCoupe, PictoFondsPerdus, PictoMode, PictoOperation, PictoOrientation, PictoPlanches, PictoPliage, PictoRetournement, PictoRotationPoses, PictoSystemeCoupe, PictoTeteBeche, PictoTraitsStyle } from '../../features/imposition/Pictos';
 import { SchemaFeuille, type AffichageSchema } from '../../features/imposition/SchemaFeuille';
 import { ListeFeuilles, PagesDocument } from '../../features/imposition/VuePages';
-import { libelleCoupe, reglagesPour, resumeAuto, rolesAuto, texteAdaptation } from '../../features/imposition/auto';
+import { libelleCoupe, operationParDefaut, reglagesPour, resumeAuto, rolesAuto, texteAdaptation } from '../../features/imposition/auto';
 import { useApercuPage } from '../../features/imposition/rendu';
 import { AJUSTEMENT_LABELS, BLANCHES_LABELS, CALAGE_LABELS, COUPE_LABELS, FOURNISSEUR_LABELS_IA, METHODE_LABELS, MODE_LABELS, OPERATION_LABELS, PLANCHES_LABELS, PLIAGE_LABELS, RELIURE_LABELS, RETOURNEMENT_LABELS, ROGNAGE_LABELS, ROTATION_POSES_LABELS, SYSTEME_COUPE_LABELS, SYSTEME_LABELS, TETE_BECHE_LABELS, TRAITS_LABELS, type Calage, type Coupe, type Dimension, type Feuille, type ModeAjustement, type ModeBlanches, type ModeleImposition, type ModePlanches, type Operation, type ParamsImposition, type Piece, type PieceAnalysee, type Plan, type Pliage, type PropositionImposition, type ReponseAnalyse, type ResultatGeneration, type Retournement, type RolePiece, type RotationPoses, type StyleTraits, type TeteBeche } from '../../features/imposition/types';
 import '../../features/imposition/imposition.css';
@@ -512,6 +512,10 @@ function lignesRapport(r: ReponseAnalyse, p: ParamsImposition, plan: Plan | unde
   for (const piece of r.pieces) for (const m of piece.avertissements) if (/résolution|dpi|flou/i.test(m)) l.push({ ton: 'attention', texte: `${piece.nom} : ${m}` });
   if (plan) {
     if (plan.operation === 'poses') l.push({ ton: 'auto', texte: `${plan.poses_par_face} poses par face sur ${plan.feuille.largeur} × ${plan.feuille.hauteur} mm (${plan.paysage ? 'paysage' : 'portrait'})${plan.feuilles_a_imprimer ? `, ${plan.feuilles_a_imprimer} feuilles à imprimer` : ''}.` });
+    if (plan.operation === 'poses' && p.mode === 'sequence' && a.nb_pages > 1) {
+      const visuels = r.paires ? r.paires.length : p.recto_verso ? Math.ceil(a.nb_pages / 2) : a.nb_pages;
+      l.push({ ton: 'auto', texte: `${visuels} visuel${visuels > 1 ? 's' : ''} différent${visuels > 1 ? 's' : ''}, chacun sur sa pose (séquence)${p.recto_verso ? ', recto-verso' : ', recto seul'} : chaque feuille imprimée donne un exemplaire de chaque visuel${plan.nb_feuilles > 1 ? ` (${plan.nb_feuilles} feuilles différentes)` : ''}.`, choix: visuels > 1 && !p.recto_verso ? [{ label: 'Même visuel partout (répétition)', patch: { mode: 'repetition' } }] : undefined });
+    }
     if (plan.operation === 'livret') l.push({ ton: 'auto', texte: `Livret de ${plan.nb_feuilles * 4} pages sur ${plan.nb_feuilles} feuille${plan.nb_feuilles > 1 ? 's' : ''} ${plan.feuille.largeur} × ${plan.feuille.hauteur} mm${plan.pages_blanches ? `, ${plan.pages_blanches} page${plan.pages_blanches > 1 ? 's' : ''} blanche${plan.pages_blanches > 1 ? 's' : ''} ajoutée${plan.pages_blanches > 1 ? 's' : ''}` : ''}.` });
     for (const m of plan.avertissements) l.push({ ton: 'attention', texte: m });
   }
@@ -893,8 +897,7 @@ export default function Imposition() {
     if (derniereCle.current !== clePieces) {
       derniereCle.current = clePieces;
       dernieresPlanches.current = clePlanches;
-      const fam = d.analyse.format?.famille;
-      const op: Operation = (fam === 'page' || !fam) && d.analyse.nb_pages > 2 && !d.paires ? 'livret' : 'poses';
+      const op = operationParDefaut(d);
       setParams((prev) => reglagesPour(prev?.operation ?? op, d, d.params_defaut));
       setFeuilleVue(0);
       setFace('recto');
