@@ -267,11 +267,17 @@ describe('imposition : formats et plans (sans serveur)', () => {
     const boites = poses.map((q) => ({ x: q.x, y: q.y, w: q.rotation === 90 ? q.hauteur : q.largeur, h: q.rotation === 90 ? q.largeur : q.hauteur }));
     for (const a of boites) for (const b of boites) if (a !== b) expect(a.x + a.w <= b.x + 0.01 || b.x + b.w <= a.x + 0.01 || a.y + a.h <= b.y + 0.01 || b.y + b.h <= a.y + 0.01).toBe(true);
     expect(calculerPlan({ ...p, rotation_poses: 'aucune' }, 1, undefined, sourceMarge(0)).poses_par_face).toBe(8);
-    // En automatique, descendre les fonds perdus à 1,5 mm loge 12 tickets droits : l'optimiseur le dit.
+    // En automatique, descendre à 1,5 mm logerait 12 tickets droits mais sans repères lisibles : par défaut
+    // les repères priment (9 poses), et le rapport cite les 12 possibles ; l'atelier peut inverser la règle.
     const opt = calculerPlan({ ...p, calepinage: 'auto' }, 1, undefined, sourceMarge(0));
-    expect(opt.poses_par_face).toBe(12);
-    expect(opt.calepinage).toMatchObject({ fonds_perdus_mm: 1.5, poses: 12 });
-    expect(opt.calepinage!.raison).toMatch(/12 poses au lieu de 8/);
+    expect(opt.poses_par_face).toBe(9);
+    expect(opt.calepinage!.reperes_ok).toBe(true);
+    expect(opt.calepinage!.raison).toMatch(/12 poses seraient possibles/);
+    expect(opt.calepinage!.alternatives.some((a) => a.poses === 12 && a.reperes_ok === false)).toBe(true);
+    const max = calculerPlan({ ...p, calepinage: 'auto' }, 1, undefined, sourceMarge(0), { marge_technique_mm: 5, fonds_perdus_min_mm: 1.5, reperes_obligatoires: false });
+    expect(max.poses_par_face).toBe(12);
+    expect(max.calepinage).toMatchObject({ fonds_perdus_mm: 1.5, poses: 12, reperes_ok: false });
+    expect(max.calepinage!.raison).toMatch(/12 poses au lieu de 8/);
     // Tête-bêche par colonne : une colonne sur deux tournée de 180°.
     const tb = calculerPlan({ ...base, tete_beche: 'colonnes', rotation_poses: 'aucune', recto_verso: false }, 1, undefined, sourceMarge(0));
     const r0 = tb.feuilles[0]!.recto.poses;

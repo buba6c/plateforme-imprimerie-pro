@@ -442,7 +442,7 @@ export function impositionRouter(config: Config) {
   /** Réglages d'atelier (Paramètres > Imposition) : marge technique de la machine, fonds perdus minimaux. */
   const atelier = async (): Promise<AtelierImposition> => {
     const r = (await getParametres()).imposition;
-    return { marge_technique_mm: r.marge_technique_mm, fonds_perdus_min_mm: r.fonds_perdus_min_mm };
+    return { marge_technique_mm: r.marge_technique_mm, fonds_perdus_min_mm: r.fonds_perdus_min_mm, reperes_obligatoires: r.reperes_obligatoires !== false };
   };
 
   const avecParams = (body: Record<string, unknown>) => {

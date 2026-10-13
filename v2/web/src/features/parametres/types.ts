@@ -25,6 +25,7 @@ export interface ReglesDocuments {
 export interface ReglesImposition {
   marge_technique_mm: number;
   fonds_perdus_min_mm: number;
+  reperes_obligatoires: boolean;
 }
 
 /** Paramètres complets, tels que l'administrateur les lit. */

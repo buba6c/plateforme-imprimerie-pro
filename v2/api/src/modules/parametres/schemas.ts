@@ -94,6 +94,7 @@ export const impositionSchema = z
   .object({
     marge_technique_mm: z.number({ invalid_type_error: 'Marge technique : nombre attendu' }).min(0, 'Marge technique : 0 mm au minimum').max(20, 'Marge technique : 20 mm au maximum'),
     fonds_perdus_min_mm: z.number({ invalid_type_error: 'Fonds perdus minimaux : nombre attendu' }).min(0.5, 'Fonds perdus minimaux : 0,5 mm au minimum').max(5, 'Fonds perdus minimaux : 5 mm au maximum'),
+    reperes_obligatoires: z.boolean({ invalid_type_error: 'Repères obligatoires : oui ou non' }),
   })
   .partial();
 

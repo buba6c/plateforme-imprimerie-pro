@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Card, TextField } from '../../../ui';
+import { Card, Checkbox, TextField } from '../../../ui';
 import { nombre, SectionForm, useBrouillon, useSignalerModifie, type SectionProps } from '../form';
 
 /** Nombre décimal entre min et max (virgule acceptée), ou message d'erreur. */
@@ -11,7 +11,7 @@ function decimal(v: string, min: number, max: number): number | string {
 
 export function SectionImposition({ p, onModifie }: SectionProps) {
   const { f, setF, modifie, annuler } = useBrouillon(
-    () => ({ marge_technique_mm: String(p.imposition.marge_technique_mm).replace('.', ','), fonds_perdus_min_mm: String(p.imposition.fonds_perdus_min_mm).replace('.', ',') }),
+    () => ({ marge_technique_mm: String(p.imposition.marge_technique_mm).replace('.', ','), fonds_perdus_min_mm: String(p.imposition.fonds_perdus_min_mm).replace('.', ','), reperes_obligatoires: p.imposition.reperes_obligatoires !== false }),
     [p.imposition],
   );
   const [erreurs, setErreurs] = useState<Record<string, string>>({});
@@ -24,7 +24,7 @@ export function SectionImposition({ p, onModifie }: SectionProps) {
     if (typeof marge === 'string') e['imposition.marge_technique_mm'] = marge;
     if (typeof fonds === 'string') e['imposition.fonds_perdus_min_mm'] = fonds;
     if (Object.keys(e).length) return { erreurs: e };
-    return { body: { imposition: { marge_technique_mm: marge as number, fonds_perdus_min_mm: fonds as number } } };
+    return { body: { imposition: { marge_technique_mm: marge as number, fonds_perdus_min_mm: fonds as number, reperes_obligatoires: f.reperes_obligatoires } } };
   };
 
   return (
@@ -57,6 +57,15 @@ export function SectionImposition({ p, onModifie }: SectionProps) {
               help="Pour loger une colonne ou un rang de plus, le calepinage automatique peut réduire les fonds perdus demandés, jamais en dessous de cette valeur. 1,5 mm est sûr au massicot."
             />
           </div>
+          <Checkbox
+            label="Garder des repères de coupe lisibles plutôt que gagner des poses"
+            checked={f.reperes_obligatoires}
+            onChange={(reperes_obligatoires) => setF({ ...f, reperes_obligatoires })}
+          />
+          <p className="adm-explain">
+            Coché, le calepinage automatique ne retient jamais une grille dont les traits de coupe tomberaient dans le bord non imprimable (par exemple 25 cartes
+            sans repères plutôt que 21 avec) ; l’alternative reste proposée dans le rapport. Décoché, le plus de poses l’emporte et la coupe se fait aux cotes.
+          </p>
         </div>
       </Card>
     </SectionForm>

@@ -71,6 +71,8 @@ export interface ReglesImposition {
   marge_technique_mm: number;
   /** Fonds perdus les plus étroits que le calepinage automatique accepte pour gagner des poses (mm). */
   fonds_perdus_min_mm: number;
+  /** Ne jamais sacrifier les repères de coupe pour gagner des poses. */
+  reperes_obligatoires: boolean;
 }
 
 export interface Parametres {
@@ -115,7 +117,7 @@ export const PARAMETRES_DEFAUT: Parametres = {
   fichiers: { taille_max_mo: plafondsServeur().taille_max_mo, extensions: [], traitement_auto: true },
   documents: { devis_validite_jours: 15, mentions_devis: '', conditions_paiement: '' },
   notifications: Object.fromEntries(TYPES_NOTIFICATION.map((t) => [t, true])) as ReglesNotifications,
-  imposition: { marge_technique_mm: 5, fonds_perdus_min_mm: 1.5 },
+  imposition: { marge_technique_mm: 5, fonds_perdus_min_mm: 1.5, reperes_obligatoires: true },
 };
 
 const objet = (v: unknown): Record<string, unknown> => (v && typeof v === 'object' && !Array.isArray(v) ? (v as Record<string, unknown>) : {});

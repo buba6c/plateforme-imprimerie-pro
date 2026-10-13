@@ -144,7 +144,7 @@ export interface InfoCalepinage {
   rotation: 'aucune' | '90' | 'mixte';
   reperes_ok: boolean;
   raison: string;
-  alternatives: { fonds_perdus_mm: number; poses: number; partages: boolean; rotation: 'aucune' | '90' | 'mixte' }[];
+  alternatives: { fonds_perdus_mm: number; poses: number; partages: boolean; rotation: 'aucune' | '90' | 'mixte'; reperes_ok: boolean }[];
 }
 export interface FeuillePlan {
   numero: number;

@@ -219,7 +219,7 @@ export interface InfoCalepinage {
   /** Les repères de coupe tiennent dans la zone imprimable sur tous les côtés. */
   reperes_ok: boolean;
   raison: string;
-  alternatives: { fonds_perdus_mm: number; poses: number; partages: boolean; rotation: 'aucune' | '90' | 'mixte' }[];
+  alternatives: { fonds_perdus_mm: number; poses: number; partages: boolean; rotation: 'aucune' | '90' | 'mixte'; reperes_ok: boolean }[];
 }
 
 export interface Plan {
@@ -285,8 +285,10 @@ export interface AtelierImposition {
   marge_technique_mm: number;
   /** Fonds perdus en dessous desquels le calepinage automatique ne descend pas (mm). */
   fonds_perdus_min_mm: number;
+  /** Ne jamais sacrifier les repères de coupe pour gagner des poses (sinon, le plus de poses l'emporte). */
+  reperes_obligatoires?: boolean;
 }
-export const ATELIER_DEFAUT: AtelierImposition = { marge_technique_mm: 5, fonds_perdus_min_mm: 1.5 };
+export const ATELIER_DEFAUT: AtelierImposition = { marge_technique_mm: 5, fonds_perdus_min_mm: 1.5, reperes_obligatoires: true };
 
 const arr = (v: number) => Math.round(v * 100) / 100;
 
@@ -655,7 +657,9 @@ export function optimiser(p: ParamsImposition, source: SourcePlan | undefined, a
     candidats.push({ fp, partage, g, n: g.poses.length, ok: reperesTiennent(g, fp, mt) });
   }
   const rang = (r: Grille['rotation']) => (r === 'aucune' ? 0 : r === '90' ? 1 : 2);
-  candidats.sort((a, b) => b.n - a.n || Number(b.ok) - Number(a.ok) || b.fp - a.fp || Number(a.partage) - Number(b.partage) || rang(a.g.rotation) - rang(b.g.rotation));
+  // Repères obligatoires (défaut) : une grille sans repères lisibles n'est retenue que si aucune n'en a.
+  const reperesDAbord = atelier.reperes_obligatoires !== false;
+  candidats.sort((a, b) => (reperesDAbord ? Number(b.ok) - Number(a.ok) || b.n - a.n : b.n - a.n || Number(b.ok) - Number(a.ok)) || b.fp - a.fp || Number(a.partage) - Number(b.partage) || rang(a.g.rotation) - rang(b.g.rotation));
   const best = candidats[0]!;
   // Référence des comparaisons : fonds perdus demandés, poses droites, sans partage.
   const gRef = meilleureGrille({ ...p, rotation_poses: 'aucune' }, fps[0]!, false, mt);
@@ -669,12 +673,14 @@ export function optimiser(p: ParamsImposition, source: SourcePlan | undefined, a
   else if (fpVoulu > 0) parties.push(`${mm(best.fp)} mm de fonds perdus gardés, ${best.n} poses`);
   if (best.g.rotation === 'mixte') parties.push(`une bande de poses tournées complète la feuille (${best.n} poses, ${reference.n} sans rotation)`);
   else if (best.g.rotation === '90') parties.push(`poses tournées d’un quart de tour (${best.n} au lieu de ${reference.n})`);
-  if (!best.ok) parties.push('repères de coupe raccourcis : il manque de marge sur la feuille');
+  if (!best.ok) parties.push('repères de coupe raccourcis ou omis : il manque de marge sur la feuille');
+  const plusGrand = candidats.find((c) => c.n > best.n);
+  if (reperesDAbord && plusGrand) parties.push(`${plusGrand.n} poses seraient possibles avec ${mm(plusGrand.fp)} mm de fonds perdus, mais sans repères de coupe lisibles (Paramètres > Imposition)`);
   const raison = parties.length ? `${parties[0]!.charAt(0).toUpperCase()}${parties[0]!.slice(1)}${parties.slice(1).map((x) => ` ; ${x}`).join('')}.` : `${best.n} poses par feuille.`;
   const vus = new Set<string>();
   const alternatives = candidats
     .filter((c) => c !== best)
-    .map((c) => ({ fonds_perdus_mm: c.fp, poses: c.n, partages: c.partage, rotation: c.g.rotation }))
+    .map((c) => ({ fonds_perdus_mm: c.fp, poses: c.n, partages: c.partage, rotation: c.g.rotation, reperes_ok: c.ok }))
     .filter((c) => {
       const cle = `${c.fonds_perdus_mm}|${c.partages}|${c.rotation}`;
       if (vus.has(cle)) return false;
