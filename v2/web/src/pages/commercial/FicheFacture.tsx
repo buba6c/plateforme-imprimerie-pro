@@ -1,14 +1,15 @@
 import { useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { Ban, Download, ExternalLink, FolderOpen, Printer, ReceiptText, RefreshCw, Send } from 'lucide-react';
-import { formatDateHeure, formatDecimal, formatFCFA } from '@evocom/shared';
+import { formatDateHeure, formatDecimal, formatEntier, formatFCFA } from '@evocom/shared';
 import { useUser } from '../../auth/AuthContext';
 import { ApiError, messageErreur } from '../../lib/api';
 import { Alert, Button, Card, Dialog, EmptyState, PageHeader, PaymentBadge, Skeleton, TextareaField, useToast } from '../../ui';
-import { BlocDocument, FactureStatutBadge, LignesDocument, Totaux, type LigneTotal } from '../../features/commercial/Document';
+import { FactureStatutBadge } from '../../features/commercial/Document';
+import { ApercuDocument, type TotalApercu } from '../../features/commercial/ApercuDocument';
 import { formatJour, lignesFacture } from '../../features/commercial/format';
 import { useAnnulerFacture, useAnnulerVosFactures, useEnvoyerVosFactures, useFacture, useListeFactures, useParametres } from '../../features/commercial/hooks';
-import type { Entreprise, FactureDetail } from '../../features/commercial/types';
+import type { FactureDetail } from '../../features/commercial/types';
 import '../../features/commercial/commercial.css';
 
 export default function FicheFacture() {
@@ -62,14 +63,14 @@ function Fiche({ f }: { f: FactureDetail }) {
   const envoi = useEnvoyerVosFactures(f.id);
   const toast = useToast();
 
-  const totaux: LigneTotal[] =
+  const totaux: TotalApercu[] =
     f.tva_taux > 0
       ? [
-          { label: 'Total HT', valeur: formatFCFA(f.total_ht) },
-          { label: `TVA (${formatDecimal(f.tva_taux)} %)`, valeur: formatFCFA(f.tva) },
-          { label: 'Total TTC', valeur: formatFCFA(f.total_ttc), fort: true },
+          { label: 'Total HT :', valeur: formatEntier(f.total_ht) },
+          { label: `TVA (${formatDecimal(f.tva_taux)} %) :`, valeur: formatEntier(f.tva) },
+          { label: 'TOTAL TTC :', valeur: formatEntier(f.total_ttc), fort: true },
         ]
-      : [{ label: 'Total', valeur: formatFCFA(f.total_ttc), fort: true }];
+      : [{ label: 'TOTAL :', valeur: formatEntier(f.total_ttc), fort: true }];
 
   const reste = f.reste ?? null;
   const montantChange = !annulee && !directe && f.dossier_montant !== null && f.dossier_montant !== undefined && f.dossier_montant !== f.total_ttc;
@@ -178,87 +179,50 @@ function Fiche({ f }: { f: FactureDetail }) {
             </Alert>
           )}
 
-          <article className="ev-card cm-doc" aria-label={`Facture ${f.numero}`}>
-            <header className="cm-doc__tete">
-              <Emetteur entreprise={entreprise} chargement={parametres.isLoading} />
-              <div>
-                <h2 className="cm-doc__type">Facture</h2>
-                <dl className="cm-doc__meta">
-                  <dt>Numéro</dt>
-                  <dd className="ev-ref">{f.numero}</dd>
-                  <dt>Date d’émission</dt>
-                  <dd className="ev-ref">{formatJour(f.date_emission)}</dd>
-                  {f.date_echeance && (
-                    <>
-                      <dt>À régler avant le</dt>
-                      <dd className="ev-ref">{formatJour(f.date_echeance)}</dd>
-                    </>
-                  )}
-                  {directe ? (
-                    <>
-                      <dt>Origine</dt>
-                      <dd>Facture directe</dd>
-                    </>
-                  ) : (
-                    <>
-                      <dt>Dossier</dt>
-                      <dd>
-                        <Link className="ev-link ev-ref" to={`/dossiers/${f.dossier_id}`}>
-                          {dossierLibelle}
-                        </Link>
-                      </dd>
-                    </>
-                  )}
-                </dl>
-              </div>
-            </header>
-
-            <div className="cm-doc__parties">
-              <BlocDocument titre="Facturé à">
-                <strong>{f.client_nom}</strong>
-                {f.client_adresse && <span>{f.client_adresse}</span>}
-                {f.client_telephone && (
-                  <span>
-                    Tél. <span className="ev-ref">{f.client_telephone}</span>
-                  </span>
-                )}
-                {f.client_email && <span>{f.client_email}</span>}
-                {f.client_id && (
-                  <Link className="ev-link" style={{ fontSize: 13, marginTop: 4 }} to={`/clients/${f.client_id}`}>
+          <article className="ev-card" style={{ padding: 0, overflow: 'hidden' }} aria-label={`Facture ${f.numero}`}>
+            <ApercuDocument
+              titre={`Facture N° ${f.numero}`}
+              infos={[
+                { label: 'Date de création', valeur: formatJour(f.date_emission) },
+                ...(f.date_echeance ? [{ label: 'Date limite de règlement', valeur: formatJour(f.date_echeance) }] : []),
+                ...(!directe
+                  ? [{ label: 'Dossier', valeur: <Link className="ev-link ev-ref" to={`/dossiers/${f.dossier_id}`}>{dossierLibelle}</Link> }]
+                  : [{ label: 'Origine', valeur: 'Facture directe' }]),
+              ]}
+              vendeur={[entreprise?.nom ?? '']}
+              acheteur={[
+                <strong key="nom">{f.client_nom}</strong>,
+                f.client_adresse,
+                f.client_telephone && `Tél. ${f.client_telephone}`,
+                f.client_email,
+                f.client_id ? (
+                  <Link key="fiche" className="ev-link" to={`/clients/${f.client_id}`}>
                     Voir la fiche client
                   </Link>
-                )}
-              </BlocDocument>
-            </div>
-
-            <div className="stack">
-              <LignesDocument lignes={lignesFacture(f.lignes)} />
-              <Totaux lignes={totaux} label="Totaux de la facture" />
-              {!annulee && reste !== null && (
-                <Totaux
-                  label="Règlement"
-                  lignes={[
-                    { label: 'Déjà réglé', valeur: formatFCFA(f.deja_paye ?? null) },
-                    { label: 'Reste à payer', valeur: formatFCFA(reste), tone: reste > 0 ? 'danger' : 'success' },
-                  ]}
-                />
-              )}
-            </div>
-
-            {f.notes && (
-              <BlocDocument titre="Remarques">
-                <p className="cm-texte">{f.notes}</p>
-              </BlocDocument>
-            )}
-
-            <footer className="cm-doc__pied">
-              <p>
-                Montants en francs CFA (FCFA){f.tva_taux > 0 ? '' : ', TVA non applicable'}.{' '}
-                {directe ? 'Facture établie directement.' : `Facture établie pour le dossier ${dossierLibelle}.`}
-              </p>
-              {f.conditions_paiement && <p>Conditions de paiement : {f.conditions_paiement}</p>}
-              {entreprise?.pied_facture && <p>{entreprise.pied_facture}</p>}
-            </footer>
+                ) : null,
+              ]}
+              lignes={lignesFacture(f.lignes)}
+              totaux={totaux}
+              aPayer={f.total_ttc}
+              reglement={
+                !annulee && reste !== null && (f.deja_paye ?? 0) > 0
+                  ? [
+                      { label: 'Déjà réglé :', valeur: formatEntier(f.deja_paye ?? 0) },
+                      { label: 'Reste à payer :', valeur: formatEntier(reste), fort: true },
+                    ]
+                  : undefined
+              }
+              paragraphes={[
+                ...(annulee
+                  ? [{ titre: 'Facture annulée', texte: `Annulée le ${formatDateHeure(f.annulee_at)}${f.motif_annulation ? ` : ${f.motif_annulation}` : ''}. Ce document n’est plus valable ; son numéro n’est pas réutilisé.` }]
+                  : []),
+                ...(f.notes ? [{ titre: 'Remarques', texte: f.notes }] : []),
+                ...(f.conditions_paiement ? [{ titre: 'Conditions de paiement', texte: f.conditions_paiement }] : []),
+              ]}
+              banque={entreprise?.coordonnees_bancaires}
+              entreprise={entreprise ?? null}
+              filigrane={annulee ? 'ANNULÉE' : null}
+            />
           </article>
         </div>
 
@@ -429,19 +393,6 @@ function CarteVosFactures({
   );
 }
 
-function Emetteur({ entreprise, chargement }: { entreprise: Entreprise | undefined; chargement: boolean }) {
-  if (chargement) return <Skeleton h={64} w={220} />;
-  if (!entreprise) return <div className="cm-doc__emetteur" />;
-  const ids = [entreprise.ninea && `NINEA ${entreprise.ninea}`, entreprise.rccm && `RCCM ${entreprise.rccm}`].filter(Boolean).join(' · ');
-  return (
-    <div className="cm-doc__emetteur">
-      <strong>{entreprise.nom}</strong>
-      {entreprise.adresse && <span>{entreprise.adresse}</span>}
-      {(entreprise.telephone || entreprise.email) && <span>{[entreprise.telephone && `Tél. ${entreprise.telephone}`, entreprise.email].filter(Boolean).join(' · ')}</span>}
-      {ids && <span>{ids}</span>}
-    </div>
-  );
-}
 
 function AnnulationDialog({ f, onClose }: { f: FactureDetail; onClose: () => void }) {
   const [motif, setMotif] = useState('');

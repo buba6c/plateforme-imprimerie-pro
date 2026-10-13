@@ -5,17 +5,19 @@ import {
   formatDate,
   formatDateHeure,
   formatDecimal,
+  formatEntier,
   formatFCFA,
-  MACHINE_DESCRIPTIONS,
   MACHINE_LABELS,
+  MODE_PAIEMENT_LABELS,
   STATUT_DEVIS_LABELS,
   type StatutDevis,
 } from '@evocom/shared';
 import { ApiError, messageErreur } from '../../lib/api';
 import { Alert, Button, Card, Checkbox, ConfirmDialog, EmptyState, MachineChip, PageHeader, Skeleton, TextField, TextareaField, useToast } from '../../ui';
-import { BlocDocument, DevisStatutBadge, LignesDocument, Totaux, type LigneTotal } from '../../features/commercial/Document';
+import { DevisStatutBadge } from '../../features/commercial/Document';
+import { ApercuDocument, type TotalApercu } from '../../features/commercial/ApercuDocument';
 import { aujourdhui, formatJour, lignesDevis } from '../../features/commercial/format';
-import { useConvertirDevis, useDevis, useDevisStatut, useSupprimerDevis } from '../../features/commercial/hooks';
+import { useConvertirDevis, useDevis, useDevisStatut, useParametres, useSupprimerDevis } from '../../features/commercial/hooks';
 import type { DevisDetail as DevisDetailBase } from '../../features/commercial/types';
 
 /** Champs ajoutés au devis (migration 008) : remise au client, délai, acompte, conditions. */
@@ -97,6 +99,8 @@ function Fiche({ d }: { d: DevisDetail }) {
   const convertir = useConvertirDevis(d.id);
   const supprimer = useSupprimerDevis(d.id);
   const [dialogue, setDialogue] = useState<'convertir' | 'supprimer' | null>(null);
+  const parametres = useParametres();
+  const entreprise = parametres.data?.entreprise ?? null;
 
   const changerStatut = (s: 'envoye' | 'accepte' | 'refuse') =>
     statut.mutate(s, {
@@ -117,24 +121,42 @@ function Fiche({ d }: { d: DevisDetail }) {
             : null;
 
   const transitions = d.transitions.filter((t) => t !== principale);
-  const lignes = lignesDevis(d.machine, d.specs, d.detail_prix);
+  // Lignes par produit renvoyées par l'API (identiques au PDF) ; repli sur le détail du moteur pour un ancien devis.
+  const lignes = d.lignes ?? lignesDevis(d.machine, d.specs, d.detail_prix);
   const motifRemise = d.specs?.remise?.motif;
 
   const dp = d.detail_prix;
   const remise = dp?.remise ?? 0;
   const arrondi = dp?.arrondi ?? 0;
   const tvaApplicable = dp?.tva_applicable ?? d.tva > 0;
-  const totaux: LigneTotal[] = [];
-  if (dp && (remise > 0 || arrondi !== 0)) totaux.push({ label: 'Sous-total', valeur: formatFCFA(dp.sous_total) });
-  if (remise > 0) totaux.push({ label: motifRemise ? `Remise (${motifRemise})` : 'Remise', valeur: `− ${formatFCFA(remise)}` });
-  if (arrondi !== 0) totaux.push({ label: 'Arrondi', valeur: `${arrondi > 0 ? '+' : '−'} ${formatFCFA(Math.abs(arrondi))}` });
+  const totaux: TotalApercu[] = [];
+  if (dp && (remise > 0 || arrondi !== 0)) totaux.push({ label: 'Sous-total :', valeur: formatEntier(dp.sous_total) });
+  if (remise > 0) totaux.push({ label: motifRemise ? `Remise (${motifRemise}) :` : 'Remise :', valeur: `- ${formatEntier(remise)}` });
+  if (arrondi !== 0) totaux.push({ label: 'Arrondi :', valeur: `${arrondi > 0 ? '+' : '-'} ${formatEntier(Math.abs(arrondi))}` });
   if (tvaApplicable) {
-    totaux.push({ label: 'Total HT', valeur: formatFCFA(d.total_ht) });
-    totaux.push({ label: `TVA${dp?.tva_taux !== undefined ? ` (${formatDecimal(dp.tva_taux)} %)` : ''}`, valeur: formatFCFA(d.tva) });
-    totaux.push({ label: 'Total TTC', valeur: formatFCFA(d.total_ttc), fort: true });
+    totaux.push({ label: 'Total HT :', valeur: formatEntier(d.total_ht) });
+    totaux.push({ label: `TVA${dp?.tva_taux !== undefined ? ` (${formatDecimal(dp.tva_taux)} %)` : ''} :`, valeur: formatEntier(d.tva) });
+    totaux.push({ label: 'TOTAL TTC :', valeur: formatEntier(d.total_ttc), fort: true });
   } else {
-    totaux.push({ label: 'Total', valeur: formatFCFA(d.total_ttc), fort: true });
+    totaux.push({ label: 'TOTAL :', valeur: formatEntier(d.total_ttc), fort: true });
   }
+  // Même texte que le PDF : remise au client, délai, acompte et conditions, sous les remarques.
+  const contact = (d.specs as { livraison_contact?: string | null } | null)?.livraison_contact;
+  const conditionsTexte = [
+    d.mode_remise === 'retrait' ? 'Remise : à venir chercher sur place.' : d.mode_remise === 'livraison' ? `Remise : livraison${d.adresse_livraison ? ` à ${d.adresse_livraison}` : ''}.` : null,
+    d.mode_remise !== 'retrait' && contact ? `Contact sur place : ${contact}.` : null,
+    d.delai_jours === null || d.delai_jours === undefined
+      ? null
+      : d.delai_jours === 0
+        ? 'Délai de fabrication : le jour même après validation du BAT.'
+        : `Délai de fabrication : ${d.delai_jours} jour${d.delai_jours > 1 ? 's' : ''} après validation du BAT.`,
+    urgenceDuDevis(d) ? `Urgence : ${urgenceDuDevis(d) === '24h' ? '24 h' : '48 h'}.` : null,
+    d.acompte_pourcent ? `Acompte demandé à la commande : ${d.acompte_pourcent} %, soit ${formatFCFA(Math.round((d.total_ttc * d.acompte_pourcent) / 100))}.` : null,
+    d.conditions_paiement ? `Conditions de paiement : ${d.conditions_paiement}` : null,
+  ]
+    .filter(Boolean)
+    .join('\n');
+  const remarques = [d.notes, conditionsTexte].filter(Boolean).join('\n\n');
 
   const pdf = `/api/devis/${d.id}/pdf`;
   const occupe = statut.isPending;
@@ -229,86 +251,40 @@ function Fiche({ d }: { d: DevisDetail }) {
               modifiez-le pour le rechiffrer.
             </Alert>
           )}
-          <section className="ev-card cm-doc" aria-label={`Devis ${d.numero}`}>
-            <div className="cm-doc__parties">
-              <BlocDocument titre="Client">
-                <strong>{d.client_nom}</strong>
-                {d.client_telephone && <span className="ev-ref">{d.client_telephone}</span>}
-                {d.client_email && <span>{d.client_email}</span>}
-                {d.client_id ? (
-                  <Link className="ev-link" style={{ fontSize: 13, marginTop: 4 }} to={`/clients/${d.client_id}`}>
+          <section className="ev-card" style={{ padding: 0, overflow: 'hidden' }} aria-label={`Devis ${d.numero}`}>
+            <ApercuDocument
+              titre={`Devis N° ${d.numero}`}
+              infos={[
+                { label: 'Date de création', valeur: formatDate(d.created_at) },
+                { label: 'Date limite de validité', valeur: formatJour(d.date_validite) },
+                ...(d.mode_reglement ? [{ label: 'Mode de règlement', valeur: MODE_PAIEMENT_LABELS[d.mode_reglement] }] : []),
+                ...(d.echeance_reglement ? [{ label: 'Date limite de règlement', valeur: d.echeance_reglement }] : []),
+              ]}
+              vendeur={[entreprise?.nom ?? '']}
+              acheteur={[
+                <strong key="nom">{d.client_nom}</strong>,
+                d.client_telephone && `Tél. ${d.client_telephone}`,
+                d.client_email,
+                d.client_id ? (
+                  <Link key="fiche" className="ev-link" to={`/clients/${d.client_id}`}>
                     Voir la fiche client
                   </Link>
                 ) : (
-                  <span className="ev-muted">Pas encore de fiche client : elle sera créée à la conversion.</span>
-                )}
-              </BlocDocument>
-              <BlocDocument titre="Prestation">
-                <strong>Impression {MACHINE_LABELS[d.machine]}</strong>
-                <span className="ev-muted">{MACHINE_DESCRIPTIONS[d.machine]}</span>
-              </BlocDocument>
-              <BlocDocument titre="Validité">
-                <strong className="ev-mono" style={{ fontWeight: 500 }}>
-                  {formatJour(d.date_validite)}
-                </strong>
-                <span className="ev-muted">
-                  {d.validite_jours} jour{d.validite_jours > 1 ? 's' : ''} à compter du {formatDate(d.created_at)}
-                </span>
-              </BlocDocument>
-            </div>
-
-            {d.description && (
-              <BlocDocument titre="Objet">
-                <p className="cm-texte">{d.description}</p>
-              </BlocDocument>
-            )}
-
-            <div className="stack">
-              <LignesDocument lignes={lignes} vide="Ce devis n'a pas de détail de prix : modifiez-le pour le chiffrer avec la grille tarifaire." />
-              <Totaux lignes={totaux} label="Totaux du devis" />
-            </div>
-
-            <BlocDocument titre="Remise et conditions">
-              <dl className="cm-kv">
-                <dt>Remise au client</dt>
-                <dd>
-                  {d.mode_remise === 'retrait'
-                    ? 'À venir chercher sur place'
-                    : `À livrer${d.adresse_livraison ? ` : ${d.adresse_livraison}` : ' (adresse à préciser)'}`}
-                </dd>
-                {d.mode_remise !== 'retrait' && (d.specs as { livraison_contact?: string | null } | null)?.livraison_contact && (
-                  <>
-                    <dt>Contact sur place</dt>
-                    <dd>{(d.specs as { livraison_contact?: string | null }).livraison_contact}</dd>
-                  </>
-                )}
-                <dt>Délai de fabrication</dt>
-                <dd>{d.delai_jours === null || d.delai_jours === undefined ? '—' : `${d.delai_jours} jour${d.delai_jours > 1 ? 's' : ''} après validation du BAT`}</dd>
-                {urgenceDuDevis(d) && (
-                  <>
-                    <dt>Urgence</dt>
-                    <dd>Urgent {urgenceDuDevis(d) === '24h' ? '24 h' : '48 h'}</dd>
-                  </>
-                )}
-                <dt>Acompte</dt>
-                <dd>{d.acompte_pourcent ? `${d.acompte_pourcent} %, soit ${formatFCFA(Math.round((d.total_ttc * d.acompte_pourcent) / 100))}` : '—'}</dd>
-                <dt>Paiement</dt>
-                <dd>{d.conditions_paiement ?? '—'}</dd>
-              </dl>
-            </BlocDocument>
-
-            {d.notes && (
-              <BlocDocument titre="Remarques">
-                <p className="cm-texte">{d.notes}</p>
-              </BlocDocument>
-            )}
-
-            <div className="cm-doc__pied">
-              <p>
-                Montants en francs CFA (FCFA){tvaApplicable ? '' : ', TVA non applicable'}. Devis valable {d.validite_jours} jour{d.validite_jours > 1 ? 's' : ''} à
-                compter du {formatDate(d.created_at)}.
-              </p>
-            </div>
+                  <span key="sans" className="ev-muted">
+                    Pas encore de fiche client : elle sera créée à la conversion.
+                  </span>
+                ),
+              ]}
+              objet={d.description}
+              lignes={lignes}
+              vide="Ce devis n'a pas de détail de prix : modifiez-le pour le chiffrer avec la grille tarifaire."
+              totaux={totaux}
+              aPayer={d.total_ttc}
+              paragraphes={remarques ? [{ titre: 'Remarques', texte: remarques }] : []}
+              bonPourAccord
+              entreprise={entreprise}
+              filigrane={d.statut === 'refuse' ? 'REFUSÉ' : null}
+            />
           </section>
         </div>
 

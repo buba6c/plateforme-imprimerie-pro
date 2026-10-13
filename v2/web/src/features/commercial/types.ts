@@ -1,5 +1,5 @@
 // Types des réponses de l'API pour les devis, factures et clients (voir v2/API.md).
-import type { LignePrix, Machine, ResultatPrix, SituationPaiement, Specs, Statut, StatutDevis, StatutFacture } from '@evocom/shared';
+import type { LignePrix, Machine, ModePaiement, ResultatPrix, SituationPaiement, Specs, Statut, StatutDevis, StatutFacture } from '@evocom/shared';
 
 /** Détail de prix stocké avec un devis : résultat du moteur + règle de TVA appliquée. */
 export type DetailPrix = ResultatPrix & { tva_applicable?: boolean; tva_taux?: number; prix_saisis_ht?: boolean };
@@ -38,6 +38,10 @@ export interface DevisDetail extends DevisResume {
   peut_modifier: boolean;
   peut_supprimer: boolean;
   peut_convertir: boolean;
+  /** Lignes par produit, telles que le PDF les imprime. */
+  lignes?: LigneDocument[];
+  mode_reglement?: ModePaiement | null;
+  echeance_reglement?: string | null;
 }
 
 export interface ListeDevisReponse {
@@ -259,6 +263,7 @@ export interface Entreprise {
   ninea: string;
   rccm: string;
   pied_facture: string;
+  coordonnees_bancaires?: string;
 }
 
 export interface ParametresPublics {

@@ -166,10 +166,12 @@ async function chargerDevis(user: AuthUser, id: number, db: Db = getPool(), verr
   return d;
 }
 
-function presenter(user: AuthUser, d: DevisRow) {
+async function presenter(user: AuthUser, d: DevisRow) {
   const auteur = estAuteurOuAdmin(user, d);
   return {
     ...d,
+    // Lignes par produit, telles que le PDF les imprime (l'écran affiche le même document).
+    lignes: lignesRegroupees(d.machine, d.specs, d.detail_prix, await getTarifs()),
     statut_label: STATUT_DEVIS_LABELS[d.statut],
     transitions: auteur ? TRANSITIONS[d.statut] : [],
     peut_modifier: auteur && MODIFIABLES.includes(d.statut),
@@ -286,12 +288,12 @@ devisRouter.post('/', async (req, res) => {
     );
     return r!.id;
   });
-  res.status(201).json(presenter(user, await chargerDevis(user, id)));
+  res.status(201).json(await presenter(user, await chargerDevis(user, id)));
 });
 
 devisRouter.get('/:id', async (req, res) => {
   const user = me(req);
-  res.json(presenter(user, await chargerDevis(user, intParam(req))));
+  res.json(await presenter(user, await chargerDevis(user, intParam(req))));
 });
 
 devisRouter.patch('/:id', async (req, res) => {
@@ -332,7 +334,7 @@ devisRouter.patch('/:id', async (req, res) => {
     args.push(id);
     await query(`UPDATE devis SET ${sets.join(', ')} WHERE id = $${args.length}`, args, db);
   });
-  res.json(presenter(user, await chargerDevis(user, id)));
+  res.json(await presenter(user, await chargerDevis(user, id)));
 });
 
 devisRouter.post('/:id/statut', async (req, res) => {
@@ -356,7 +358,7 @@ devisRouter.post('/:id/statut', async (req, res) => {
     }
     await query(`UPDATE devis SET statut = $2 WHERE id = $1`, [id, statut], db);
   });
-  res.json(presenter(user, await chargerDevis(user, id)));
+  res.json(await presenter(user, await chargerDevis(user, id)));
 });
 
 const conversionSchema = z.object({
