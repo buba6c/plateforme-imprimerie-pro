@@ -41,6 +41,7 @@ export async function fusionner(avant: Parametres, input: ParametresInput, db?: 
     fichiers: { ...avant.fichiers, ...sansIndefinis(input.fichiers) },
     documents: { ...avant.documents, ...sansIndefinis(input.documents) },
     notifications: { ...avant.notifications, ...sansIndefinis(input.notifications) },
+    imposition: { ...avant.imposition, ...sansIndefinis(input.imposition) },
   };
   const changements: Changements = {};
   for (const cle of Object.keys(apres) as (keyof Parametres)[]) {

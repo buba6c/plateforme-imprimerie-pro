@@ -68,3 +68,66 @@ export function PictoPlanches({ mode }: { mode: 'non' | 'simple' | 'couverture' 
   if (mode === 'simple') return <svg {...base}><rect x="6" y="7" width="17" height="22" rx="1" fill="currentColor" fillOpacity="0.25" /><rect x="25" y="7" width="17" height="22" rx="1" fill="currentColor" fillOpacity="0.25" /><path d="M24 4v28" strokeDasharray="3 2" /><text x="14.5" y="21" fontSize="8" textAnchor="middle" fill="currentColor" stroke="none">2</text><text x="33.5" y="21" fontSize="8" textAnchor="middle" fill="currentColor" stroke="none">3</text></svg>;
   return <svg {...base}><rect x="6" y="7" width="17" height="22" rx="1" fill="currentColor" fillOpacity="0.15" /><rect x="25" y="7" width="17" height="22" rx="1" fill="currentColor" fillOpacity="0.35" /><path d="M24 4v28" strokeDasharray="3 2" /><text x="14.5" y="21" fontSize="7" textAnchor="middle" fill="currentColor" stroke="none">4e</text><text x="33.5" y="21" fontSize="7" textAnchor="middle" fill="currentColor" stroke="none">1re</text></svg>;
 }
+
+/** Avec ou sans fonds perdus. */
+export function PictoCoupe({ mode }: { mode: 'avec' | 'sans' }) {
+  if (mode === 'avec') return <svg {...base}><rect x="9" y="5" width="30" height="26" fill="currentColor" fillOpacity="0.12" strokeDasharray="3 2" /><rect x="14" y="10" width="20" height="16" fill="currentColor" fillOpacity="0.35" stroke="none" /><rect x="14" y="10" width="20" height="16" /></svg>;
+  return <svg {...base}><rect x="14" y="10" width="20" height="16" fill="currentColor" fillOpacity="0.35" /><path d="M14 4v3M34 4v3M14 32v-3M34 32v-3M8 10h3M8 26h3M40 10h-3M40 26h-3" strokeWidth="1.2" /></svg>;
+}
+
+/** Systèmes de coupe sans fonds perdus. */
+export function PictoSystemeCoupe({ systeme }: { systeme: 'sans_auto' | 'franche' | 'double' | 'cadre' | 'aucune' }) {
+  const poses = (gap: number, inset = 0) => [0, 1].map((i) => <rect key={i} x={8 + inset + i * (16 + gap)} y={8 + inset} width={16 - 2 * inset} height={20 - 2 * inset} fill="currentColor" fillOpacity="0.3" stroke="none" />);
+  if (systeme === 'sans_auto') return <svg {...base}>{poses(0)}<path d="M24 5v26" strokeWidth="1.2" /><path d="M42 3l1.2 2.6L46 6.8l-2.8 1.2L42 11l-1.2-3L38 6.8l2.8-1.2z" fill="currentColor" stroke="none" /></svg>;
+  if (systeme === 'franche') return <svg {...base}>{poses(0)}<path d="M24 4v4M24 28v4M4 8h4M4 28h4M44 8h-4M44 28h-4" strokeWidth="1.2" /></svg>;
+  if (systeme === 'double') return <svg {...base}>{poses(6)}<path d="M8 8h16v20H8zM30 8h16v20H30z" fill="none" strokeWidth="0.8" strokeOpacity="0.5" /><path d="M24 4v4M30 4v4M24 28v4M30 28v4" strokeWidth="1.2" /><path d="M25 9l4 4M25 15l4 4M25 21l4 4" strokeWidth="0.8" strokeOpacity="0.6" /></svg>;
+  if (systeme === 'cadre') return <svg {...base}><rect x="8" y="6" width="32" height="24" fill="#fff" /><rect x="12" y="10" width="24" height="16" fill="currentColor" fillOpacity="0.35" stroke="none" /><rect x="8" y="6" width="32" height="24" /></svg>;
+  return <svg {...base}><rect x="10" y="4" width="28" height="28" fill="currentColor" fillOpacity="0.3" /><path d="M16 12h16M16 17h16M16 22h10" strokeOpacity="0.6" /></svg>;
+}
+
+/** Styles de traits de coupe. */
+export function PictoTraitsStyle({ style }: { style: 'auto' | 'angles' | 'bloc' | 'bord_feuille' | 'traversants' | 'aucun' }) {
+  const grille = [0, 1].flatMap((r) => [0, 1].map((c) => <rect key={`${r}${c}`} x={12 + c * 12} y={8 + r * 10} width="12" height="10" fill="currentColor" fillOpacity="0.25" stroke="none" />));
+  const cadre = <rect x="4" y="3" width="40" height="30" rx="1" strokeOpacity="0.35" strokeWidth="0.8" />;
+  if (style === 'aucun') return <svg {...base}>{cadre}{grille}</svg>;
+  if (style === 'angles') return <svg {...base}>{cadre}{grille}<path d="M12 5v2M24 5v2M36 5v2M12 31v-2M24 31v-2M36 31v-2M7 8h2M7 18h2M7 28h2M41 8h-2M41 18h-2M41 28h-2M24 10v-1M24 26v1" strokeWidth="1.2" /></svg>;
+  if (style === 'bloc') return <svg {...base}>{cadre}{grille}<path d="M12 4v3M24 4v3M36 4v3M12 32v-3M24 32v-3M36 32v-3M5 8h4M5 18h4M5 28h4M43 8h-4M43 18h-4M43 28h-4" strokeWidth="1.2" /></svg>;
+  if (style === 'bord_feuille') return <svg {...base}>{cadre}{grille}<path d="M12 3v2M24 3v2M36 3v2M12 33v-2M24 33v-2M36 33v-2M4 8h2M4 18h2M4 28h2M44 8h-2M44 18h-2M44 28h-2" strokeWidth="1.4" /></svg>;
+  if (style === 'traversants') return <svg {...base}>{cadre}{grille}<path d="M12 3v5M24 3v5M36 3v5M12 33v-5M24 33v-5M36 33v-5M4 8h8M4 18h8M4 28h8M44 8h-8M44 18h-8M44 28h-8" strokeWidth="1" /></svg>;
+  return <svg {...base}>{cadre}{grille}<path d="M12 4v3M24 4v3M36 4v3M12 32v-3M24 32v-3M36 32v-3" strokeWidth="1.2" /><path d="M42 3l1.2 2.6L46 6.8l-2.8 1.2L42 11l-1.2-3L38 6.8l2.8-1.2z" fill="currentColor" stroke="none" /></svg>;
+}
+
+/** Rotation des poses : droites, tournées, auto (bande tournée). */
+export function PictoRotationPoses({ mode }: { mode: 'aucune' | '90' | 'auto' }) {
+  if (mode === 'aucune') return <svg {...base}>{[0, 1, 2].map((i) => <rect key={i} x={7 + i * 12} y="6" width="10" height="24" rx="1" fill="currentColor" fillOpacity="0.3" stroke="none" />)}</svg>;
+  if (mode === '90') return <svg {...base}>{[0, 1].map((i) => <rect key={i} x="7" y={6 + i * 13} width="34" height="11" rx="1" fill="currentColor" fillOpacity="0.3" stroke="none" />)}</svg>;
+  return <svg {...base}>{[0, 1, 2].map((i) => <rect key={i} x={5 + i * 11} y="4" width="9" height="16" rx="1" fill="currentColor" fillOpacity="0.3" stroke="none" />)}<rect x="5" y="22" width="31" height="9" rx="1" fill="currentColor" fillOpacity="0.5" stroke="none" /><path d="M42 3l1.2 2.6L46 6.8l-2.8 1.2L42 11l-1.2-3L38 6.8l2.8-1.2z" fill="currentColor" stroke="none" /></svg>;
+}
+
+/** Tête-bêche. */
+export function PictoTeteBeche({ mode }: { mode: 'aucune' | 'colonnes' | 'rangs' | 'damier' }) {
+  const tourne = (r: number, c: number) => (mode === 'colonnes' ? c % 2 === 1 : mode === 'rangs' ? r % 2 === 1 : mode === 'damier' ? (r + c) % 2 === 1 : false);
+  return (
+    <svg {...base}>
+      {[0, 1].flatMap((r) => [0, 1, 2].map((c) => (
+        <g key={`${r}${c}`}>
+          <rect x={6 + c * 13} y={5 + r * 14} width="11" height="12" rx="1" fill="currentColor" fillOpacity="0.25" stroke="none" />
+          <path d={tourne(r, c) ? `M${11.5 + c * 13} ${15 + r * 14}l-2.5-4h5z` : `M${11.5 + c * 13} ${7 + r * 14}l-2.5 4h5z`} fill="currentColor" stroke="none" />
+        </g>
+      )))}
+    </svg>
+  );
+}
+
+/** Calage de la grille. */
+export function PictoCalage({ mode }: { mode: 'centre' | 'coin' }) {
+  if (mode === 'centre') return <svg {...base}><rect x="4" y="3" width="40" height="30" rx="1" strokeOpacity="0.35" strokeWidth="0.8" /><rect x="14" y="10" width="20" height="16" fill="currentColor" fillOpacity="0.3" stroke="none" /><path d="M24 5v3M24 31v-3M6 18h3M42 18h-3" strokeWidth="0.8" strokeDasharray="1 1" /></svg>;
+  return <svg {...base}><rect x="4" y="3" width="40" height="30" rx="1" strokeOpacity="0.35" strokeWidth="0.8" /><rect x="9" y="12" width="20" height="16" fill="currentColor" fillOpacity="0.3" stroke="none" /><path d="M4 33l5-5M9 28v5M9 28H4" strokeWidth="1" /><path d="M6 30.5l2-2" /></svg>;
+}
+
+/** Bord de retournement. */
+export function PictoRetournement({ mode }: { mode: 'auto' | 'bord_long' | 'bord_court' }) {
+  if (mode === 'bord_long') return <svg {...base}><rect x="12" y="4" width="20" height="28" rx="1" fill="currentColor" fillOpacity="0.2" /><path d="M34 10c6 2 6 14 0 16" /><path d="M35 23l-1 4-4-1" /></svg>;
+  if (mode === 'bord_court') return <svg {...base}><rect x="12" y="4" width="20" height="28" rx="1" fill="currentColor" fillOpacity="0.2" /><path d="M16 2c4-4 12-4 16 0" transform="translate(0 2)" /><path d="M31 1l2 3-3 2" transform="translate(0 2)" /></svg>;
+  return <svg {...base}><rect x="12" y="4" width="20" height="28" rx="1" fill="currentColor" fillOpacity="0.2" /><path d="M42 3l1.2 2.6L46 6.8l-2.8 1.2L42 11l-1.2-3L38 6.8l2.8-1.2z" fill="currentColor" stroke="none" /></svg>;
+}

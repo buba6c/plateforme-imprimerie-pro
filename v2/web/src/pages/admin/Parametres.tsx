@@ -1,6 +1,6 @@
 import { useCallback, useMemo, useState, type ComponentType, type ReactNode } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { AlertTriangle, ArrowLeft, Bell, Building2, ChevronRight, FileText, FolderUp, Hash, Palette, Percent, ArrowLeftRight, ReceiptText, ShieldCheck } from 'lucide-react';
+import { AlertTriangle, ArrowLeft, Bell, Building2, ChevronRight, FileText, FolderUp, Hash, LayoutGrid, Palette, Percent, ArrowLeftRight, ReceiptText, ShieldCheck } from 'lucide-react';
 import { messageErreur } from '../../lib/api';
 import { Alert, Button, LoadingRows, PageHeader } from '../../ui';
 import { useParametresAdmin } from '../../features/parametres/api';
@@ -9,6 +9,7 @@ import { SectionEntreprise } from '../../features/parametres/sections/Entreprise
 import { SectionPrix } from '../../features/parametres/sections/Prix';
 import { SectionSecurite } from '../../features/parametres/sections/Securite';
 import { SectionFichiers } from '../../features/parametres/sections/Fichiers';
+import { SectionImposition } from '../../features/parametres/sections/Imposition';
 import { SectionDocuments } from '../../features/parametres/sections/Documents';
 import { SectionFacturation } from '../../features/parametres/sections/Facturation';
 import { SectionNotifications } from '../../features/parametres/sections/Notifications';
@@ -19,7 +20,7 @@ import { ApparenceEntreprise } from '../../features/apparence/ApparenceEntrepris
 import '../../features/admin/admin.css';
 import '../../features/parametres/parametres.css';
 
-type Id = 'entreprise' | 'prix' | 'couleurs' | 'securite' | 'fichiers' | 'documents' | 'facturation' | 'notifications' | 'numerotation' | 'export' | 'danger';
+type Id = 'entreprise' | 'prix' | 'couleurs' | 'securite' | 'fichiers' | 'imposition' | 'documents' | 'facturation' | 'notifications' | 'numerotation' | 'export' | 'danger';
 
 interface Section {
   id: Id;
@@ -37,6 +38,7 @@ const SECTIONS: Section[] = [
   { id: 'couleurs', titre: 'Couleurs', description: 'Dégradé Evocom, palette de l’équipe', icone: Palette, rendu: (p) => <ApparenceEntreprise onModifie={p.onModifie} /> },
   { id: 'securite', titre: 'Sécurité', description: 'Sessions, blocage, mots de passe', icone: ShieldCheck, rendu: (p) => <SectionSecurite {...p} /> },
   { id: 'fichiers', titre: 'Fichiers', description: 'Taille maximale, types acceptés', icone: FolderUp, rendu: (p) => <SectionFichiers {...p} /> },
+  { id: 'imposition', titre: 'Imposition', description: 'Bord non imprimable de la Xerox, fonds perdus minimaux', icone: LayoutGrid, rendu: (p) => <SectionImposition {...p} /> },
   { id: 'documents', titre: 'Documents', description: 'Validité des devis, mentions, conditions', icone: FileText, rendu: (p) => <SectionDocuments {...p} /> },
   { id: 'facturation', titre: 'Facturation', description: 'Liaison VosFactures.fr, envoi automatique', icone: ReceiptText, rendu: (p) => <SectionFacturation onModifie={p.onModifie} /> },
   { id: 'notifications', titre: 'Notifications', description: 'Types de notification envoyés', icone: Bell, rendu: (p) => <SectionNotifications {...p} /> },

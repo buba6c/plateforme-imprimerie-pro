@@ -35,6 +35,8 @@ export interface Adaptation {
   rognage: { x: number; y: number };
   /** Rien à faire : le fichier est au format (à la tolérance près). */
   identique: boolean;
+  /** Cadre blanc (passe-partout) laissé autour du visuel dans le format fini (mm), compris dans `marges`. */
+  cadre_mm?: number;
 }
 
 /** Tolérance (mm) en deçà de laquelle une taille est considérée comme la bonne. */
@@ -55,7 +57,24 @@ export interface MargesBlanches {
  * Calcule l'adaptation d'un visuel `source` (mm) au format fini `fini` (mm).
  * `margeBlanche` : marge blanche mesurée sur chaque bord du visuel (mm), si l'analyse a pu la rendre.
  */
-export function calculerAdaptation(source: Dimension, fini: Dimension, mode: ModeAjustement = 'auto', margeBlanche: MargesBlanches | null = null): Adaptation {
+/**
+ * Cadre blanc volontaire (passe-partout) : le visuel est mis au format fini moins `cadreMm` de chaque côté,
+ * puis centré ; le blanc apparaît tout seul. Une seule mise à l'échelle, composée avec la mise au format
+ * (un visuel d'une autre taille est d'abord adapté à la cible réduite). Le raccourci « même taille » est
+ * ignoré : un fichier exactement au format doit bien être réduit.
+ */
+export function calculerAdaptationCadre(source: Dimension, fini: Dimension, cadreMm: number, mode: ModeAjustement = 'auto', margeBlanche: MargesBlanches | null = null): Adaptation {
+  const c = Math.max(0, Math.min(cadreMm, Math.min(fini.largeur, fini.hauteur) / 4));
+  if (c <= 0) return calculerAdaptation(source, fini, mode, margeBlanche);
+  const cible = { largeur: fini.largeur - 2 * c, hauteur: fini.hauteur - 2 * c };
+  // « centrer » garderait la taille d'origine : avec un cadre on réduit toujours ; « auto » devient « adapter »
+  // (rien de perdu), les autres modes explicites sont respectés.
+  const m: ModeAjustement = mode === 'auto' || mode === 'centrer' ? 'adapter' : mode;
+  const a = calculerAdaptation(source, cible, m, margeBlanche, true);
+  return { ...a, auto: mode === 'auto', marges: { x: arrondi(a.marges.x + c), y: arrondi(a.marges.y + c) }, identique: false, cadre_mm: arrondi(c) };
+}
+
+export function calculerAdaptation(source: Dimension, fini: Dimension, mode: ModeAjustement = 'auto', margeBlanche: MargesBlanches | null = null, forcerEchelle = false): Adaptation {
   const auto = mode === 'auto';
   const base: Omit<Adaptation, 'mode' | 'echelle_x' | 'echelle_y' | 'marges' | 'rognage' | 'identique'> = { auto, source: { largeur: arrondi(source.largeur), hauteur: arrondi(source.hauteur) }, pivote: false };
   const centrerAvec = (s: Dimension, pivote = false, identique = false): Adaptation => ({
@@ -71,10 +90,10 @@ export function calculerAdaptation(source: Dimension, fini: Dimension, mode: Mod
 
   // Même taille (ou fonds perdus non déclarés tout autour : 2, 3 ou 5 mm de plus de chaque côté).
   const memeTaille = (s: Dimension) => [0, 2, 3, 5].some((fp) => proche(s.largeur, fini.largeur + 2 * fp, 0.75 + (fp ? 0 : TOLERANCE_FORMAT - 0.75)) && proche(s.hauteur, fini.hauteur + 2 * fp, 0.75 + (fp ? 0 : TOLERANCE_FORMAT - 0.75)));
-  if (memeTaille(source)) return centrerAvec(source, false, true);
+  if (!forcerEchelle && memeTaille(source)) return centrerAvec(source, false, true);
   const transposee = { largeur: source.hauteur, hauteur: source.largeur };
   const carre = proche(fini.largeur, fini.hauteur, 0.5);
-  if (auto && !carre && memeTaille(transposee)) return { ...centrerAvec(transposee, true, true), source: base.source };
+  if (!forcerEchelle && auto && !carre && memeTaille(transposee)) return { ...centrerAvec(transposee, true, true), source: base.source };
 
   if (mode === 'centrer') return centrerAvec(source);
   const s = source;

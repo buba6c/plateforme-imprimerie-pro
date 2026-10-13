@@ -9,6 +9,8 @@ import { getPool } from '../src/db/pool';
 import { calculerPlan, paramsParDefaut, type ParamsImposition } from '../src/modules/imposition/plan';
 import { detecterFormat, formatProche } from '../src/modules/imposition/formats';
 import { cadreSource, calculerAdaptation } from '../src/modules/imposition/ajuster';
+import { paramsSchema } from '../src/modules/imposition/routes';
+import type { SourcePlan } from '../src/modules/imposition/plan';
 import { agent, app, comptes, envoyerFichier } from './helpers';
 
 const STOCKAGE = fs.mkdtempSync(path.join(os.tmpdir(), 'evocom-test-imposition-'));
@@ -184,6 +186,157 @@ describe('imposition : formats et plans (sans serveur)', () => {
     expect(formatProche(300, 100)).toBeNull();
   });
 
+  const sourceMarge = (m: number, extra: Partial<SourcePlan> = {}): SourcePlan => ({ fini: { largeur: 85, hauteur: 55 }, marge_blanche: { haut: m, bas: m, gauche: m, droite: m }, fonds: 'absents', fonds_mm: 0, marge_blanche_min: m, jusqu_au_bord: m < 0.5, bord_clair: false, bords_unis_partout: false, nb_pages_rendues: 2, nb_pages: 2, ...extra });
+
+  it('coupe automatique : fonds perdus si le visuel va au bord, coupe franche si la marge est large, double coupe entre les deux', () => {
+    const p = { ...base, coupe: 'auto' as const, methode_fonds_perdus: 'intelligent' as const };
+    // Visuel au bord : fonds perdus fabriqués.
+    const bord = calculerPlan(p, 2, undefined, sourceMarge(0));
+    expect(bord.coupe).toMatchObject({ systeme: 'fonds_perdus', auto: true, fonds_perdus_mm: 3, methode: 'intelligent' });
+    expect(bord.coupe.raison).toMatch(/jusqu’au bord/);
+    // Marge blanche de 8 mm : coupe franche, poses jointives, fonds perdus 0.
+    const franche = calculerPlan(p, 2, undefined, sourceMarge(8));
+    expect(franche.coupe).toMatchObject({ systeme: 'franche', auto: true, fonds_perdus_mm: 0, gouttiere_mm: 0, marge_encre_mm: 8 });
+    expect(franche.params_effectifs.fonds_perdus_mm).toBe(0);
+    expect(franche.fonds_perdus_mm).toBe(0);
+    const r = franche.feuilles[0]!.recto.poses;
+    const voisines = r.filter((q) => Math.abs(q.y - r[0]!.y) < 0.01).sort((a, b) => a.x - b.x);
+    expect(voisines[1]!.x - (voisines[0]!.x + voisines[0]!.largeur)).toBeCloseTo(0, 5);
+    expect(franche.poses_par_face).toBeGreaterThan(bord.poses_par_face);
+    // Marge de 2 mm : double coupe de 4 mm.
+    const double = calculerPlan(p, 2, undefined, sourceMarge(2));
+    expect(double.coupe).toMatchObject({ systeme: 'double', gouttiere_mm: 4, fonds_perdus_mm: 0 });
+    // Fond clair non blanc : traité comme au bord.
+    expect(calculerPlan(p, 2, undefined, sourceMarge(8, { bord_clair: true })).coupe.systeme).toBe('fonds_perdus');
+    // Bords non contrôlés (Poppler absent) : fonds perdus par sécurité ; « sans fonds perdus » demandé → double coupe.
+    expect(calculerPlan(p, 2, undefined, sourceMarge(0, { marge_blanche: null, marge_blanche_min: null, jusqu_au_bord: null, nb_pages_rendues: 0 })).coupe.systeme).toBe('fonds_perdus');
+    const sans = calculerPlan({ ...p, coupe: 'sans_auto' }, 2, undefined, sourceMarge(0, { marge_blanche: null, marge_blanche_min: null, jusqu_au_bord: null, nb_pages_rendues: 0 }));
+    expect(sans.coupe).toMatchObject({ systeme: 'double', gouttiere_mm: 6 });
+    // Répétition avec bords unis : le voisin sert de fond perdu.
+    expect(calculerPlan({ ...p, coupe: 'sans_auto' }, 2, undefined, sourceMarge(0, { bords_unis_partout: true })).coupe.systeme).toBe('franche');
+    // Zéro millimètre demandé = sans fonds perdus.
+    expect(calculerPlan({ ...p, fonds_perdus_mm: 0 }, 2, undefined, sourceMarge(0)).coupe.fonds_perdus_mm).toBe(0);
+    // Cadre blanc de 3 mm : visuel réduit à 89 %, marges du cadre comprises.
+    const cadre = calculerPlan({ ...p, coupe: 'cadre' }, 2, undefined, sourceMarge(0));
+    expect(cadre.coupe).toMatchObject({ systeme: 'cadre', cadre_mm: 3, fonds_perdus_mm: 0 });
+    expect(cadre.adaptation).toMatchObject({ mode: 'adapter', cadre_mm: 3, marges: { y: 3 } });
+    expect(cadre.adaptation!.echelle_x).toBeCloseTo(49 / 55, 3);
+    // Sans coupe : la feuille est exactement le format fini, aucun trait.
+    const aucune = calculerPlan({ ...p, coupe: 'aucune' }, 2, undefined, sourceMarge(8));
+    expect(aucune.feuille).toEqual({ largeur: 85, hauteur: 55 });
+    expect(aucune.feuilles[0]!.recto.traits).toEqual([]);
+    // Ancien réglage « blanc » avec 3 mm : espace devenu gouttière de 6 mm, grille inchangée.
+    const ancien = calculerPlan({ ...base, methode_fonds_perdus: 'blanc', fonds_perdus_mm: 3 }, 2, undefined, sourceMarge(8));
+    expect(ancien.coupe).toMatchObject({ systeme: 'double', gouttiere_mm: 6, fonds_perdus_mm: 0 });
+  });
+
+  it('calepinage automatique : A5 sur SRA3 loge 4 poses, les fonds perdus s’ajustent pour garder les repères', () => {
+    const p = { ...base, fini: { largeur: 148, hauteur: 210 }, methode_fonds_perdus: 'intelligent' as const, marge_mm: 5 };
+    const src: SourcePlan = { ...sourceMarge(0), fini: { largeur: 148, hauteur: 210 } };
+    const plan = calculerPlan(p, 2, undefined, src);
+    expect(plan.poses_par_face).toBe(4);
+    expect(plan.calepinage).toMatchObject({ auto: true, poses: 4, fonds_perdus_mm: 2, reperes_ok: true });
+    expect(plan.calepinage!.raison).toMatch(/réduits à 2 mm/);
+    expect(plan.calepinage!.alternatives.some((a) => a.fonds_perdus_mm === 3 && a.poses === 4)).toBe(true);
+    // Avec la marge de 10 mm d'autrefois, 4 poses exigeraient moins de 1 mm de fonds perdus : l'optimiseur
+    // garde 3 mm (2 poses) plutôt que de descendre sous le plancher de l'atelier (1,5 mm).
+    const etroit = calculerPlan({ ...p, marge_mm: 10 }, 2, undefined, src);
+    expect(etroit.poses_par_face).toBe(2);
+    expect(etroit.calepinage!.fonds_perdus_mm).toBe(3);
+    // Réglage manuel : rien n'est touché.
+    const manuel = calculerPlan({ ...p, marge_mm: 10, calepinage: 'manuel' }, 2, undefined, src);
+    expect(manuel.calepinage).toMatchObject({ auto: false, fonds_perdus_mm: 3 });
+    expect(manuel.poses_par_face).toBe(2);
+    // Fonds perdus partagés quand les bords sont unis en répétition : 4 poses jointives avec 3 mm sur le pourtour.
+    const partage = calculerPlan(p, 2, undefined, { ...src, bords_unis_partout: true });
+    expect(partage.calepinage).toMatchObject({ partages: true, fonds_perdus_mm: 3, poses: 4 });
+    const poses = partage.feuilles[0]!.recto.poses;
+    expect(poses.every((q) => (q.joints?.length ?? 0) >= 2)).toBe(true);
+  });
+
+  it('rotation automatique des poses : tickets 70 × 150 → 9 poses dont une bande tournée ; tête-bêche', () => {
+    const p = { ...base, fini: { largeur: 70, hauteur: 150 }, fonds_perdus_mm: 3, methode_fonds_perdus: 'intelligent' as const, marge_mm: 5, rotation_poses: 'auto' as const, recto_verso: false, calepinage: 'manuel' as const };
+    const plan = calculerPlan(p, 1, undefined, sourceMarge(0));
+    expect(plan.poses_par_face).toBe(9);
+    const poses = plan.feuilles[0]!.recto.poses;
+    // Portrait (8 droites + 1 tournée) ou paysage (5 + 4) : les deux logent 9 ; le plan garde celle dont les repères restent lisibles.
+    expect(poses.filter((q) => q.rotation === 90).length).toBeGreaterThanOrEqual(1);
+    expect(poses.filter((q) => q.rotation === 90).length + poses.filter((q) => !q.rotation).length).toBe(9);
+    expect(plan.calepinage!.rotation).toBe('mixte');
+    // Aucune pose ne chevauche une autre (emprises).
+    const boites = poses.map((q) => ({ x: q.x, y: q.y, w: q.rotation === 90 ? q.hauteur : q.largeur, h: q.rotation === 90 ? q.largeur : q.hauteur }));
+    for (const a of boites) for (const b of boites) if (a !== b) expect(a.x + a.w <= b.x + 0.01 || b.x + b.w <= a.x + 0.01 || a.y + a.h <= b.y + 0.01 || b.y + b.h <= a.y + 0.01).toBe(true);
+    expect(calculerPlan({ ...p, rotation_poses: 'aucune' }, 1, undefined, sourceMarge(0)).poses_par_face).toBe(8);
+    // En automatique, descendre les fonds perdus à 1,5 mm loge 12 tickets droits : l'optimiseur le dit.
+    const opt = calculerPlan({ ...p, calepinage: 'auto' }, 1, undefined, sourceMarge(0));
+    expect(opt.poses_par_face).toBe(12);
+    expect(opt.calepinage).toMatchObject({ fonds_perdus_mm: 1.5, poses: 12 });
+    expect(opt.calepinage!.raison).toMatch(/12 poses au lieu de 8/);
+    // Tête-bêche par colonne : une colonne sur deux tournée de 180°.
+    const tb = calculerPlan({ ...base, tete_beche: 'colonnes', rotation_poses: 'aucune', recto_verso: false }, 1, undefined, sourceMarge(0));
+    const r0 = tb.feuilles[0]!.recto.poses;
+    expect(r0.filter((q) => q.colonne % 2 === 1).every((q) => q.rotation === 180)).toBe(true);
+    expect(r0.filter((q) => q.colonne % 2 === 0).every((q) => !q.rotation)).toBe(true);
+  });
+
+  it('verso : retournement automatique sans rotation, bord forcé sur l’autre axe → verso tourné d’un demi-tour', () => {
+    const p = { ...base, orientation: 'paysage' as const, rotation_poses: 'aucune' as const, methode_fonds_perdus: 'intelligent' as const };
+    const auto = calculerPlan({ ...p, retournement: 'auto' }, 2, undefined, sourceMarge(0));
+    expect(auto.retournement_effectif).toBe('bord_court');
+    expect(auto.axe_verso).toBe('vertical');
+    const r = auto.feuilles[0]!.recto.poses[0]!;
+    const v = auto.feuilles[0]!.verso!.poses[0]!;
+    expect(v.x + v.largeur + r.x).toBeCloseTo(auto.feuille.largeur, 2);
+    expect(v.rotation).toBeUndefined();
+    expect(auto.consignes.some((c) => /bord court/.test(c))).toBe(true);
+    // Bord long sur une feuille paysage : axe horizontal, verso tourné de 180°.
+    const force = calculerPlan({ ...p, retournement: 'bord_long' }, 2, undefined, sourceMarge(0));
+    expect(force.axe_verso).toBe('horizontal');
+    const v2 = force.feuilles[0]!.verso!.poses[0]!;
+    expect(v2.y + v2.hauteur + force.feuilles[0]!.recto.poses[0]!.y).toBeCloseTo(force.feuille.hauteur, 2);
+    expect(v2.rotation).toBe(180);
+    // Calendrier : contenu gardé droit.
+    expect(calculerPlan({ ...p, retournement: 'bord_long', rotation_verso: 'aucune' }, 2, undefined, sourceMarge(0)).feuilles[0]!.verso!.poses[0]!.rotation).toBeUndefined();
+  });
+
+  it('repères : le plan porte les traits, jamais sur une pose ; styles forcés ; cotes de coupe', () => {
+    const plan = calculerPlan({ ...base, methode_fonds_perdus: 'intelligent', rotation_poses: 'aucune' }, 2, undefined, sourceMarge(0));
+    const face = plan.feuilles[0]!.recto;
+    expect(face.traits!.length).toBeGreaterThan(8);
+    const fp = plan.fonds_perdus_mm;
+    for (const t of face.traits!) {
+      for (const q of face.poses) {
+        const dedans = (x: number, y: number) => x > q.x - fp + 0.01 && x < q.x + q.largeur + fp - 0.01 && y > q.y - fp + 0.01 && y < q.y + q.hauteur + fp - 0.01;
+        expect(dedans(t.x1, t.y1) || dedans(t.x2, t.y2)).toBe(false);
+      }
+      // Dans la zone imprimable (marge technique 5 mm).
+      for (const [x, y] of [[t.x1, t.y1], [t.x2, t.y2]] as const) {
+        expect(x).toBeGreaterThanOrEqual(5 - 0.01);
+        expect(x).toBeLessThanOrEqual(plan.feuille.largeur - 5 + 0.01);
+        expect(y).toBeGreaterThanOrEqual(5 - 0.01);
+        expect(y).toBeLessThanOrEqual(plan.feuille.hauteur - 5 + 0.01);
+      }
+    }
+    expect(plan.cotes!.x.length).toBeGreaterThanOrEqual(2);
+    expect(calculerPlan({ ...base, traits_style: 'aucun' }, 2, undefined, sourceMarge(0)).feuilles[0]!.recto.traits).toEqual([]);
+    const trav = calculerPlan({ ...base, traits_style: 'traversants', rotation_poses: 'aucune' }, 2, undefined, sourceMarge(0)).feuilles[0]!.recto;
+    // Lignes traversantes : du bord imprimable jusqu'au bloc (jamais sur une pose) ; avec une gouttière nulle il ne reste que les marges.
+    expect(trav.traits!.some((t) => Math.abs(t.x1 - t.x2) < 0.01 && Math.min(t.y1, t.y2) <= 5.01 && Math.abs(t.y2 - t.y1) >= 5)).toBe(true);
+    expect(calculerPlan({ ...base, traits_style: 'bord_feuille', rotation_poses: 'aucune' }, 2, undefined, sourceMarge(0)).feuilles[0]!.recto.traits!.every((t) => t.x1 <= 10.01 || t.x1 >= plan.feuille.largeur - 10.01 || t.y1 <= 10.01 || t.y1 >= plan.feuille.hauteur - 10.01)).toBe(true);
+    // Calage sur le coin de pince : première pose à marge + fonds perdus du coin bas-gauche.
+    const coin = calculerPlan({ ...base, calage: 'coin', marge_pince_mm: 12, rotation_poses: 'aucune', calepinage: 'manuel' }, 2, undefined, sourceMarge(0));
+    const basGauche = [...coin.feuilles[0]!.recto.poses].sort((a, b) => a.x - b.x || a.y - b.y)[0]!;
+    expect(basGauche.x).toBeCloseTo(12 + coin.fonds_perdus_mm, 2);
+    expect(basGauche.y).toBeCloseTo(12 + coin.fonds_perdus_mm, 2);
+  });
+
+  it('le schéma zod garde tous les réglages (aucune perte silencieuse)', () => {
+    const complet = { ...base, coupe: 'sans_auto', cadre_blanc_mm: 2, cadre_methode: 'rogner', traits_style: 'bloc', calepinage: 'manuel', rotation_poses: 'auto', tete_beche: 'damier', calage: 'coin', marge_pince_mm: 8, gouttiere_y_mm: 6, fonds_partages: true, rotation_verso: '180', retournement: 'bord_court', ajustement: 'remplir', fini_impose: true, blanches: 'reparties', planches: 'simple', reliure: 'dos_carre', cahier_feuilles: 3, couverture_separee: true, lecture: 'droite_gauche', chasse_mm: 1 };
+    const r = paramsSchema.safeParse(complet);
+    expect(r.success, JSON.stringify(r.success ? null : r.error.issues)).toBe(true);
+    if (r.success) for (const [k, v] of Object.entries(complet)) expect((r.data as Record<string, unknown>)[k], k).toEqual(v);
+  });
+
   it('refuse une pose qui ne tient pas sur la feuille', () => {
     expect(() => calculerPlan({ ...base, feuille: 'a4', fini: { largeur: 300, hauteur: 300 } }, 1)).toThrow(/Aucune pose/);
   });
@@ -343,7 +496,7 @@ describe('imposition : modèles', () => {
     expect((await admin.post('/api/imposition/modeles').send({ nom: 'cartes de visite sra3', params })).status).toBe(409);
     const l = await prep.get('/api/imposition/modeles');
     expect(l.body.items.map((m: { nom: string }) => m.nom)).toContain('Cartes de visite SRA3');
-    expect(l.body.items[0].params).toMatchObject({ operation: 'poses', feuille: 'sra3', marge_mm: 10, traits_de_coupe: true });
+    expect(l.body.items[0].params).toMatchObject({ operation: 'poses', feuille: 'sra3', marge_mm: 5, traits_de_coupe: true, coupe: 'auto', calepinage: 'auto' });
     const maj = await admin.put(`/api/imposition/modeles/${r.body.id}`).send({ nom: 'Cartes de visite SRA3 (16)', params: { ...params, marge_mm: 8 } });
     expect(maj.status).toBe(200);
     expect(maj.body.items[0]).toMatchObject({ nom: 'Cartes de visite SRA3 (16)', params: { marge_mm: 8 } });

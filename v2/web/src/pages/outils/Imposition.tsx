@@ -18,15 +18,16 @@ import { useStatutIA } from '../../features/ia/hooks';
 import { useAnalyse, useCatalogueImposition, useGenerer, useModelesImposition, useModelesMutations, usePlan, useProposerIA, useRattacher, useTeleverserLibre } from '../../features/imposition/hooks';
 import { useDossiers } from '../../features/dossiers/hooks';
 import { OptionCartes } from '../../features/imposition/OptionCartes';
-import { PictoAjustement, PictoFondsPerdus, PictoMode, PictoOperation, PictoOrientation, PictoPlanches, PictoTraits } from '../../features/imposition/Pictos';
+import { PictoAjustement, PictoCalage, PictoCoupe, PictoFondsPerdus, PictoMode, PictoOperation, PictoOrientation, PictoPlanches, PictoRetournement, PictoRotationPoses, PictoSystemeCoupe, PictoTeteBeche, PictoTraitsStyle } from '../../features/imposition/Pictos';
 import { SchemaFeuille, type AffichageSchema } from '../../features/imposition/SchemaFeuille';
 import { ListeFeuilles, PagesDocument } from '../../features/imposition/VuePages';
-import { reglagesPour, resumeAuto, rolesAuto, texteAdaptation } from '../../features/imposition/auto';
+import { libelleCoupe, reglagesPour, resumeAuto, rolesAuto, texteAdaptation } from '../../features/imposition/auto';
 import { useApercuPage } from '../../features/imposition/rendu';
-import { AJUSTEMENT_LABELS, BLANCHES_LABELS, FOURNISSEUR_LABELS_IA, METHODE_LABELS, MODE_LABELS, OPERATION_LABELS, PLANCHES_LABELS, type Dimension, type Feuille, type ModeAjustement, type ModeBlanches, type ModeleImposition, type ModePlanches, type Operation, type ParamsImposition, type Piece, type PieceAnalysee, type Plan, type PropositionImposition, type ReponseAnalyse, type ResultatGeneration, type RolePiece } from '../../features/imposition/types';
+import { AJUSTEMENT_LABELS, BLANCHES_LABELS, CALAGE_LABELS, COUPE_LABELS, FOURNISSEUR_LABELS_IA, METHODE_LABELS, MODE_LABELS, OPERATION_LABELS, PLANCHES_LABELS, RETOURNEMENT_LABELS, ROTATION_POSES_LABELS, SYSTEME_COUPE_LABELS, SYSTEME_LABELS, TETE_BECHE_LABELS, TRAITS_LABELS, type Calage, type Coupe, type Dimension, type Feuille, type ModeAjustement, type ModeBlanches, type ModeleImposition, type ModePlanches, type Operation, type ParamsImposition, type Piece, type PieceAnalysee, type Plan, type PropositionImposition, type ReponseAnalyse, type ResultatGeneration, type Retournement, type RolePiece, type RotationPoses, type StyleTraits, type TeteBeche } from '../../features/imposition/types';
 import '../../features/imposition/imposition.css';
 import { apercuUrl, fichierUrl, messageErreur } from '../../lib/api';
 import { Alert, Button, Checkbox, ConfirmDialog, Dialog, MachineChip, PageHeader, Ref, SelectField, Skeleton, TextField, TextareaField, useToast } from '../../ui';
+import { fondsAuto } from '../../features/imposition/auto';
 
 const FEUILLE_LABELS: Record<Feuille, string> = { sra3: 'SRA3 · 320 × 450 mm', a3: 'A3 · 297 × 420 mm', a3_plus: 'A3+ · 329 × 483 mm', sra4: 'SRA4 · 225 × 320 mm', a4: 'A4 · 210 × 297 mm', a5: 'A5 · 148 × 210 mm', banniere_330: 'Bannière 330 × 660 mm', personnalisee: 'Personnalisée…' };
 
@@ -120,6 +121,8 @@ function Reglages({ p, onChange, nbPages, analyse, plan }: { p: ParamsImposition
   const maj = (patch: Partial<ParamsImposition>) => onChange({ ...p, ...patch });
   const adaptation = plan?.adaptation ?? null;
   const planches = analyse?.planches;
+  // « Sans fonds perdus » : choix délibéré (système de coupe) ou zéro millimètre demandé.
+  const sans = (p.coupe !== undefined && p.coupe !== 'auto' && p.coupe !== 'fonds_perdus') || ((p.coupe ?? 'auto') === 'auto' && p.fonds_perdus_mm === 0);
   const num = p.numerotation ?? null;
   const majNum = (patch: Partial<NonNullable<ParamsImposition['numerotation']>>) => maj({ numerotation: { ...(num ?? { debut: 1, chiffres: 4, prefixe: '', position: 'bas_droite', taille_pt: 12, verso: false }), ...patch } });
   return (
@@ -131,7 +134,7 @@ function Reglages({ p, onChange, nbPages, analyse, plan }: { p: ParamsImposition
         options={(Object.keys(OPERATION_LABELS) as Operation[]).map((o) => ({ value: o, label: OPERATION_LABELS[o].titre, aide: OPERATION_LABELS[o].aide, picto: <PictoOperation op={o} /> }))}
       />
 
-      <p className="auto-resume"><Sparkles aria-hidden="true" /> Réglé automatiquement : {resumeAuto(p)} Tout reste modifiable ci-dessous.</p>
+      <p className="auto-resume"><Sparkles aria-hidden="true" /> Réglé automatiquement : {resumeAuto(p, plan)} Tout reste modifiable ci-dessous.</p>
       {p.operation === 'assembler' && (
         <p className="ev-help" style={{ margin: 0 }}>Les pièces sont réunies dans l’ordre de l’étape 1 (recto 1, verso 1, recto 2…), sans modification des pages. Utile pour envoyer un seul PDF à l’imprimeur.</p>
       )}
@@ -173,21 +176,54 @@ function Reglages({ p, onChange, nbPages, analyse, plan }: { p: ParamsImposition
       {p.operation !== 'assembler' && (
       <div className="ws__section">
         <p className="ws__section-titre">Fonds perdus et coupe</p>
-        <div className="imp-ligne">
-          <Nombre label="Fonds perdus" value={p.fonds_perdus_mm} onChange={(v) => maj({ fonds_perdus_mm: v })} max={20} help="3 mm en général, 5 mm en grand format." />
-          {p.operation !== 'fonds_perdus' && <Nombre label="Gouttière" value={p.gouttiere_mm} onChange={(v) => maj({ gouttiere_mm: v })} max={50} help="Entre deux poses, en plus des fonds perdus." />}
-          {p.operation === 'poses' && <Nombre label="Marge feuille" value={p.marge_mm} onChange={(v) => maj({ marge_mm: v })} max={100} help="Autour des poses (pinces, traits)." />}
-        </div>
-        <OptionCartes name="imp-methode" label="D’où viennent les fonds perdus" tone="rose" compact value={p.methode_fonds_perdus} onChange={(methode_fonds_perdus) => maj({ methode_fonds_perdus })}
-          options={(Object.keys(METHODE_LABELS) as ParamsImposition['methode_fonds_perdus'][]).map((m) => ({ value: m, label: METHODE_LABELS[m].label, aide: METHODE_LABELS[m].aide, picto: <PictoFondsPerdus methode={m} /> }))}
+        <OptionCartes<'avec' | 'sans'> name="imp-coupe" label="Coupe" tone="rose" value={sans ? 'sans' : 'avec'}
+          onChange={(v) => (v === 'sans' ? maj({ coupe: 'sans_auto', fonds_perdus_mm: 0, methode_fonds_perdus: 'blanc', calepinage: 'auto' }) : maj({ coupe: 'auto', ...(analyse ? fondsAuto(analyse.analyse) : { fonds_perdus_mm: 3, methode_fonds_perdus: 'intelligent' as const }), calepinage: 'auto' }))}
+          options={(['avec', 'sans'] as const).map((m) => ({ value: m, label: COUPE_LABELS[m].label, aide: COUPE_LABELS[m].aide, picto: <PictoCoupe mode={m} /> }))}
         />
-        <p className="ev-help" style={{ margin: 0 }}>{METHODE_LABELS[p.methode_fonds_perdus].aide}</p>
-        <OptionCartes name="imp-traits" label="Traits de coupe" tone="orange" compact value={p.traits_de_coupe ? 'oui' : 'non'} onChange={(v) => maj({ traits_de_coupe: v === 'oui' })}
-          options={[
-            { value: 'oui', label: 'Avec traits', aide: 'Angles de chaque pose et bords de feuille', picto: <PictoTraits actifs /> },
-            { value: 'non', label: 'Sans', picto: <PictoTraits actifs={false} /> },
-          ]}
-        />
+        {plan?.coupe && <p className="ev-help" style={{ margin: 0 }}>{plan.coupe.raison}</p>}
+        {!sans && (
+          <>
+            <div className="imp-ligne">
+              <Nombre label="Fonds perdus" value={p.fonds_perdus_mm} onChange={(v) => maj({ fonds_perdus_mm: v, calepinage: 'manuel', coupe: v > 0 ? 'fonds_perdus' : 'sans_auto' })} max={20} help={p.calepinage === 'manuel' ? '3 mm en général, 5 mm en grand format.' : 'Demandés : le calepinage automatique peut les réduire pour loger une pose de plus (voir le rapport).'} />
+              {p.operation !== 'fonds_perdus' && <Nombre label="Gouttière" value={p.gouttiere_mm} onChange={(v) => maj({ gouttiere_mm: v, calepinage: 'manuel' })} max={50} help="Entre deux poses, en plus des fonds perdus." />}
+              {p.operation === 'poses' && <Nombre label="Marge feuille" value={p.marge_mm} onChange={(v) => maj({ marge_mm: v })} max={100} help="Jamais moins que le bord non imprimable de la machine (Paramètres > Imposition)." />}
+            </div>
+            <OptionCartes name="imp-methode" label="D’où viennent les fonds perdus" tone="rose" compact value={p.methode_fonds_perdus === 'blanc' ? 'intelligent' : p.methode_fonds_perdus} onChange={(methode_fonds_perdus) => maj({ methode_fonds_perdus, coupe: 'fonds_perdus' })}
+              options={(Object.keys(METHODE_LABELS) as ParamsImposition['methode_fonds_perdus'][]).filter((m) => m !== 'blanc').map((m) => ({ value: m, label: METHODE_LABELS[m].label, aide: METHODE_LABELS[m].aide, picto: <PictoFondsPerdus methode={m} /> }))}
+            />
+            {p.operation === 'poses' && p.mode === 'repetition' && (
+              <Checkbox label="Fonds perdus partagés entre les poses (bords unis) : poses jointives, un seul trait par ligne de coupe" checked={p.fonds_partages === true} onChange={(on) => maj({ fonds_partages: on ? true : 'auto' })} />
+            )}
+          </>
+        )}
+        {sans && (
+          <>
+            <OptionCartes<Exclude<Coupe, 'auto' | 'fonds_perdus'>> name="imp-systeme" label="Système de coupe" tone="rose" compact value={(p.coupe === 'auto' || p.coupe === 'fonds_perdus' || !p.coupe ? 'sans_auto' : p.coupe) as Exclude<Coupe, 'auto' | 'fonds_perdus'>}
+              onChange={(coupe) => maj({ coupe, fonds_perdus_mm: 0, methode_fonds_perdus: 'blanc', ...(coupe === 'cadre' && !(p.cadre_blanc_mm && p.cadre_blanc_mm > 0) ? { cadre_blanc_mm: 3 } : {}) })}
+              options={(Object.keys(SYSTEME_COUPE_LABELS) as Exclude<Coupe, 'auto' | 'fonds_perdus'>[]).filter((m) => (p.operation === 'poses' ? true : m === 'sans_auto' || m === 'franche' || m === 'aucune')).map((m) => ({ value: m, label: SYSTEME_COUPE_LABELS[m].label, aide: SYSTEME_COUPE_LABELS[m].aide, picto: <PictoSystemeCoupe systeme={m} /> }))}
+            />
+            {p.operation === 'poses' && p.coupe !== 'aucune' && (
+              <div className="imp-ligne">
+                <Nombre label="Gouttière" value={p.gouttiere_mm} onChange={(v) => maj({ gouttiere_mm: v })} max={50} help={p.coupe === 'double' || p.coupe === 'sans_auto' ? 'Chute entre les poses : 3, 4 ou 6 mm.' : '0 pour des poses jointives.'} />
+                <Nombre label="Marge feuille" value={p.marge_mm} onChange={(v) => maj({ marge_mm: v })} max={100} help="Jamais moins que le bord non imprimable de la machine." />
+                {p.coupe === 'cadre' && <Nombre label="Cadre blanc" value={p.cadre_blanc_mm ?? 3} onChange={(v) => maj({ cadre_blanc_mm: v })} max={10} help="3 mm en général, 5 mm en grand format." />}
+              </div>
+            )}
+            {p.coupe === 'cadre' && (
+              <OptionCartes<'reduire' | 'rogner'> name="imp-cadre" label="Comment obtenir le cadre" tone="orange" compact value={p.cadre_methode ?? 'reduire'} onChange={(cadre_methode) => maj({ cadre_methode })}
+                options={[
+                  { value: 'reduire', label: 'Réduire le visuel', aide: 'Rien n’est perdu ; textes et logos rapetissent un peu.', picto: <PictoAjustement mode="adapter" /> },
+                  { value: 'rogner', label: 'Rogner les bords', aide: 'Échelle gardée ; ce qui est au bord du visuel disparaît.', picto: <PictoAjustement mode="remplir" /> },
+                ]}
+              />
+            )}
+          </>
+        )}
+        {p.coupe !== 'aucune' && (
+          <OptionCartes<StyleTraits> name="imp-traits" label="Traits de coupe" tone="orange" compact value={p.traits_de_coupe === false ? 'aucun' : (p.traits_style ?? 'auto')} onChange={(traits_style) => maj({ traits_style, traits_de_coupe: traits_style !== 'aucun' })}
+            options={(Object.keys(TRAITS_LABELS) as StyleTraits[]).map((m) => ({ value: m, label: TRAITS_LABELS[m].label, aide: TRAITS_LABELS[m].aide, picto: <PictoTraitsStyle style={m} /> }))}
+          />
+        )}
       </div>
       )}
 
@@ -199,8 +235,32 @@ function Reglages({ p, onChange, nbPages, analyse, plan }: { p: ParamsImposition
           />
           <Checkbox label={`Recto-verso${nbPages >= 2 ? '' : ' (une seule page : verso vide)'}`} checked={p.recto_verso} onChange={(recto_verso) => maj({ recto_verso })} />
           {p.recto_verso && (
-            <SelectField label="Retournement à l’impression" value={p.retournement} onChange={(e) => maj({ retournement: e.target.value as ParamsImposition['retournement'] })} options={[{ value: 'bord_long', label: 'Sur le bord long (le plus courant)' }, { value: 'bord_court', label: 'Sur le bord court' }]} help="Le verso est placé en miroir pour tomber sur le recto." />
+            <OptionCartes<Retournement> name="imp-retournement" label="Retournement de la feuille" tone="teal" compact value={p.retournement ?? 'auto'} onChange={(retournement) => maj({ retournement })}
+              options={(Object.keys(RETOURNEMENT_LABELS) as Retournement[]).map((m) => ({ value: m, label: RETOURNEMENT_LABELS[m].label, aide: RETOURNEMENT_LABELS[m].aide, picto: <PictoRetournement mode={m} /> }))}
+            />
           )}
+          {p.recto_verso && plan && <p className="ev-help" style={{ margin: 0 }}>{plan.consignes.join(' ')}</p>}
+          <details className="imp-plus">
+            <summary>Plus d’options : rotation des poses, tête-bêche, calage, sens du verso</summary>
+            <div className="stack">
+              <OptionCartes<RotationPoses> name="imp-rotation" label="Rotation des poses" tone="violet" compact value={p.rotation_poses ?? 'aucune'} onChange={(rotation_poses) => maj({ rotation_poses })}
+                options={(Object.keys(ROTATION_POSES_LABELS) as RotationPoses[]).map((m) => ({ value: m, label: ROTATION_POSES_LABELS[m].label, aide: ROTATION_POSES_LABELS[m].aide, picto: <PictoRotationPoses mode={m} /> }))}
+              />
+              <OptionCartes<TeteBeche> name="imp-tete-beche" label="Tête-bêche" tone="violet" compact value={p.tete_beche ?? 'aucune'} onChange={(tete_beche) => maj({ tete_beche })}
+                options={(Object.keys(TETE_BECHE_LABELS) as TeteBeche[]).map((m) => ({ value: m, label: TETE_BECHE_LABELS[m].label, aide: TETE_BECHE_LABELS[m].aide, picto: <PictoTeteBeche mode={m} /> }))}
+              />
+              <OptionCartes<Calage> name="imp-calage" label="Calage de la grille" tone="teal" compact value={p.calage ?? 'centre'} onChange={(calage) => maj({ calage })}
+                options={(Object.keys(CALAGE_LABELS) as Calage[]).map((m) => ({ value: m, label: CALAGE_LABELS[m].label, aide: CALAGE_LABELS[m].aide, picto: <PictoCalage mode={m} /> }))}
+              />
+              {p.calage === 'coin' && <Nombre label="Marge de pince" value={p.marge_pince_mm ?? p.marge_mm} onChange={(v) => maj({ marge_pince_mm: v })} max={50} help="Depuis le coin bas-gauche de la feuille." />}
+              {p.recto_verso && (
+                <SelectField label="Contenu du verso" value={p.rotation_verso ?? 'auto'} onChange={(e) => maj({ rotation_verso: e.target.value as ParamsImposition['rotation_verso'] })} options={[{ value: 'auto', label: 'Pièce retournée comme une page (cartes, flyers)' }, { value: 'aucune', label: 'Pièce retournée comme un calendrier (contenu gardé droit)' }, { value: '180', label: 'Verso toujours tourné d’un demi-tour' }]} help="N’agit que si le bord de retournement impose un demi-tour." />
+              )}
+              {plan?.cotes && (
+                <p className="ev-help" style={{ margin: 0 }}>Cotes de coupe (mm depuis le coin bas-gauche) · X : {plan.cotes.x.join(' · ')} · Y : {plan.cotes.y.join(' · ')}</p>
+              )}
+            </div>
+          </details>
           <Nombre label={p.mode === 'coupe_empile' ? 'Nombre d’exemplaires' : 'Quantité à produire'} value={p.quantite ?? 0} onChange={(v) => maj({ quantite: v > 0 ? Math.round(v) : undefined })} min={0} max={100000} step={1} addon="ex." help={p.mode === 'coupe_empile' ? 'Tickets ou exemplaires à sortir.' : 'Pour compter les feuilles à imprimer.'} />
           {p.mode === 'coupe_empile' && (
             <div className="stack-sm">
@@ -354,19 +414,26 @@ function lignesRapport(r: ReponseAnalyse, p: ParamsImposition, plan: Plan | unde
   if (r.paires?.some((x) => x.verso !== null)) l.push({ ton: 'ok', texte: `Recto et verso séparés appariés : ${r.paires.filter((x) => x.verso !== null).length} paire${r.paires.filter((x) => x.verso !== null).length > 1 ? 's' : ''}.` });
   if (r.paires?.some((x) => x.verso === null) && r.paires.some((x) => x.verso !== null)) l.push({ ton: 'attention', texte: 'Il y a plus de rectos que de versos : certains versos seront vides.' });
   if (!a.uniforme) l.push({ ton: 'attention', texte: 'Les pages n’ont pas toutes la même taille : elles sont adaptées à la première.' });
-  if (p.operation !== 'assembler') {
-    if (a.fonds_perdus === 'declares') l.push({ ton: 'ok', texte: `Fonds perdus présents dans le fichier (${a.fonds_perdus_mm} mm) : utilisés tels quels.` });
-    else if (a.fonds_perdus === 'incertains') l.push({ ton: 'ok', texte: `Le fichier mesure le format fini plus ${a.fonds_perdus_mm} mm de chaque côté : fonds perdus pris dans le fichier.` });
-    else if (p.methode_fonds_perdus === 'intelligent') {
+  if (p.operation !== 'assembler' && plan?.coupe) {
+    // Décision de coupe prise par le serveur, avec sa raison chiffrée et les autres systèmes possibles.
+    const c = plan.coupe;
+    const patchPour = (sys: typeof c.alternatives[number]): Partial<ParamsImposition> => (sys === 'fonds_perdus' ? { coupe: 'fonds_perdus', fonds_perdus_mm: p.fonds_perdus_mm > 0 ? p.fonds_perdus_mm : 3, methode_fonds_perdus: p.methode_fonds_perdus === 'blanc' ? 'intelligent' : p.methode_fonds_perdus } : { coupe: sys, fonds_perdus_mm: 0, methode_fonds_perdus: 'blanc', ...(sys === 'cadre' && !(p.cadre_blanc_mm && p.cadre_blanc_mm > 0) ? { cadre_blanc_mm: 3 } : {}) });
+    let detail = '';
+    if (c.systeme === 'fonds_perdus' && c.methode === 'intelligent') {
       const u = a.pages.find((pg) => pg.bords_unis)?.bords_unis;
-      const detail = u ? ` : ${(['haut', 'bas', 'gauche', 'droite'] as const).map((b) => `${b} ${u[b] ? 'prolongé' : 'en miroir'}`).join(', ')}` : ' (bords prolongés)';
-      l.push({ ton: 'auto', texte: `Pas de fonds perdus dans le fichier : ${p.fonds_perdus_mm} mm générés bord par bord${detail}.` });
-    } else if (p.methode_fonds_perdus === 'prolonger') l.push({ ton: 'auto', texte: `Pas de fonds perdus dans le fichier : bords prolongés de ${p.fonds_perdus_mm} mm.` });
-    else if (p.methode_fonds_perdus === 'miroir') l.push({ ton: 'auto', texte: `Pas de fonds perdus dans le fichier : ${p.fonds_perdus_mm} mm générés automatiquement en miroir des bords (visibles en rose sur la feuille).` });
-    else if (p.methode_fonds_perdus === 'etirer') l.push({ ton: 'auto', texte: `Pas de fonds perdus dans le fichier : visuel agrandi de ${p.fonds_perdus_mm} mm pour les créer.` });
-    else if (p.methode_fonds_perdus === 'blanc') l.push({ ton: 'info', texte: 'Pas de fonds perdus, mais le visuel a une marge blanche : aucun ajout nécessaire.' });
-    else l.push({ ton: 'alerte', texte: 'Pas de fonds perdus et aucun n’est ajouté : un filet blanc peut apparaître à la coupe. Cliquez « Générer les fonds perdus ».' });
+      detail = u ? ` Bord par bord : ${(['haut', 'bas', 'gauche', 'droite'] as const).map((b) => `${b} ${u[b] ? 'prolongé' : 'en miroir'}`).join(', ')}.` : '';
+    }
+    const ton: Ligne['ton'] = c.systeme === 'fonds_perdus' && a.fonds_perdus !== 'absents' ? 'ok' : c.auto ? 'auto' : 'info';
+    l.push({ ton, texte: `${libelleCoupe(c, plan.fonds_perdus_mm)} : ${c.raison}${detail}`, choix: (p.operation === 'poses' ? c.alternatives : c.alternatives.filter((x) => x === 'franche' || x === 'fonds_perdus')).map((sys) => ({ label: SYSTEME_LABELS[sys], patch: patchPour(sys) })) });
   }
+  if (plan?.calepinage) {
+    const k = plan.calepinage;
+    const mm = (v: number) => (Math.round(v * 10) / 10).toLocaleString('fr-FR');
+    const choix = k.alternatives.map((alt) => ({ label: `${alt.partages ? 'Partagés ' : ''}${mm(alt.fonds_perdus_mm)} mm${alt.rotation === 'mixte' ? ', bande tournée' : alt.rotation === '90' ? ', tournées' : ''} → ${alt.poses} poses`, patch: { fonds_perdus_mm: alt.fonds_perdus_mm, fonds_partages: alt.partages ? true : false, rotation_poses: alt.rotation === 'mixte' ? 'auto' : alt.rotation === '90' ? '90' : 'aucune', calepinage: 'manuel' } as Partial<ParamsImposition> }));
+    if (!k.auto) choix.unshift({ label: 'Remettre le calepinage automatique', patch: { calepinage: 'auto', fonds_partages: 'auto', rotation_poses: 'auto' } });
+    l.push({ ton: k.auto ? 'auto' : 'info', texte: `Calepinage : ${k.raison}`, choix: choix.slice(0, 5) });
+  }
+  for (const c of plan?.consignes ?? []) l.push({ ton: 'info', texte: c });
   for (const piece of r.pieces) for (const m of piece.avertissements) if (/résolution|dpi|flou/i.test(m)) l.push({ ton: 'attention', texte: `${piece.nom} : ${m}` });
   if (plan) {
     if (plan.operation === 'poses') l.push({ ton: 'auto', texte: `${plan.poses_par_face} poses par face sur ${plan.feuille.largeur} × ${plan.feuille.hauteur} mm (${plan.paysage ? 'paysage' : 'portrait'})${plan.feuilles_a_imprimer ? `, ${plan.feuilles_a_imprimer} feuilles à imprimer` : ''}.` });
@@ -837,12 +904,14 @@ export default function Imposition() {
     else l.push({ t: `${planData.nb_pages_sortie} page${planData.nb_pages_sortie > 1 ? 's' : ''} PDF` });
     if (planData.feuilles_a_imprimer) l.push({ t: `${planData.feuilles_a_imprimer} feuille${planData.feuilles_a_imprimer > 1 ? 's' : ''} à imprimer` });
     l.push({ t: `${planData.feuille.largeur} × ${planData.feuille.hauteur} mm · ${planData.paysage ? 'paysage' : 'portrait'}` });
+    if (planData.operation !== 'assembler' && planData.coupe) l.push({ t: libelleCoupe(planData.coupe, planData.fonds_perdus_mm) });
     return l;
   }, [planData]);
   const max: Ecran = pieces.length && params ? 2 : 1;
-  const [affichage, setAffichage] = useState<AffichageSchema>({ fonds: true, traits: true, zone_finie: true, numeros: false });
+  const [affichage, setAffichage] = useState<AffichageSchema>({ fonds: true, traits: true, zone_finie: true, numeros: false, chute: true });
   const sourceAvecFonds = analyse.data ? analyse.data.analyse.fonds_perdus !== 'absents' : false;
-  const fondsAFabriquer = !!analyse.data && params?.operation !== 'assembler' && analyse.data.analyse.fonds_perdus === 'absents' && analyse.data.analyse.pages.some((pg) => pg.jusqu_au_bord !== false) && (params?.methode_fonds_perdus === 'blanc' || (params?.fonds_perdus_mm ?? 0) === 0);
+  // Sans fonds perdus choisi alors que le visuel va au bord : rappel calme, avec retour en un clic.
+  const sansSurVisuelAuBord = !!analyse.data && !!planData && params?.operation !== 'assembler' && planData.coupe.systeme !== 'fonds_perdus' && planData.coupe.systeme !== 'aucune' && analyse.data.analyse.pages.some((pg) => pg.jusqu_au_bord === true);
   const destination = analyse.data?.sans_dossier ? 'Sans dossier : le PDF sera proposé au téléchargement (gardé 6 h).' : analyse.data?.fichier.dossier_id ? `Le PDF sera ajouté au dossier de ${dossier.data && dossier.data.id === analyse.data.fichier.dossier_id ? `${dossier.data.numero} (${dossier.data.client_nom})` : 'la première pièce'}.` : '';
   const lancer = () =>
     params &&
@@ -892,16 +961,20 @@ export default function Imposition() {
           <div className="ws ws--2">
             <section className="ws__centre" aria-label="Prévisualisation">
               {analyse.data && <Rapport r={analyse.data} p={params} plan={planData} ia={ia} iaEnCours={proposerIA.isPending} iaErreur={iaErreur} onRedemander={statutIA.data?.actif ? demanderIA : undefined} onParams={patchParams} />}
-              {fondsAFabriquer ? (
+              {sansSurVisuelAuBord ? (
                 <div className="alerte-fonds">
-                  <span>Ce fichier n’a pas de fonds perdus. Après la coupe, un filet blanc risque d’apparaître sur les bords.</span>
-                  <Button size="sm" variant="primary" icon={<Wand2 />} onClick={() => (setParams({ ...params, fonds_perdus_mm: params.fonds_perdus_mm || 3, methode_fonds_perdus: 'intelligent' }), setAffichage((a) => ({ ...a, fonds: true })), toast.success('Fonds perdus générés', 'Bord par bord : aplats prolongés, motifs en miroir. Visibles en rose sur la feuille.'))}>
-                    Générer les fonds perdus
+                  <span>Sans fonds perdus alors que le visuel va jusqu’au bord : {planData ? libelleCoupe(planData.coupe, planData.fonds_perdus_mm).toLowerCase() : ''}. Si la coupe dérive d’un demi-millimètre, un filet blanc peut apparaître.</span>
+                  <Button size="sm" variant="primary" icon={<Wand2 />} onClick={() => (setParams({ ...params, coupe: 'fonds_perdus', fonds_perdus_mm: 3, methode_fonds_perdus: params.methode_fonds_perdus === 'blanc' ? 'intelligent' : params.methode_fonds_perdus, calepinage: 'auto' }), setAffichage((a) => ({ ...a, fonds: true })), toast.success('Fonds perdus générés', 'Bord par bord : aplats prolongés, motifs en miroir. Visibles en rose sur la feuille.'))}>
+                    Revenir aux fonds perdus
                   </Button>
                 </div>
-              ) : analyse.data && params.operation !== 'assembler' && params.fonds_perdus_mm > 0 && params.methode_fonds_perdus !== 'blanc' ? (
+              ) : planData && params.operation !== 'assembler' && planData.coupe.systeme === 'fonds_perdus' ? (
                 <div className="alerte-fonds" data-ok>
-                  <span>Fonds perdus : {params.fonds_perdus_mm} mm, {params.methode_fonds_perdus === 'source' ? 'pris dans le fichier' : params.methode_fonds_perdus === 'intelligent' ? 'générés bord par bord (aplats prolongés, motifs en miroir)' : params.methode_fonds_perdus === 'prolonger' ? 'bords prolongés' : params.methode_fonds_perdus === 'miroir' ? 'générés en miroir des bords' : 'par étirement du visuel'}.</span>
+                  <span>Fonds perdus : {planData.fonds_perdus_mm} mm, {planData.coupe.methode === 'source' ? 'pris dans le fichier' : planData.coupe.methode === 'intelligent' ? 'générés bord par bord (aplats prolongés, motifs en miroir)' : planData.coupe.methode === 'prolonger' ? 'bords prolongés' : planData.coupe.methode === 'miroir' ? 'générés en miroir des bords' : 'par étirement du visuel'}{planData.calepinage?.partages ? ', partagés entre les poses' : ''}.</span>
+                </div>
+              ) : planData && params.operation !== 'assembler' ? (
+                <div className="alerte-fonds" data-ok>
+                  <span>{libelleCoupe(planData.coupe, planData.fonds_perdus_mm)} : {planData.coupe.raison}</span>
                 </div>
               ) : null}
               <div className="ws__panneau">
@@ -924,7 +997,7 @@ export default function Imposition() {
                     {params.operation !== 'fonds_perdus' && params.operation !== 'assembler' && (
                       <div className="ws__faces" role="group" aria-label="Sens du papier">
                         {(['auto', 'portrait', 'paysage'] as const).map((o) => (
-                          <button key={o} type="button" aria-pressed={params.orientation === o} onClick={() => setParams({ ...params, orientation: o })}>{o === 'auto' ? 'Auto' : o === 'portrait' ? 'Portrait' : 'Paysage'}</button>
+                          <button key={o} type="button" aria-pressed={params.orientation === o} onClick={() => setParams({ ...params, orientation: o, calepinage: o === 'auto' ? params.calepinage : 'manuel' })}>{o === 'auto' ? 'Auto' : o === 'portrait' ? 'Portrait' : 'Paysage'}</button>
                         ))}
                       </div>
                     )}
@@ -953,9 +1026,9 @@ export default function Imposition() {
                   <>
                     {planData.avertissements.map((m, i) => <Alert key={i} tone="warning">{m}</Alert>)}
                     <div className="affichage" role="group" aria-label="Affichage">
-                      {([['fonds', 'Fonds perdus'], ['traits', 'Traits de coupe'], ['zone_finie', 'Format fini'], ['numeros', 'Numéros de page']] as [keyof AffichageSchema, string][]).map(([cle, label]) => (
+                      {([['fonds', 'Fonds perdus'], ['traits', 'Traits de coupe'], ['zone_finie', 'Format fini'], ['chute', 'Chute et marges'], ['numeros', 'Numéros de page']] as [keyof AffichageSchema, string][]).map(([cle, label]) => (
                         <label key={cle} data-actif={affichage[cle] || undefined}>
-                          <input type="checkbox" checked={affichage[cle]} onChange={(e) => setAffichage({ ...affichage, [cle]: e.target.checked })} />
+                          <input type="checkbox" checked={!!affichage[cle]} onChange={(e) => setAffichage({ ...affichage, [cle]: e.target.checked })} />
                           {label}
                         </label>
                       ))}

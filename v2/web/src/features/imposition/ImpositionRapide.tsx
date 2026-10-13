@@ -8,7 +8,7 @@ import { Check, FileCheck2, Settings2 } from 'lucide-react';
 import { messageErreur } from '../../lib/api';
 import type { Fichier } from '../../lib/types';
 import { Alert, Button, Dialog, Skeleton, useToast } from '../../ui';
-import { reglagesPour, resumeAuto, texteAdaptation } from './auto';
+import { libelleCoupe, reglagesPour, resumeAuto, texteAdaptation } from './auto';
 import { useAnalyse, useGenerer, usePlan, useTeleverserLibre } from './hooks';
 import { SchemaFeuille } from './SchemaFeuille';
 import { OPERATION_LABELS, type Operation, type ParamsImposition, type Piece } from './types';
@@ -153,11 +153,13 @@ export function ImpositionRapide({ dossierId, fichier, fichierLocal, onClose, on
                 </button>
               ))}
             </div>
-            <p className="auto-resume">{resumeAuto(params)}</p>
+            <p className="auto-resume">{resumeAuto(params, p)}</p>
             <ul className="rapport__lignes">
               <li data-ton={a.format ? 'ok' : 'attention'}><span className="rapport__puce" aria-hidden="true" />{a.format ? a.format.libelle : `Format non reconnu (${a.largeur} × ${a.hauteur} mm)`}, {a.nb_pages} page{a.nb_pages > 1 ? 's' : ''}</li>
               {p && p.operation === 'poses' && <li data-ton="auto"><span className="rapport__puce" aria-hidden="true" />{p.poses_par_face} poses par face sur {p.feuille.largeur} × {p.feuille.hauteur} mm</li>}
               {p && p.operation === 'livret' && <li data-ton="auto"><span className="rapport__puce" aria-hidden="true" />{p.nb_feuilles} feuille{p.nb_feuilles > 1 ? 's' : ''}{p.pages_blanches ? `, ${p.pages_blanches} page(s) blanche(s)` : ''}</li>}
+              {p && p.operation !== 'assembler' && <li data-ton={p.coupe.auto ? 'auto' : 'info'}><span className="rapport__puce" aria-hidden="true" />{libelleCoupe(p.coupe, p.fonds_perdus_mm)} : {p.coupe.raison}</li>}
+              {p?.calepinage && <li data-ton="auto"><span className="rapport__puce" aria-hidden="true" />Calepinage : {p.calepinage.raison}</li>}
               {p?.adaptation && <li data-ton="auto"><span className="rapport__puce" aria-hidden="true" />{texteAdaptation(p.adaptation, params.fini)}</li>}
               {p?.avertissements.map((m, i) => <li key={i} data-ton="attention"><span className="rapport__puce" aria-hidden="true" />{m}</li>)}
             </ul>

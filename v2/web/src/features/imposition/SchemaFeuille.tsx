@@ -1,7 +1,8 @@
 // La feuille imposée, à l'échelle, avec le vrai visuel de chaque page dans sa pose (aperçu rendu par le
 // serveur). Les fonds perdus sont dessinés en temps réel selon la méthode choisie : ceux du fichier,
-// miroir des bords (bandes retournées), étirement, ou blanc. Traits de coupe, zone finie, pli du livret
-// et numéros s'affichent ou se masquent à la demande.
+// miroir des bords (bandes retournées), étirement, ou blanc. Les traits de coupe, lignes de pli et
+// textes sont ceux que le plan a calculés (reperes.ts côté serveur) : l'écran montre exactement le PDF.
+// Une pose tournée est dessinée droite dans un repère tourné autour de son emprise.
 import { useId, useState } from 'react';
 import { useApercuPage, type Cadre } from './rendu';
 import type { Adaptation, Dimension, Face, MethodeFondsPerdus, PageVirtuelle, Plan } from './types';
@@ -27,6 +28,8 @@ export interface AffichageSchema {
   traits: boolean;
   zone_finie: boolean;
   numeros: boolean;
+  /** Hachures de la chute entre les poses (double coupe) et du bord non imprimable. */
+  chute?: boolean;
 }
 
 function Image({ href, x, y, w, h, clip, sx = 1, sy = 1, onError, t: tForce }: { href: string; x: number; y: number; w: number; h: number; clip: string; sx?: 1 | -1; sy?: 1 | -1; onError: () => void; t?: string }) {
@@ -157,6 +160,9 @@ export function SchemaFeuille({
   const hauteur = Math.round(H * k);
   const fp = plan.fonds_perdus_mm * k;
   const yS = (yMm: number, hMm: number) => (H - yMm - hMm) * k;
+  const yP = (yMm: number) => (H - yMm) * k;
+  const gouttiere = Math.max(0, plan.gouttiere_mm ?? 0) * k;
+  const marge = Math.max(0, plan.marge_mm ?? 0) * k;
   const pageDe = (n: number | null) => (n === null ? null : (pages ?? []).find((p) => p.numero === n) ?? null);
   const avecFondsSource = methode === 'source' && sourceAvecFonds;
   const cadreDe = (n: number): Cadre | undefined => {
@@ -165,29 +171,61 @@ export function SchemaFeuille({
   };
   // Identifiants des découpes propres à ce schéma : plusieurs feuilles s'affichent sur la même page.
   const uid = useId().replace(/[^a-zA-Z0-9_-]/g, '');
-  const L = 4 * k; // longueur des traits de coupe (4 mm)
-  const e = (plan.fonds_perdus_mm + 1) * k; // écart des traits (fonds perdus + 1 mm)
+  const chuteId = `${uid}-chute`;
   return (
     <figure className="imp-schema" style={{ width: largeur }}>
       <svg viewBox={`0 0 ${largeur} ${hauteur}`} width={largeur} height={hauteur} role="img" aria-label={titre ?? `Feuille ${W} × ${H} mm, ${face.cote}`}>
+        <defs>
+          <pattern id={chuteId} width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
+            <line x1="0" y1="0" x2="0" y2="6" className="imp-schema__hachure" />
+          </pattern>
+        </defs>
         <rect x={0} y={0} width={largeur} height={hauteur} className="imp-schema__feuille" />
+        {affichage.chute && marge > 0 && (
+          <path d={`M0 0H${largeur}V${hauteur}H0Z M${marge} ${marge}H${largeur - marge}V${hauteur - marge}H${marge}Z`} fillRule="evenodd" fill={`url(#${chuteId})`} className="imp-schema__chute" />
+        )}
         {face.poses.map((q, i) => {
-          const x = q.x * k;
-          const y = yS(q.y, q.hauteur);
+          const theta = q.rotation ?? 0;
+          const tourne = theta === 90 || theta === 270;
+          // Emprise de la pose sur la feuille, puis contenu droit centré dans un repère tourné.
+          const bw = (tourne ? q.hauteur : q.largeur) * k;
+          const bh = (tourne ? q.largeur : q.hauteur) * k;
+          const bx = q.x * k;
+          const byS = yS(q.y, tourne ? q.largeur : q.hauteur);
+          const cx = bx + bw / 2;
+          const cy = byS + bh / 2;
           const w = q.largeur * k;
           const h = q.hauteur * k;
+          const x = cx - w / 2;
+          const y = cy - h / 2;
           const vide = q.page === null;
           const pg = pageDe(q.page);
           const fontSize = Math.max(8, Math.min(16, Math.min(w, h) / 3));
-          // Livret : la pose est coupée au pli, ses fonds perdus ne recouvrent pas la page d'en face.
-          const pli = q.pli ? ((q.pli === 'droite' ? q.x + q.largeur : q.x) - (q.decalage_x ?? 0)) * k : null;
-          const clipPli = pli === null ? undefined : `${uid}-pli-${i}`;
+          // Côtés sans fonds perdus : pli d'un livret (coupé au pli, chasse comprise) ou côtés joints à une voisine.
+          const pli = q.pli ? ((q.pli === 'droite' ? x + w : x) - (q.decalage_x ?? 0) * k) : null;
+          let cx1 = x - fp - 4, cx2 = x + w + fp + 4, cy1 = y - fp - 4, cy2 = y + h + fp + 4;
+          let restreint = false;
+          if (pli !== null) {
+            if (q.pli === 'droite') cx2 = pli;
+            else cx1 = pli;
+            restreint = true;
+          }
+          for (const c of q.joints ?? []) {
+            if (c === 'gauche' && !q.pli) cx1 = x;
+            if (c === 'droite' && !q.pli) cx2 = x + w;
+            // En SVG, y descend : « haut » de la pose = petit y.
+            if (c === 'haut') cy1 = y;
+            if (c === 'bas') cy2 = y + h;
+            restreint = true;
+          }
+          const clipJoints = restreint ? `${uid}-joints-${i}` : undefined;
+          const transform = theta ? `rotate(${-theta} ${cx} ${cy})` : undefined;
           return (
-            <g key={i} className="imp-schema__pose" data-vide={vide || undefined} clipPath={clipPli ? `url(#${clipPli})` : undefined}>
-              {clipPli && pli !== null && (
+            <g key={i} className="imp-schema__pose" data-vide={vide || undefined} transform={transform} clipPath={clipJoints ? `url(#${clipJoints})` : undefined}>
+              {clipJoints && (
                 <defs>
-                  <clipPath id={clipPli}>
-                    {q.pli === 'droite' ? <rect x={x - fp - 4} y={y - fp - 4} width={pli - (x - fp - 4)} height={h + 2 * fp + 8} /> : <rect x={pli} y={y - fp - 4} width={x + w + fp + 4 - pli} height={h + 2 * fp + 8} />}
+                  <clipPath id={clipJoints}>
+                    <rect x={cx1} y={cy1} width={cx2 - cx1} height={cy2 - cy1} />
                   </clipPath>
                 </defs>
               )}
@@ -203,28 +241,40 @@ export function SchemaFeuille({
                   {vide ? '—' : q.numero ?? `p.${q.page}`}
                 </text>
               )}
-              {affichage.traits && plan.operation !== 'assembler' && (
-                <g className="imp-schema__traits">
-                  {[x, x + w].map((cx) => (
-                    <g key={`v${cx}`}>
-                      <line x1={cx} y1={y - e} x2={cx} y2={y - e - L} />
-                      <line x1={cx} y1={y + h + e} x2={cx} y2={y + h + e + L} />
-                    </g>
-                  ))}
-                  {[y, y + h].map((cy) => (
-                    <g key={`h${cy}`}>
-                      <line x1={x - e} y1={cy} x2={x - e - L} y2={cy} />
-                      <line x1={x + w + e} y1={cy} x2={x + w + e + L} y2={cy} />
-                    </g>
-                  ))}
-                </g>
-              )}
             </g>
           );
         })}
-        {face.plis.map((p, i) => (
-          <line key={i} x1={p * k} y1={0} x2={p * k} y2={hauteur} className="imp-schema__pli" />
-        ))}
+        {affichage.chute && gouttiere > 0 && face.poses.length > 1 && (() => {
+          // Chute entre les poses : le bloc hachuré moins les poses (fonds perdus compris).
+          const pleines = face.poses.filter((q) => q.page !== null || face.poses.length === 1);
+          if (!pleines.length) return null;
+          const boites = pleines.map((q) => { const t = q.rotation === 90 || q.rotation === 270; const bw = (t ? q.hauteur : q.largeur) * k; const bh = (t ? q.largeur : q.hauteur) * k; return { x: q.x * k - fp, y: yS(q.y, t ? q.largeur : q.hauteur) - fp, w: bw + 2 * fp, h: bh + 2 * fp }; });
+          const minX = Math.min(...boites.map((b) => b.x)), minY = Math.min(...boites.map((b) => b.y)), maxX = Math.max(...boites.map((b) => b.x + b.w)), maxY = Math.max(...boites.map((b) => b.y + b.h));
+          const d = `M${minX} ${minY}H${maxX}V${maxY}H${minX}Z ` + boites.map((b) => `M${b.x} ${b.y}H${b.x + b.w}V${b.y + b.h}H${b.x}Z`).join(' ');
+          return <path d={d} fillRule="evenodd" fill={`url(#${chuteId})`} className="imp-schema__chute" />;
+        })()}
+        {affichage.traits && (
+          <g className="imp-schema__traits">
+            {(face.traits ?? []).map((t, i) => (
+              <line key={`t${i}`} x1={t.x1 * k} y1={yP(t.y1)} x2={t.x2 * k} y2={yP(t.y2)} style={t.epaisseur ? { strokeWidth: t.epaisseur } : undefined} />
+            ))}
+            {(face.lignes ?? []).map((l, i) =>
+              l.axe === 'x' ? (
+                <line key={`l${i}`} x1={l.pos * k} y1={yP(l.de)} x2={l.pos * k} y2={yP(l.a)} className={`imp-schema__${l.genre}`} />
+              ) : (
+                <line key={`l${i}`} x1={l.de * k} y1={yP(l.pos)} x2={l.a * k} y2={yP(l.pos)} className={`imp-schema__${l.genre}`} />
+              ),
+            )}
+            {(face.marques ?? []).map((m, i) => (
+              <rect key={`m${i}`} x={m.x * k} y={yS(m.y, m.hauteur)} width={m.largeur * k} height={m.hauteur * k} className="imp-schema__marque" />
+            ))}
+            {(face.textes ?? []).map((t, i) => (
+              <text key={`x${i}`} x={t.x * k} y={yP(t.y)} fontSize={(t.taille_pt * k * 25.4) / 72} className="imp-schema__texte-repere" textAnchor={t.ancre === 'centre' ? 'middle' : t.ancre === 'droite' ? 'end' : 'start'} fontWeight={t.gras ? 700 : 400} transform={t.rotation ? `rotate(${-t.rotation} ${t.x * k} ${yP(t.y)})` : undefined}>
+                {t.texte}
+              </text>
+            ))}
+          </g>
+        )}
       </svg>
       <figcaption>
         {titre ?? (face.cote === 'recto' ? 'Recto' : 'Verso')} · {W} × {H} mm

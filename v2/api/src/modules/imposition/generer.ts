@@ -5,16 +5,14 @@
 // en bordure de feuille et aux angles, traits de pli pour le livret, numérotation des tickets.
 // Les boîtes PDF (TrimBox, BleedBox) sont posées sur chaque feuille.
 
-import { clip, clipEvenOdd, degrees, endPath, grayscale, PDFDocument, popGraphicsState, pushGraphicsState, rectangle, rgb, StandardFonts, type PDFEmbeddedPage, type PDFFont, type PDFImage, type PDFPage } from 'pdf-lib';
+import { clip, clipEvenOdd, concatTransformationMatrix, degrees, endPath, grayscale, PDFDocument, popGraphicsState, pushGraphicsState, rectangle, rgb, StandardFonts, type PDFEmbeddedPage, type PDFFont, type PDFImage, type PDFPage } from 'pdf-lib';
 import { chargerPdf } from './analyse';
 import { bordure, bordureDisponible, type ModesBords } from './bordure';
 import { pt, mm as enMm, type Dimension } from './formats';
 import type { Adaptation } from './ajuster';
-import type { ParamsImposition, Plan, Pose } from './plan';
+import { emprise, type Face, type ParamsImposition, type Plan, type Pose } from './plan';
 
 const TRAIT = 0.25; // pt
-const LONGUEUR_TRAIT = 4; // mm
-const ECART_TRAIT = 1; // mm au-delà des fonds perdus
 /** Chevauchement des zones découpées (pt) : supprime les filets blancs d'anticrénelage aux raccords. */
 const RECOUVREMENT = 0.6;
 /** Bande du bord prolongée dans les fonds perdus (mm). */
@@ -216,20 +214,56 @@ async function poserBordure(page: PDFPage, src: Source, s: SourcePage, num: numb
 }
 
 /**
- * Une pose. Dans un livret, la pose est découpée au pli : ses fonds perdus ne débordent jamais sur la
- * page d'en face (sinon les 3 mm intérieurs de la page de gauche seraient recouverts par ceux de droite).
+ * Une pose, avec sa rotation et ses côtés joints. La pose est dessinée « déroulée » (contenu droit) dans
+ * un repère tourné autour de son emprise : visuel, fonds perdus, numéro suivent sans rien savoir de la
+ * rotation. Côtés joints (pli d'un livret, poses jointives aux fonds perdus partagés) : aucun fond perdu
+ * ne déborde de ce côté sur la voisine ; la pose dessinée ensuite recouvre la précédente d'une fraction
+ * de point pour ne laisser aucun filet.
  */
-async function dessinerPose(page: PDFPage, src: Source, pose: Pose, params: ParamsImposition, unis: (n: number) => BordsUnis | null) {
+async function dessinerPose(page: PDFPage, src: Source, pose: Pose, params: ParamsImposition, unis: (n: number) => BordsUnis | null, font: PDFFont | null) {
   if (pose.page === null) return;
-  if (!pose.pli) return dessinerPoseInterne(page, src, pose, params, unis);
-  const fp = pt(Math.max(0, params.fonds_perdus_mm)) + 2;
-  const x = pt(pose.x);
-  const w = pt(pose.largeur);
-  const pli = (pose.pli === 'droite' ? x + w : x) - pt(pose.decalage_x ?? 0);
-  const [x1, x2] = pose.pli === 'droite' ? [x - fp, pli] : [pli, x + w + fp];
-  page.pushOperators(pushGraphicsState(), rectangle(x1, pt(pose.y) - fp, x2 - x1, pt(pose.hauteur) + 2 * fp), clip(), endPath());
-  await dessinerPoseInterne(page, src, pose, params, unis);
-  page.pushOperators(popGraphicsState());
+  const theta = pose.rotation ?? 0;
+  const e = emprise(pose);
+  const bx = pt(pose.x);
+  const by = pt(pose.y);
+  const bw = pt(e.largeur);
+  const bh = pt(e.hauteur);
+  let local = pose;
+  if (theta) {
+    // Matrice de rotation : le repère local (0, 0, w, h) tombe sur l'emprise (bx, by, bw, bh).
+    const rad = (theta * Math.PI) / 180;
+    const c = Math.round(Math.cos(rad));
+    const s = Math.round(Math.sin(rad));
+    const [tx, ty] = theta === 90 ? [bx + bw, by] : theta === 180 ? [bx + bw, by + bh] : [bx, by + bh];
+    page.pushOperators(pushGraphicsState(), concatTransformationMatrix(c, s, -s, c, tx, ty));
+    local = { ...pose, x: 0, y: 0, rotation: 0 };
+  }
+  const fp = pt(Math.max(0, params.fonds_perdus_mm));
+  const x = pt(local.x);
+  const y = pt(local.y);
+  const w = pt(local.largeur);
+  const h = pt(local.hauteur);
+  const r = RECOUVREMENT / 2;
+  let x1 = x - fp - 2, x2 = x + w + fp + 2, y1 = y - fp - 2, y2 = y + h + fp + 2;
+  let restreint = false;
+  if (local.pli) {
+    const pli = (local.pli === 'droite' ? x + w : x) - pt(local.decalage_x ?? 0);
+    if (local.pli === 'droite') x2 = pli;
+    else x1 = pli;
+    restreint = true;
+  }
+  for (const cote of local.joints ?? []) {
+    if (cote === 'gauche' && !local.pli) x1 = x;
+    if (cote === 'droite' && !local.pli) x2 = x + w + r;
+    if (cote === 'bas') y1 = y - r;
+    if (cote === 'haut') y2 = y + h;
+    restreint = true;
+  }
+  if (restreint) page.pushOperators(pushGraphicsState(), rectangle(x1, y1, x2 - x1, y2 - y1), clip(), endPath());
+  await dessinerPoseInterne(page, src, local, params, unis);
+  if (font) numeroter(page, font, local, params);
+  if (restreint) page.pushOperators(popGraphicsState());
+  if (theta) page.pushOperators(popGraphicsState());
 }
 
 /** Une pose : visuel + fonds perdus selon la méthode, découpée à la zone fini + fonds perdus. */
@@ -245,7 +279,9 @@ async function dessinerPoseInterne(page: PDFPage, src: Source, pose: Pose, param
   const methode = params.methode_fonds_perdus;
   const r = fp > 0 ? RECOUVREMENT / 2 : 0;
   if (fp === 0 || methode === 'blanc') {
-    avecClip(page, x, y, w, h, () => dessiner(page, s, x, y, w, h));
+    // Cadre blanc par rognage : les bords du visuel disparaissent, l'échelle est gardée.
+    const c = params.cadre_methode === 'rogner' ? pt(Math.max(0, params.cadre_blanc_mm ?? 0)) : 0;
+    avecClip(page, x + c, y + c, w - 2 * c, h - 2 * c, () => dessiner(page, s, x, y, w, h));
     return;
   }
   if (methode === 'source' && src.fondsSource > 0) {
@@ -268,69 +304,24 @@ async function dessinerPoseInterne(page: PDFPage, src: Source, pose: Pose, param
   if (!fait) avecClip(page, x - fp - r, y - fp - r, w + 2 * fp + 2 * r, h + 2 * fp + 2 * r, () => fabriquerFonds(page, s, x, y, w, h, fp, modes));
 }
 
-function ligne(page: PDFPage, x1: number, y1: number, x2: number, y2: number, pointilles = false) {
-  page.drawLine({ start: { x: x1, y: y1 }, end: { x: x2, y: y2 }, thickness: TRAIT, color: grayscale(0), dashArray: pointilles ? [3, 3] : undefined });
-}
-
-/**
- * Traits de coupe. Aux angles de chaque pose seulement s'ils ne tombent pas sur une pose voisine
- * (gouttière assez large) ; sinon autour du bloc de poses et en bordure de feuille, comme sur une
- * imposition « coupe franche » : un trait par ligne de coupe, jamais sur le visuel.
- */
-function traitsDeCoupe(page: PDFPage, poses: Pose[], feuille: { largeur: number; hauteur: number }, fondsMm: number, plis: number[], gouttiereMm: number) {
-  const L = pt(LONGUEUR_TRAIT);
-  const e = pt(fondsMm + ECART_TRAIT);
-  const W = pt(feuille.largeur);
-  const H = pt(feuille.hauteur);
-  const pleines = poses.filter((q) => q.page !== null || poses.length === 1);
-  if (!pleines.length) return;
-  const arr = (v: number) => Math.round(v * 100) / 100;
-  const xs = new Set<number>();
-  const ys = new Set<number>();
-  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
-  for (const q of pleines) {
-    const x = pt(q.x), y = pt(q.y), w = pt(q.largeur), h = pt(q.hauteur);
-    xs.add(arr(x)); xs.add(arr(x + w)); ys.add(arr(y)); ys.add(arr(y + h));
-    minX = Math.min(minX, x); minY = Math.min(minY, y); maxX = Math.max(maxX, x + w); maxY = Math.max(maxY, y + h);
+/** Repères calculés par le plan (reperes.ts) : traits de coupe, lignes de pli, textes, marques. */
+function dessinerReperes(page: PDFPage, face: Face, font: PDFFont | null, fontGras: PDFFont | null) {
+  for (const t of face.traits ?? []) {
+    page.drawLine({ start: { x: pt(t.x1), y: pt(t.y1) }, end: { x: pt(t.x2), y: pt(t.y2) }, thickness: t.epaisseur ?? TRAIT, color: grayscale(0) });
   }
-  const anglesPossibles = gouttiereMm >= 2 * (fondsMm + ECART_TRAIT + LONGUEUR_TRAIT) || pleines.length === 1;
-  if (anglesPossibles) {
-    for (const q of pleines) {
-      const x = pt(q.x), y = pt(q.y), w = pt(q.largeur), h = pt(q.hauteur);
-      for (const cx of [x, x + w]) {
-        ligne(page, cx, y - e, cx, y - e - L);
-        ligne(page, cx, y + h + e, cx, y + h + e + L);
-      }
-      for (const cy of [y, y + h]) {
-        ligne(page, x - e, cy, x - e - L, cy);
-        ligne(page, x + w + e, cy, x + w + e + L, cy);
-      }
-    }
-  } else {
-    // Autour du bloc : chaque ligne de coupe repérée au-dessus, au-dessous, à gauche et à droite du bloc.
-    for (const x of xs) {
-      ligne(page, x, minY - e, x, Math.max(0, minY - e - L));
-      ligne(page, x, maxY + e, x, Math.min(H, maxY + e + L));
-    }
-    for (const y of ys) {
-      ligne(page, minX - e, y, Math.max(0, minX - e - L), y);
-      ligne(page, maxX + e, y, Math.min(W, maxX + e + L), y);
-    }
+  for (const l of face.lignes ?? []) {
+    const start = l.axe === 'x' ? { x: pt(l.pos), y: pt(l.de) } : { x: pt(l.de), y: pt(l.pos) };
+    const end = l.axe === 'x' ? { x: pt(l.pos), y: pt(l.a) } : { x: pt(l.a), y: pt(l.pos) };
+    page.drawLine({ start, end, thickness: TRAIT, color: grayscale(0), dashArray: l.genre === 'perforation' ? [2, 1] : [3, 3] });
   }
-  // Bordure de feuille, pour couper au massicot d'un seul trait (hors de toute pose).
-  const marge = pt(5);
-  for (const x of xs) {
-    if (minY - e - L > marge) ligne(page, x, 0, x, marge);
-    if (H - (maxY + e + L) > marge) ligne(page, x, H, x, H - marge);
-  }
-  for (const y of ys) {
-    if (minX - e - L > marge) ligne(page, 0, y, marge, y);
-    if (W - (maxX + e + L) > marge) ligne(page, W, y, W - marge, y);
-  }
-  for (const p of plis) {
-    const x = pt(p);
-    ligne(page, x, 0, x, marge * 1.5, true);
-    ligne(page, x, H, x, H - marge * 1.5, true);
+  for (const m of face.marques ?? []) page.drawRectangle({ x: pt(m.x), y: pt(m.y), width: pt(m.largeur), height: pt(m.hauteur), color: grayscale(0) });
+  for (const t of face.textes ?? []) {
+    const f = (t.gras ? fontGras : font) ?? font ?? fontGras;
+    if (!f) continue;
+    const largeur = f.widthOfTextAtSize(t.texte, t.taille_pt);
+    const dx = t.ancre === 'centre' ? -largeur / 2 : t.ancre === 'droite' ? -largeur : 0;
+    const rad = ((t.rotation ?? 0) * Math.PI) / 180;
+    page.drawText(t.texte, { x: pt(t.x) + dx * Math.cos(rad), y: pt(t.y) + dx * Math.sin(rad), size: t.taille_pt, font: f, color: grayscale(0), rotate: degrees(t.rotation ?? 0) });
   }
 }
 
@@ -360,7 +351,9 @@ export interface ResultatGeneration {
 }
 
 /** Produit le PDF imposé à partir des octets source et du plan. */
-export async function genererPdf(octetsSource: Uint8Array, plan: Plan, params: ParamsImposition, nom: string, bordsUnis: (BordsUnis | null)[] = [], cheminSource?: string): Promise<ResultatGeneration> {
+export async function genererPdf(octetsSource: Uint8Array, plan: Plan, paramsDemandes: ParamsImposition, nom: string, bordsUnis: (BordsUnis | null)[] = [], cheminSource?: string): Promise<ResultatGeneration> {
+  // Le moteur ne lit que les réglages effectifs du plan (coupe résolue, calepinage, fonds perdus réellement possibles).
+  const params: ParamsImposition = { ...(plan.params_effectifs ?? paramsDemandes), fonds_perdus_mm: plan.fonds_perdus_mm };
   const src = await chargerPdf(octetsSource);
   const doc = await PDFDocument.create();
   doc.setTitle(`${nom} — imposition`);
@@ -371,7 +364,9 @@ export async function genererPdf(octetsSource: Uint8Array, plan: Plan, params: P
   const source = await preparerSource(doc, src, [...numeros], params, plan.adaptation);
   source.chemin = cheminSource;
   source.raster = !!cheminSource && (await bordureDisponible());
-  const font = params.numerotation ? await doc.embedFont(StandardFonts.HelveticaBold) : null;
+  const avecTextes = plan.feuilles.some((f) => [f.recto, f.verso].some((face) => face?.textes?.length));
+  const fontGras = params.numerotation || avecTextes ? await doc.embedFont(StandardFonts.HelveticaBold) : null;
+  const font = avecTextes ? await doc.embedFont(StandardFonts.Helvetica) : null;
   const W = pt(plan.feuille.largeur);
   const H = pt(plan.feuille.hauteur);
   const fp = pt(Math.max(0, params.fonds_perdus_mm));
@@ -382,16 +377,19 @@ export async function genererPdf(octetsSource: Uint8Array, plan: Plan, params: P
       const page = doc.addPage([W, H]);
       for (const q of face.poses) {
         if (q.page !== null && q.page > src.getPageCount()) continue;
-        await dessinerPose(page, source, q, params, (n) => bordsUnis[n - 1] ?? null);
-        if (font) numeroter(page, font, q, params);
+        await dessinerPose(page, source, q, params, (n) => bordsUnis[n - 1] ?? null, params.numerotation ? fontGras : null);
       }
-      for (const m of face.marques ?? []) page.drawRectangle({ x: pt(m.x), y: pt(m.y), width: pt(m.largeur), height: pt(m.hauteur), color: grayscale(0) });
-      if (params.traits_de_coupe) traitsDeCoupe(page, face.poses, plan.feuille, params.fonds_perdus_mm, face.plis, params.operation === 'livret' ? 0 : params.gouttiere_mm);
-      // Boîtes : pour une seule pose, TrimBox = format fini, BleedBox = fini + fonds perdus.
-      if (face.poses.length === 1 && face.poses[0]) {
-        const q = face.poses[0];
-        page.setTrimBox(pt(q.x), pt(q.y), pt(q.largeur), pt(q.hauteur));
-        page.setBleedBox(pt(q.x) - fp, pt(q.y) - fp, pt(q.largeur) + 2 * fp, pt(q.hauteur) + 2 * fp);
+      dessinerReperes(page, face, font, fontGras);
+      // Boîtes : TrimBox = bloc des poses (format fini pour une pose unique), BleedBox = bloc + fonds perdus.
+      const pleines = face.poses.filter((q) => q.page !== null || face.poses.length === 1);
+      if (pleines.length) {
+        let x1 = Infinity, y1 = Infinity, x2 = -Infinity, y2 = -Infinity;
+        for (const q of pleines) {
+          const e = emprise(q);
+          x1 = Math.min(x1, q.x); y1 = Math.min(y1, q.y); x2 = Math.max(x2, q.x + e.largeur); y2 = Math.max(y2, q.y + e.hauteur);
+        }
+        page.setTrimBox(pt(x1), pt(y1), pt(x2 - x1), pt(y2 - y1));
+        page.setBleedBox(Math.max(0, pt(x1) - fp), Math.max(0, pt(y1) - fp), Math.min(W, pt(x2 - x1) + 2 * fp), Math.min(H, pt(y2 - y1) + 2 * fp));
       }
     }
   }

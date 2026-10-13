@@ -1,7 +1,7 @@
 // Réglages automatiques : quand on choisit une opération, les réglages se calculent d'après le fichier
 // (format reconnu, fonds perdus présents ou non, visuel au bord, nombre de pages, recto/verso séparés).
 // La personne n'a plus qu'à vérifier la feuille ; tout reste modifiable.
-import type { Adaptation, AnalysePdf, Dimension, Feuille, Operation, ParamsImposition, ReponseAnalyse } from './types';
+import type { Adaptation, AnalysePdf, Dimension, Feuille, Operation, ParamsImposition, Plan, ReponseAnalyse } from './types';
 
 const FEUILLES: { code: Feuille; largeur: number; hauteur: number }[] = [
   { code: 'a4', largeur: 210, hauteur: 297 },
@@ -14,12 +14,14 @@ const FEUILLES: { code: Feuille; largeur: number; hauteur: number }[] = [
 
 const tient = (fw: number, fh: number, w: number, h: number) => (fw >= w && fh >= h) || (fw >= h && fh >= w);
 
-/** Fonds perdus : ceux du fichier s'il en a, sinon miroir si le visuel touche le bord, sinon blanc. */
-export function fondsAuto(a: AnalysePdf): Pick<ParamsImposition, 'fonds_perdus_mm' | 'methode_fonds_perdus'> {
-  if (a.fonds_perdus !== 'absents') return { fonds_perdus_mm: a.fonds_perdus_mm || 3, methode_fonds_perdus: 'source' };
-  const touche = a.pages.some((p) => p.jusqu_au_bord === true);
-  const inconnu = a.pages.every((p) => p.jusqu_au_bord === null);
-  return touche || inconnu ? { fonds_perdus_mm: 3, methode_fonds_perdus: 'intelligent' } : { fonds_perdus_mm: 3, methode_fonds_perdus: 'blanc' };
+/**
+ * Fonds perdus demandés : ceux du fichier s'il en a, sinon 3 mm fabriqués bord par bord. La décision
+ * « avec ou sans » revient au serveur (coupe « auto », d'après la marge blanche mesurée) : le plan la
+ * rapporte et l'écran l'affiche.
+ */
+export function fondsAuto(a: AnalysePdf): Pick<ParamsImposition, 'fonds_perdus_mm' | 'methode_fonds_perdus' | 'coupe'> {
+  if (a.fonds_perdus !== 'absents') return { fonds_perdus_mm: a.fonds_perdus_mm || 3, methode_fonds_perdus: 'source', coupe: 'auto' };
+  return { fonds_perdus_mm: 3, methode_fonds_perdus: 'intelligent', coupe: 'auto' };
 }
 
 /** Livret : la plus petite feuille qui loge deux pages côte à côte avec fonds perdus et traits (A5 → SRA4, A4 → SRA3). */
@@ -45,7 +47,26 @@ export function reglagesPour(op: Operation, r: ReponseAnalyse, courant: ParamsIm
   const paires = r.paires?.filter((x) => x.verso !== null).length ?? 0;
   const nbVisuels = r.paires ? r.paires.length : a.nb_pages;
   const famille = a.format?.famille;
-  const base: ParamsImposition = { ...courant, operation: op, fini, ...fonds, orientation: 'auto', gouttiere_mm: 0, traits_de_coupe: true, ajustement: courant.ajustement ?? 'auto' };
+  const base: ParamsImposition = {
+    ...courant,
+    operation: op,
+    fini,
+    ...fonds,
+    orientation: 'auto',
+    gouttiere_mm: 0,
+    traits_de_coupe: true,
+    traits_style: 'auto',
+    ajustement: courant.ajustement ?? 'auto',
+    calepinage: 'auto',
+    rotation_poses: op === 'poses' ? 'auto' : 'aucune',
+    tete_beche: 'aucune',
+    calage: 'centre',
+    retournement: 'auto',
+    rotation_verso: 'auto',
+    marge_mm: 5,
+    cadre_blanc_mm: courant.cadre_blanc_mm ?? 0,
+    cadre_methode: courant.cadre_methode ?? 'reduire',
+  };
   if (op === 'livret') {
     // Brochure : piqûre jusqu'à 64 pages (au-delà, le dos ne ferme plus), sinon dos carré collé en
     // cahiers de 4 feuilles. Chasse seulement en piqûre (≈ 0,1 mm par feuille au-delà de 40 pages).
@@ -70,7 +91,7 @@ export function reglagesPour(op: Operation, r: ReponseAnalyse, courant: ParamsIm
     };
   }
   if (op === 'fonds_perdus') {
-    return { ...base, methode_fonds_perdus: fonds.methode_fonds_perdus === 'blanc' ? 'intelligent' : fonds.methode_fonds_perdus, recto_verso: false, numerotation: null };
+    return { ...base, recto_verso: false, numerotation: null };
   }
   if (op === 'assembler') {
     return { ...base, recto_verso: false, numerotation: null };
@@ -82,23 +103,38 @@ export function reglagesPour(op: Operation, r: ReponseAnalyse, courant: ParamsIm
   return {
     ...base,
     feuille: feuillePoses(fini, fonds.fonds_perdus_mm),
-    marge_mm: 10,
+    marge_mm: 5,
     recto_verso: rv,
-    retournement: 'bord_long',
+    retournement: 'auto',
     mode,
     numerotation: ticket ? (courant.numerotation ?? { debut: 1, chiffres: 4, prefixe: 'N° ', position: 'bas_droite', taille_pt: 11, verso: false }) : null,
   };
 }
 
-/** Explication courte de ce que le réglage automatique a choisi. */
-export function resumeAuto(p: ParamsImposition): string {
+/** Coupe effective en quelques mots (barre de statistiques, résumé). */
+export function libelleCoupe(c: Plan['coupe'], fondsEffectifs = c.fonds_perdus_mm): string {
+  const mm = (v: number) => (Math.round(v * 10) / 10).toLocaleString('fr-FR');
+  if (c.systeme === 'fonds_perdus') return `Fonds perdus ${mm(fondsEffectifs)} mm`;
+  if (c.systeme === 'double') return `Double coupe ${mm(c.gouttiere_mm)} mm`;
+  if (c.systeme === 'cadre') return `Cadre blanc ${mm(c.cadre_mm)} mm`;
+  if (c.systeme === 'aucune') return 'Sans coupe';
+  return 'Coupe franche';
+}
+
+/** Explication courte de ce que le réglage automatique a choisi (le plan, s'il est connu, donne les valeurs effectives). */
+export function resumeAuto(p: ParamsImposition, plan?: Plan | null): string {
   const feuille = p.feuille === 'personnalisee' ? 'feuille personnalisée' : p.feuille.toUpperCase().replace('_PLUS', '+').replace('BANNIERE_330', 'bannière 330 × 660');
-  const fonds = p.methode_fonds_perdus === 'source' ? `fonds perdus du fichier (${p.fonds_perdus_mm} mm)` : p.methode_fonds_perdus === 'intelligent' ? `fonds perdus générés bord par bord (${p.fonds_perdus_mm} mm)` : p.methode_fonds_perdus === 'prolonger' ? `bords prolongés (${p.fonds_perdus_mm} mm)` : p.methode_fonds_perdus === 'miroir' ? `fonds perdus en miroir (${p.fonds_perdus_mm} mm)` : p.methode_fonds_perdus === 'etirer' ? 'fonds perdus par étirement' : 'sans fonds perdus (marge blanche)';
+  const fpEff = plan ? plan.fonds_perdus_mm : p.fonds_perdus_mm;
+  const methodeEff = plan ? plan.coupe.methode : p.methode_fonds_perdus;
+  const fonds = plan && plan.coupe.systeme !== 'fonds_perdus'
+    ? `sans fonds perdus (${libelleCoupe(plan.coupe, plan.fonds_perdus_mm).toLowerCase()})`
+    : methodeEff === 'source' ? `fonds perdus du fichier (${fpEff} mm)` : methodeEff === 'intelligent' ? `fonds perdus générés bord par bord (${fpEff} mm)` : methodeEff === 'prolonger' ? `bords prolongés (${fpEff} mm)` : methodeEff === 'miroir' ? `fonds perdus en miroir (${fpEff} mm)` : methodeEff === 'etirer' ? 'fonds perdus par étirement' : 'sans fonds perdus';
   if (p.operation === 'livret') return `Livret ${p.reliure === 'dos_carre' ? `dos carré collé (cahiers de ${p.cahier_feuilles ?? 4} feuilles)` : 'piqûre à cheval'} sur ${feuille}${p.couverture_separee ? ', couverture à part' : ''}${p.lecture === 'droite_gauche' ? ', lecture de droite à gauche' : ''}, ${fonds}.`;
   if (p.operation === 'fonds_perdus') return `Une page par page, ${fonds}, traits de coupe.`;
   if (p.operation === 'assembler') return 'Pièces réunies dans l’ordre, pages inchangées.';
   const mode = p.mode === 'repetition' ? 'même visuel sur toutes les poses' : p.mode === 'sequence' ? 'visuels à la suite' : 'coupe & empile';
-  return `${feuille}, ${mode}${p.recto_verso ? ', recto-verso' : ''}, ${fonds}${p.numerotation ? ', numérotation' : ''}.`;
+  const poses = plan && plan.operation === 'poses' ? `, ${plan.poses_par_face} pose${plan.poses_par_face > 1 ? 's' : ''} par feuille${plan.calepinage?.rotation === 'mixte' ? ' (bande tournée)' : plan.calepinage?.rotation === '90' ? ' (tournées)' : ''}` : '';
+  return `${feuille}${poses}, ${mode}${p.recto_verso ? ', recto-verso' : ''}, ${fonds}${p.numerotation ? ', numérotation' : ''}.`;
 }
 
 const RECTO_RE = /(^|[^a-z])(recto|face|avant|front|devant|r)([^a-z]|$)|(^|[^0-9])1([^0-9]|$)/i;

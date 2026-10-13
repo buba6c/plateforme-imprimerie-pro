@@ -89,7 +89,7 @@ describe('lecture et validation des paramètres', () => {
   it("l'administrateur voit toutes les sections, les autres rôles seulement les sections publiques", async () => {
     const admin = await A.admin.get('/api/parametres');
     expect(Object.keys(admin.body).sort()).toEqual(
-      ['documents', 'entreprise', 'fichiers', 'fuseau', 'livreur_jours_historique', 'notifications', 'prix', 'securite'].sort(),
+      ['documents', 'entreprise', 'fichiers', 'fuseau', 'imposition', 'livreur_jours_historique', 'notifications', 'prix', 'securite'].sort(),
     );
     expect(admin.body.securite).toEqual({ session_heures: 12, echecs_avant_blocage: 5, blocage_minutes: 15, mdp_longueur_min: 8 });
     expect(admin.body.fichiers).toEqual({ taille_max_mo: 4096, extensions: [], traitement_auto: true });

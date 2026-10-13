@@ -21,6 +21,12 @@ export interface ReglesDocuments {
   conditions_paiement: string;
 }
 
+/** Imposition : bord non imprimable de la machine, plancher des fonds perdus du calepinage automatique. */
+export interface ReglesImposition {
+  marge_technique_mm: number;
+  fonds_perdus_min_mm: number;
+}
+
 /** Paramètres complets, tels que l'administrateur les lit. */
 export interface ParametresAdmin {
   entreprise: Entreprise;
@@ -31,6 +37,7 @@ export interface ParametresAdmin {
   fichiers: ReglesFichiers;
   documents: ReglesDocuments;
   notifications: Record<string, boolean>;
+  imposition: ReglesImposition;
 }
 
 /** Règles lisibles par tous les rôles (GET /parametres/regles). */

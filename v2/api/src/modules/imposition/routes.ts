@@ -33,7 +33,8 @@ const LOURD = 80 * 1024 * 1024;
 import { assembler, type Assemblage, type FichierPiece, type OptionsAssemblage, type PieceEntree } from './sources';
 import { CODES_FEUILLE, FEUILLES, FORMATS_FINIS, formatProche, type Feuille } from './formats';
 import { genererPdf } from './generer';
-import { calculerPlan, paramsParDefaut, type ParamsImposition, type SourcePlan } from './plan';
+import { calculerPlan, paramsParDefaut, type AtelierImposition, type ParamsImposition, type SourcePlan } from './plan';
+import { getParametres } from '../../lib/params';
 import { detecterPlanches } from './planches';
 
 const dim = z.object({ largeur: z.number().positive().max(2000), hauteur: z.number().positive().max(2000) });
@@ -54,10 +55,22 @@ export const paramsSchema = z.object({
   fonds_perdus_mm: z.number().min(0).max(20).default(3),
   methode_fonds_perdus: z.enum(['source', 'intelligent', 'prolonger', 'miroir', 'etirer', 'blanc']).default('source'),
   gouttiere_mm: z.number().min(0).max(50).default(0),
-  marge_mm: z.number().min(0).max(100).default(10),
+  marge_mm: z.number().min(0).max(100).default(5),
+  gouttiere_y_mm: z.number().min(0).max(50).nullable().optional(),
   traits_de_coupe: z.boolean().default(true),
+  traits_style: z.enum(['auto', 'angles', 'bloc', 'bord_feuille', 'traversants', 'aucun']).default('auto'),
   recto_verso: z.boolean().default(false),
-  retournement: z.enum(['bord_long', 'bord_court']).default('bord_long'),
+  retournement: z.enum(['auto', 'bord_long', 'bord_court']).default('auto'),
+  rotation_verso: z.enum(['auto', 'aucune', '180']).default('auto'),
+  coupe: z.enum(['auto', 'fonds_perdus', 'sans_auto', 'franche', 'double', 'cadre', 'aucune']).default('auto'),
+  cadre_blanc_mm: z.number().min(0).max(10).default(0),
+  cadre_methode: z.enum(['reduire', 'rogner']).default('reduire'),
+  calepinage: z.enum(['auto', 'manuel']).default('auto'),
+  rotation_poses: z.enum(['aucune', '90', 'auto']).default('aucune'),
+  tete_beche: z.enum(['aucune', 'colonnes', 'rangs', 'damier']).default('aucune'),
+  calage: z.enum(['centre', 'coin']).default('centre'),
+  marge_pince_mm: z.number().min(0).max(50).optional(),
+  fonds_partages: z.union([z.boolean(), z.literal('auto')]).default('auto'),
   mode: z.enum(['repetition', 'sequence', 'coupe_empile']).default('repetition'),
   quantite: z.number().int().positive().max(100_000).optional(),
   numerotation: numerotationSchema.nullable().optional(),
@@ -409,8 +422,28 @@ export function impositionRouter(config: Config) {
   });
 
   const optionsDe = (p: ParamsImposition): OptionsAssemblage => ({ fini: p.fini, fonds: p.fonds_perdus_mm, planches: p.planches, lecture: p.lecture });
-  /** Zone finie du visuel reçu, pour la mise au format (les images sont faites à la taille demandée : rien à adapter). */
-  const sourceDe = (a: AnalysePdf, assemblage: Assemblage): SourcePlan | undefined => (assemblage.nb_images ? undefined : { fini: a.fini, marge_blanche: a.pages[0]?.marge_blanche ?? null });
+  /** Ce que le plan doit savoir du visuel reçu : zone finie (mise au format), marges et bords (décision de coupe). */
+  const sourceDe = (a: AnalysePdf, assemblage: Assemblage): SourcePlan | undefined => {
+    if (assemblage.nb_images) return undefined;
+    const rendues = a.pages.filter((p) => p.marge_blanche);
+    return {
+      fini: a.fini,
+      marge_blanche: a.pages[0]?.marge_blanche ?? null,
+      fonds: a.fonds_perdus,
+      fonds_mm: a.fonds_perdus_mm,
+      marge_blanche_min: a.marge_encre_mm,
+      jusqu_au_bord: rendues.length ? rendues.some((p) => p.jusqu_au_bord === true) : null,
+      bord_clair: rendues.length ? rendues.some((p) => p.bord_clair === true) : null,
+      bords_unis_partout: rendues.length ? rendues.every((p) => p.bords_unis && Object.values(p.bords_unis).every(Boolean)) : null,
+      nb_pages_rendues: rendues.length,
+      nb_pages: a.nb_pages,
+    };
+  };
+  /** Réglages d'atelier (Paramètres > Imposition) : marge technique de la machine, fonds perdus minimaux. */
+  const atelier = async (): Promise<AtelierImposition> => {
+    const r = (await getParametres()).imposition;
+    return { marge_technique_mm: r.marge_technique_mm, fonds_perdus_min_mm: r.fonds_perdus_min_mm };
+  };
 
   const avecParams = (body: Record<string, unknown>) => {
     const r = paramsSchema.safeParse(body.params);
@@ -424,7 +457,7 @@ export function impositionRouter(config: Config) {
     const params = avecParams(body);
     const { assemblage, analyse } = await preparer(me(req), pieces, optionsDe(params));
     try {
-      res.json({ plan: calculerPlan({ ...params, paires: assemblage.paires }, analyse.nb_pages, analyse.pages, sourceDe(analyse, assemblage)), pages: assemblage.pages });
+      res.json({ plan: calculerPlan({ ...params, paires: assemblage.paires }, analyse.nb_pages, analyse.pages, sourceDe(analyse, assemblage), await atelier()), pages: assemblage.pages });
     } catch (e) {
       throw conflict(e instanceof Error ? e.message : 'Plan impossible.');
     }
@@ -445,7 +478,7 @@ export function impositionRouter(config: Config) {
     if (generationsEnCours >= 2) throw conflict('Deux impositions sont déjà en cours sur le serveur : réessayez dans un instant.');
     let plan;
     try {
-      plan = calculerPlan({ ...params, paires: assemblage.paires }, analyse.nb_pages, analyse.pages, sourceDe(analyse, assemblage));
+      plan = calculerPlan({ ...params, paires: assemblage.paires }, analyse.nb_pages, analyse.pages, sourceDe(analyse, assemblage), await atelier());
     } catch (e) {
       throw conflict(e instanceof Error ? e.message : 'Plan impossible.');
     }

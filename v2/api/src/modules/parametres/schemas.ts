@@ -90,6 +90,13 @@ export const notificationsSchema = z
   .partial()
   .strict('Type de notification inconnu');
 
+export const impositionSchema = z
+  .object({
+    marge_technique_mm: z.number({ invalid_type_error: 'Marge technique : nombre attendu' }).min(0, 'Marge technique : 0 mm au minimum').max(20, 'Marge technique : 20 mm au maximum'),
+    fonds_perdus_min_mm: z.number({ invalid_type_error: 'Fonds perdus minimaux : nombre attendu' }).min(0.5, 'Fonds perdus minimaux : 0,5 mm au minimum').max(5, 'Fonds perdus minimaux : 5 mm au maximum'),
+  })
+  .partial();
+
 /** Corps de PUT /parametres : chaque section est facultative et fusionnée avec l'existant. */
 export function parametresSchema(strict = false) {
   const s = (o: z.AnyZodObject) => (strict ? o.strict('Champ inconnu') : o);
@@ -102,6 +109,7 @@ export function parametresSchema(strict = false) {
     fichiers: s(fichiersSchema()).optional(),
     documents: s(documentsSchema).optional(),
     notifications: notificationsSchema.optional(),
+    imposition: s(impositionSchema).optional(),
   });
   return strict ? schema.strict('Section de paramètres inconnue') : schema;
 }

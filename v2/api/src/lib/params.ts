@@ -65,6 +65,14 @@ export const TYPES_NOTIFICATION = [
 export type TypeNotification = (typeof TYPES_NOTIFICATION)[number];
 export type ReglesNotifications = Record<TypeNotification, boolean>;
 
+/** Imposition (modules/imposition) : ce que la machine ne sait pas imprimer, planchers du calepinage automatique. */
+export interface ReglesImposition {
+  /** Bord de la feuille que la Xerox n'imprime pas (mm) : aucune pose ni repère n'y est placé. */
+  marge_technique_mm: number;
+  /** Fonds perdus les plus étroits que le calepinage automatique accepte pour gagner des poses (mm). */
+  fonds_perdus_min_mm: number;
+}
+
 export interface Parametres {
   entreprise: Entreprise;
   prix: ParamsPrix;
@@ -75,6 +83,7 @@ export interface Parametres {
   fichiers: ReglesFichiers;
   documents: ReglesDocuments;
   notifications: ReglesNotifications;
+  imposition: ReglesImposition;
 }
 
 /** Sections lisibles par tous les rôles ; les autres sont réservées à l'administrateur. */
@@ -106,6 +115,7 @@ export const PARAMETRES_DEFAUT: Parametres = {
   fichiers: { taille_max_mo: plafondsServeur().taille_max_mo, extensions: [], traitement_auto: true },
   documents: { devis_validite_jours: 15, mentions_devis: '', conditions_paiement: '' },
   notifications: Object.fromEntries(TYPES_NOTIFICATION.map((t) => [t, true])) as ReglesNotifications,
+  imposition: { marge_technique_mm: 5, fonds_perdus_min_mm: 1.5 },
 };
 
 const objet = (v: unknown): Record<string, unknown> => (v && typeof v === 'object' && !Array.isArray(v) ? (v as Record<string, unknown>) : {});
@@ -128,6 +138,7 @@ export async function getParametres(db?: Db): Promise<Parametres> {
     fichiers: { taille_max_mo: Math.min(Number(fichiers.taille_max_mo), plafondsServeur().taille_max_mo), extensions: Array.isArray(fichiers.extensions) ? fichiers.extensions : [], traitement_auto: fichiers.traitement_auto !== false },
     documents: { ...d.documents, ...objet(map.documents) },
     notifications: { ...d.notifications, ...objet(map.notifications) } as ReglesNotifications,
+    imposition: { ...d.imposition, ...objet(map.imposition) } as ReglesImposition,
   };
   cache = { at: Date.now(), value };
   return value;

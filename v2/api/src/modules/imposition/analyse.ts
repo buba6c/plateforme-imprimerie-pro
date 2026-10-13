@@ -45,6 +45,8 @@ export interface PageAnalysee {
   bords_unis: { haut: boolean; bas: boolean; gauche: boolean; droite: boolean } | null;
   /** Le visuel touche au moins un bord. */
   jusqu_au_bord: boolean | null;
+  /** Fond clair non blanc (crème, gris pâle…) sur au moins un bord : une coupe franche y laisserait un filet visible. null sans rendu. */
+  bord_clair: boolean | null;
 }
 
 export interface AnalysePdf {
@@ -61,6 +63,10 @@ export interface AnalysePdf {
   avertissements: string[];
   /** Taille finie recommandée (mm) : format reconnu, sinon page moins fonds perdus déclarés. */
   fini: BoitePage;
+  /** Marge blanche la plus étroite (mm) sur toutes les pages rendues ; null sans rendu. */
+  marge_encre_mm: number | null;
+  /** Pages réellement rendues et contrôlées (bords, marges) : les premières et les dernières. */
+  pages_controlees: number;
 }
 
 function boites(page: PDFPage) {
@@ -73,7 +79,7 @@ function boites(page: PDFPage) {
   return { media: lire(media), trim, bleed };
 }
 
-async function rendreEtMesurer(abs: string, numero: number, largeurMm: number, hauteurMm: number): Promise<{ bords: Bords; marge: Bords; unis: { haut: boolean; bas: boolean; gauche: boolean; droite: boolean } } | null> {
+async function rendreEtMesurer(abs: string, numero: number, largeurMm: number, hauteurMm: number): Promise<{ bords: Bords; marge: Bords; unis: { haut: boolean; bas: boolean; gauche: boolean; droite: boolean }; clair: boolean } | null> {
   const px = Math.max(60, Math.min(900, Math.round(largeurMm * 2)));
   const temp = path.join(os.tmpdir(), `evocom-imposition-${process.pid}-${Date.now()}-${numero}`);
   try {
@@ -129,8 +135,17 @@ async function rendreEtMesurer(abs: string, numero: number, largeurMm: number, h
     const marge: Bords = { haut: arrondi(haut / pxParMm), bas: arrondi(bas / pxParMm), gauche: arrondi(gauche / pxParMm), droite: arrondi(droite / pxParMm) };
     const b2 = Math.max(2, Math.round(2 * pxParMm));
     const unis = { haut: uni(0, 0, w, b2), bas: uni(0, h - b2, w, h), gauche: uni(0, 0, b2, h), droite: uni(w - b2, 0, w, h) };
+    // Fond clair non blanc sur un bord (gris 200 à 250) : lu comme « vide » par la marge blanche, mais
+    // visible à la coupe franche.
+    const partClaire = (x0: number, y0: number, x1: number, y1: number) => {
+      let n = 0;
+      let c = 0;
+      for (let y = y0; y < y1; y++) for (let x = x0; x < x1; x++) { n++; const v = data[y * w + x]!; if (v >= 200 && v < 250) c++; }
+      return n ? c / n : 0;
+    };
+    const clair = [partClaire(0, 0, w, bande), partClaire(0, h - bande, w, h), partClaire(0, 0, bande, h), partClaire(w - bande, 0, w, h)].some((v) => v > 0.3);
     void hauteurMm;
-    return { bords, marge, unis };
+    return { bords, marge, unis, clair };
   } catch {
     return null;
   } finally {
@@ -182,16 +197,18 @@ async function analyserDocument(abs: string, doc: PDFDocument): Promise<AnalyseP
     let bords: Bords | null = null;
     let marge: Bords | null = null;
     let unis: PageAnalysee['bords_unis'] = null;
+    let clair: boolean | null = null;
     if (rendu && aRendre.has(i)) {
       const r = await rendreEtMesurer(abs, i + 1, largeur, hauteur);
       if (r) {
         bords = { haut: arrondi(r.bords.haut, 3), bas: arrondi(r.bords.bas, 3), gauche: arrondi(r.bords.gauche, 3), droite: arrondi(r.bords.droite, 3) };
         marge = r.marge;
         unis = r.unis;
+        clair = r.clair;
       }
     }
     const jusquAuBord = bords ? Object.values(bords).some((v) => v > 0.04) : null;
-    analysees.push({ numero: i + 1, largeur, hauteur, rotation, trim: trimMm, fonds_perdus_declares: fondsDeclares, format, bords, marge_blanche: marge, bords_unis: unis, jusqu_au_bord: jusquAuBord });
+    analysees.push({ numero: i + 1, largeur, hauteur, rotation, trim: trimMm, fonds_perdus_declares: fondsDeclares, format, bords, marge_blanche: marge, bords_unis: unis, jusqu_au_bord: jusquAuBord, bord_clair: clair });
   }
 
   const p0 = analysees[0]!;
@@ -219,10 +236,15 @@ async function analyserDocument(abs: string, doc: PDFDocument): Promise<AnalyseP
       ? { largeur: p0.trim.largeur, hauteur: p0.trim.hauteur }
       : { largeur: arrondi(p0.largeur - 2 * fondsMm), hauteur: arrondi(p0.hauteur - 2 * fondsMm) };
 
+  const rendues = analysees.filter((p) => p.marge_blanche);
+  const margeEncre = rendues.length ? arrondi(Math.min(...rendues.map((p) => Math.min(...Object.values(p.marge_blanche!))))) : null;
+
   return {
     nb_pages: analysees.length,
     pages: analysees,
     uniforme,
+    marge_encre_mm: margeEncre,
+    pages_controlees: rendues.length,
     largeur: p0.largeur,
     hauteur: p0.hauteur,
     format: p0.format,

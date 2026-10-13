@@ -3,6 +3,16 @@ export type Operation = 'poses' | 'livret' | 'fonds_perdus' | 'assembler';
 export type ModePoses = 'repetition' | 'sequence' | 'coupe_empile';
 export type MethodeFondsPerdus = 'source' | 'intelligent' | 'prolonger' | 'miroir' | 'etirer' | 'blanc';
 export type ModeAjustement = 'auto' | 'centrer' | 'adapter' | 'remplir' | 'etirer';
+export type Coupe = 'auto' | 'fonds_perdus' | 'sans_auto' | 'franche' | 'double' | 'cadre' | 'aucune';
+export type SystemeCoupe = 'fonds_perdus' | 'franche' | 'double' | 'cadre' | 'aucune';
+export type StyleTraits = 'auto' | 'angles' | 'bloc' | 'bord_feuille' | 'traversants' | 'aucun';
+export type RotationPoses = 'aucune' | '90' | 'auto';
+export type TeteBeche = 'aucune' | 'colonnes' | 'rangs' | 'damier';
+export type Calage = 'centre' | 'coin';
+export type Retournement = 'auto' | 'bord_long' | 'bord_court';
+export type RotationVerso = 'auto' | 'aucune' | '180';
+export type Rotation = 0 | 90 | 180 | 270;
+export type Cote = 'gauche' | 'droite' | 'haut' | 'bas';
 export type ModeBlanches = 'fin' | 'avant_derniere' | 'apres_couverture' | 'reparties' | 'positions';
 export type ModePlanches = 'non' | 'simple' | 'couverture';
 export type Feuille = 'sra3' | 'a3' | 'a3_plus' | 'sra4' | 'a4' | 'a5' | 'banniere_330' | 'personnalisee';
@@ -30,10 +40,22 @@ export interface ParamsImposition {
   fonds_perdus_mm: number;
   methode_fonds_perdus: MethodeFondsPerdus;
   gouttiere_mm: number;
+  gouttiere_y_mm?: number | null;
   marge_mm: number;
   traits_de_coupe: boolean;
+  traits_style?: StyleTraits;
   recto_verso: boolean;
-  retournement: 'bord_long' | 'bord_court';
+  retournement: Retournement;
+  rotation_verso?: RotationVerso;
+  coupe?: Coupe;
+  cadre_blanc_mm?: number;
+  cadre_methode?: 'reduire' | 'rogner';
+  calepinage?: 'auto' | 'manuel';
+  rotation_poses?: RotationPoses;
+  tete_beche?: TeteBeche;
+  calage?: Calage;
+  marge_pince_mm?: number;
+  fonds_partages?: boolean | 'auto';
   mode: ModePoses;
   quantite?: number;
   numerotation?: Numerotation | null;
@@ -57,15 +79,72 @@ export interface Pose {
   y: number;
   largeur: number;
   hauteur: number;
+  rotation?: Rotation;
   decalage_x?: number;
   pli?: 'gauche' | 'droite';
+  joints?: Cote[];
   rang: number;
   colonne: number;
+  bande?: number;
+}
+export interface Segment {
+  x1: number;
+  y1: number;
+  x2: number;
+  y2: number;
+  epaisseur?: number;
+}
+export interface Ligne {
+  axe: 'x' | 'y';
+  pos: number;
+  de: number;
+  a: number;
+  genre: 'pli' | 'rainage' | 'perforation';
+}
+export interface Texte {
+  x: number;
+  y: number;
+  texte: string;
+  taille_pt: number;
+  rotation: Rotation;
+  gras?: boolean;
+  ancre?: 'gauche' | 'centre' | 'droite';
 }
 export interface Face {
   cote: 'recto' | 'verso';
   poses: Pose[];
   plis: number[];
+  marques?: { x: number; y: number; largeur: number; hauteur: number }[];
+  traits?: Segment[];
+  lignes?: Ligne[];
+  textes?: Texte[];
+}
+export interface InfoCoupe {
+  systeme: SystemeCoupe;
+  auto: boolean;
+  fonds_perdus_mm: number;
+  gouttiere_mm: number;
+  gouttiere_y_mm: number;
+  cadre_mm: number;
+  cadre_methode: 'reduire' | 'rogner';
+  methode: MethodeFondsPerdus;
+  marge_encre_mm: number | null;
+  pages_controlees: number;
+  sur: number;
+  raison: string;
+  alternatives: SystemeCoupe[];
+}
+export interface InfoCalepinage {
+  auto: boolean;
+  fonds_perdus_mm: number;
+  demande_mm: number;
+  poses: number;
+  orientation: 'portrait' | 'paysage';
+  partages: boolean;
+  rotation: 'aucune' | '90' | 'mixte';
+  reperes_ok: boolean;
+  raison: string;
+  alternatives: { fonds_perdus_mm: number; poses: number; partages: boolean; rotation: 'aucune' | '90' | 'mixte' }[];
 }
 export interface FeuillePlan {
   numero: number;
@@ -79,6 +158,8 @@ export interface Plan {
   paysage: boolean;
   fini: Dimension;
   fonds_perdus_mm: number;
+  gouttiere_mm: number;
+  marge_mm: number;
   colonnes: number;
   rangs: number;
   poses_par_face: number;
@@ -92,6 +173,14 @@ export interface Plan {
   blanches_manuelles?: number[];
   /** Mise au format quand le fichier n'a pas la taille du format fini ; null si rien à adapter. */
   adaptation?: Adaptation | null;
+  /** Réglages effectivement appliqués par le serveur (coupe résolue, calepinage, marges). */
+  params_effectifs: ParamsImposition;
+  coupe: InfoCoupe;
+  calepinage: InfoCalepinage | null;
+  retournement_effectif: 'bord_long' | 'bord_court';
+  axe_verso: 'vertical' | 'horizontal';
+  cotes?: { x: number[]; y: number[] };
+  consignes: string[];
   feuilles: FeuillePlan[];
   avertissements: string[];
 }
@@ -137,6 +226,7 @@ export interface PageAnalysee {
   marge_blanche: Bords | null;
   bords_unis: { haut: boolean; bas: boolean; gauche: boolean; droite: boolean } | null;
   jusqu_au_bord: boolean | null;
+  bord_clair?: boolean | null;
 }
 export interface AnalysePdf {
   nb_pages: number;
@@ -150,6 +240,8 @@ export interface AnalysePdf {
   rendu: boolean;
   avertissements: string[];
   fini: Dimension;
+  marge_encre_mm?: number | null;
+  pages_controlees?: number;
 }
 
 export type RolePiece = 'recto' | 'verso' | 'pages';
@@ -310,4 +402,58 @@ export const PLANCHES_LABELS: Record<ModePlanches, { label: string; aide: string
   non: { label: 'Telles quelles', aide: 'Chaque page du PDF reste une page.' },
   simple: { label: 'Séparer en pages', aide: 'Chaque page double devient deux pages (gauche, puis droite).' },
   couverture: { label: 'Couverture à plat', aide: 'La première planche est la couverture ouverte (4e à gauche, 1re à droite) : la 4e passe à la fin.' },
+};
+
+export const COUPE_LABELS: Record<'avec' | 'sans', { label: string; aide: string }> = {
+  avec: { label: 'Avec fonds perdus', aide: 'Le visuel déborde de 3 mm au-delà de la coupe : aucun filet blanc, même si le massicot dérive.' },
+  sans: { label: 'Sans fonds perdus', aide: 'Rien n’est ajouté autour du visuel ; le système de coupe est choisi d’après la marge blanche mesurée.' },
+};
+
+export const SYSTEME_COUPE_LABELS: Record<Exclude<Coupe, 'auto' | 'fonds_perdus'>, { label: string; aide: string }> = {
+  sans_auto: { label: 'Auto', aide: 'Coupe franche si l’encre est à plus de 3 mm du bord, sinon double coupe. Recommandé.' },
+  franche: { label: 'Coupe franche', aide: 'Poses jointives, un seul trait par ligne de coupe : le plus de poses, rien à jeter.' },
+  double: { label: 'Double coupe', aide: 'Une chute de 4 mm entre les poses, chaque pose a ses propres traits : sûr même si le visuel va au bord.' },
+  cadre: { label: 'Cadre blanc', aide: 'Le visuel est réduit (ou rogné) pour laisser 3 mm de blanc : la coupe ne touche jamais l’encre.' },
+  aucune: { label: 'Sans coupe', aide: 'Une page par page, exactement au format fini, sans trait : à imprimer à 100 %.' },
+};
+
+export const SYSTEME_LABELS: Record<SystemeCoupe, string> = {
+  fonds_perdus: 'Fonds perdus',
+  franche: 'Coupe franche',
+  double: 'Double coupe',
+  cadre: 'Cadre blanc',
+  aucune: 'Sans coupe',
+};
+
+export const TRAITS_LABELS: Record<StyleTraits, { label: string; aide: string }> = {
+  auto: { label: 'Auto', aide: 'Aux angles de chaque pose si la gouttière le permet, sinon autour du bloc.' },
+  angles: { label: 'Angles', aide: 'Huit traits par pose, raccourcis s’ils gênent une voisine.' },
+  bloc: { label: 'Autour du bloc', aide: 'Un trait par ligne de coupe, en marge : coupe au massicot d’un seul trait.' },
+  bord_feuille: { label: 'Bord de feuille', aide: 'Repères de 5 mm au bord seulement, pour un massicot programmé avec les cotes.' },
+  traversants: { label: 'Traversants', aide: 'Lignes qui vont du bord au bloc, jamais sur une pose.' },
+  aucun: { label: 'Aucun', aide: 'Aucun repère.' },
+};
+
+export const ROTATION_POSES_LABELS: Record<RotationPoses, { label: string; aide: string }> = {
+  auto: { label: 'Auto', aide: 'Droites, tournées ou une bande tournée dans l’espace restant : le plus de poses.' },
+  aucune: { label: 'Droites', aide: 'Toutes les poses dans le sens du fichier.' },
+  '90': { label: 'Tournées', aide: 'Toutes les poses d’un quart de tour.' },
+};
+
+export const TETE_BECHE_LABELS: Record<TeteBeche, { label: string; aide: string }> = {
+  aucune: { label: 'Aucun', aide: 'Toutes les poses dans le même sens.' },
+  colonnes: { label: 'Par colonne', aide: 'Une colonne sur deux tournée de 180° : souches en bord de feuille, encre répartie.' },
+  rangs: { label: 'Par rang', aide: 'Un rang sur deux tourné de 180°.' },
+  damier: { label: 'Damier', aide: 'Une pose sur deux tournée, en damier.' },
+};
+
+export const CALAGE_LABELS: Record<Calage, { label: string; aide: string }> = {
+  centre: { label: 'Centré', aide: 'Le bloc de poses est centré sur la feuille.' },
+  coin: { label: 'Calé sur la pince', aide: 'Le bloc part du coin bas-gauche à la marge de pince : butées de massicot fixes.' },
+};
+
+export const RETOURNEMENT_LABELS: Record<Retournement, { label: string; aide: string }> = {
+  auto: { label: 'Auto', aide: 'Le bord qui évite de tourner le verso ; la consigne pilote est donnée dans le rapport.' },
+  bord_long: { label: 'Bord long', aide: 'La Xerox retourne la feuille sur son bord long.' },
+  bord_court: { label: 'Bord court', aide: 'La Xerox retourne la feuille sur son bord court.' },
 };
