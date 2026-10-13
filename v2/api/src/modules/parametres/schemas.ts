@@ -29,6 +29,7 @@ export const entrepriseSchema = z
     ninea: champ('NINEA'),
     rccm: champ('RCCM'),
     pied_facture: champ('Pied de facture'),
+    coordonnees_bancaires: champ('Coordonnées bancaires', 300),
   })
   .partial();
 

@@ -4,14 +4,15 @@ import QRCode from 'qrcode';
 import {
   formatDecimal,
   formatEntier,
-  formatFCFA,
   formatTaille,
   MACHINE_DESCRIPTIONS,
   MACHINE_LABELS,
+  MODE_PAIEMENT_LABELS,
   STATUT_LABELS,
   type LigneRoland,
   type LigneXerox,
   type Machine,
+  type ModePaiement,
   type Statut,
   type Tarif,
   detailsLigne,
@@ -20,11 +21,22 @@ import {
 } from '@evocom/shared';
 import type { Parametres } from '../../lib/params';
 import { dateHeureFr, jourFr } from '../commun/dates';
-import { quantiteFr, type LigneDocument } from './lignes';
 import {
-  blocInfos,
+  blocLibre,
+  blocsParties,
+  enTeteCommercial,
+  ligneObjet,
+  montantAPayer,
+  paragrapheCommercial,
+  piedCommercial,
+  signatures,
+  tableauCommercial,
+  totauxCommerciaux,
+  type LigneTotalCommercial,
+} from './commercial';
+import type { LigneDocument } from './lignes';
+import {
   COULEURS,
-  enTete,
   etiquette,
   filet,
   largeurUtile,
@@ -36,34 +48,9 @@ import {
   POLICE_GRAS,
   t,
   tableau,
-  totaux,
-  UNITES_COURTES,
   versBuffer,
-  type Colonne,
   type Doc,
-  type LigneTotal,
 } from './mise-en-page';
-
-const COLONNES_LIGNES: Colonne[] = [
-  { titre: 'Désignation', largeur: 0 },
-  { titre: 'Quantité', largeur: 60, align: 'right' },
-  { titre: 'Unité', largeur: 50 },
-  { titre: 'Prix unitaire', largeur: 85, align: 'right' },
-  { titre: 'Total', largeur: 90, align: 'right' },
-];
-
-function lignesTableau(lignes: LigneDocument[]) {
-  return lignes.map((l) => ({
-    cellules: [
-      l.designation,
-      quantiteFr(l.quantite),
-      l.unite ? (UNITES_COURTES[l.unite] ?? l.unite) : '',
-      l.prix_unitaire === null ? '' : formatFCFA(l.prix_unitaire),
-      formatFCFA(l.total),
-    ],
-    detail: l.detail,
-  }));
-}
 
 function filigrane(doc: Doc, texte: string) {
   const range = doc.bufferedPageRange();
@@ -82,7 +69,42 @@ function filigrane(doc: Doc, texte: string) {
 }
 
 // ---------------------------------------------------------------------------
-// Devis
+// Devis et facture : modèle des documents de l'entreprise (commercial.ts).
+
+/** Date courte « 11/06/2024 » dans le fuseau de l'entreprise ; une date AAAA-MM-JJ est lue telle quelle. */
+function dateCourte(v: string | Date, tz: string): string {
+  if (typeof v === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(v)) {
+    const [a, m, j] = v.split('-');
+    return `${j}/${m}/${a}`;
+  }
+  return new Intl.DateTimeFormat('fr-FR', { timeZone: tz, day: '2-digit', month: '2-digit', year: 'numeric' }).format(new Date(v));
+}
+
+interface TotauxDocument {
+  total_ht: number;
+  tva: number;
+  total_ttc: number;
+  detail_prix?: { sous_total?: number; remise?: number; arrondi?: number; tva_taux?: number; tva_applicable?: boolean } | null;
+}
+
+function lignesTotaux(d: TotauxDocument, tauxDefaut: number, tvaForcee?: boolean): LigneTotalCommercial[] {
+  const dp = d.detail_prix ?? {};
+  const rows: LigneTotalCommercial[] = [];
+  const remise = dp.remise ?? 0;
+  const arrondi = dp.arrondi ?? 0;
+  if (remise > 0 || arrondi !== 0) rows.push({ label: 'Sous-total :', valeur: formatEntier(dp.sous_total ?? d.total_ttc) });
+  if (remise > 0) rows.push({ label: 'Remise :', valeur: `- ${formatEntier(remise)}` });
+  if (arrondi !== 0) rows.push({ label: 'Arrondi :', valeur: `${arrondi > 0 ? '+ ' : '- '}${formatEntier(Math.abs(arrondi))}` });
+  const tvaApplicable = tvaForcee ?? dp.tva_applicable ?? d.tva > 0;
+  if (tvaApplicable) {
+    rows.push({ label: 'Total HT :', valeur: formatEntier(d.total_ht) });
+    rows.push({ label: `TVA (${formatDecimal(dp.tva_taux ?? tauxDefaut)} %) :`, valeur: formatEntier(d.tva) });
+    rows.push({ label: 'TOTAL TTC :', valeur: formatEntier(d.total_ttc), fort: true });
+  } else {
+    rows.push({ label: 'TOTAL :', valeur: formatEntier(d.total_ttc), fort: true });
+  }
+  return rows;
+}
 
 export interface DevisPdf {
   numero: string;
@@ -101,6 +123,9 @@ export interface DevisPdf {
   detail_prix: { sous_total?: number; remise?: number; arrondi?: number; tva_taux?: number; tva_applicable?: boolean } | null;
   lignes: LigneDocument[];
   auteur_nom: string | null;
+  /** Imprimés en tête : « Mode de règlement : Chèque », « Date limite de règlement : À la commande ». */
+  mode_reglement?: ModePaiement | null;
+  echeance_reglement?: string | null;
 }
 
 export async function pdfDevis(d: DevisPdf, params: Parametres): Promise<Buffer> {
@@ -108,67 +133,26 @@ export async function pdfDevis(d: DevisPdf, params: Parametres): Promise<Buffer>
   const doc = nouveauDocument({ titre: `Devis ${d.numero}`, auteur: params.entreprise.nom });
   const creation = new Date(d.created_at);
   const fin = new Date(creation.getTime() + d.validite_jours * 86_400_000);
-  let y = enTete(doc, params.entreprise, 'DEVIS', [
-    ['Numéro', d.numero],
-    ['Date', jourFr(creation, tz)],
-    ['Valable jusqu’au', jourFr(fin, tz)],
-  ]);
-
-  const yClient = blocInfos(doc, y, 'Client', d.client_nom, [d.client_telephone && `Tél. ${d.client_telephone}`, d.client_email], {
-    x: doc.page.margins.left + largeurUtile(doc) * 0.5,
-    width: largeurUtile(doc) * 0.5,
-  });
-  etiquette(doc, 'Prestation', doc.page.margins.left, y + 10);
-  doc
-    .font(POLICE_GRAS)
-    .fontSize(10.5)
-    .fillColor(COULEURS.texte)
-    .text(t(`Impression ${MACHINE_LABELS[d.machine]}`), doc.page.margins.left, y + 22, { width: largeurUtile(doc) * 0.45 });
-  doc.font(POLICE).fontSize(9).fillColor(COULEURS.discret).text(t(MACHINE_DESCRIPTIONS[d.machine]), { width: largeurUtile(doc) * 0.45 });
-  if (d.auteur_nom) doc.text(t(`Établi par ${d.auteur_nom}`), { width: largeurUtile(doc) * 0.45 });
-  y = Math.max(yClient, doc.y) + 16;
-
-  if (d.description) y = paragraphe(doc, y, 'Objet', d.description);
-
-  y = tableau(doc, y, COLONNES_LIGNES, lignesTableau(d.lignes));
-
-  const dp = d.detail_prix ?? {};
-  const rows: LigneTotal[] = [];
-  const remise = dp.remise ?? 0;
-  const arrondi = dp.arrondi ?? 0;
-  if (remise > 0 || arrondi !== 0) rows.push({ label: 'Sous-total', valeur: formatFCFA(dp.sous_total ?? d.total_ttc) });
-  if (remise > 0) rows.push({ label: 'Remise', valeur: `- ${formatFCFA(remise)}` });
-  if (arrondi !== 0) rows.push({ label: 'Arrondi', valeur: `${arrondi > 0 ? '+ ' : '- '}${formatFCFA(Math.abs(arrondi))}` });
-  const tvaApplicable = dp.tva_applicable ?? d.tva > 0;
-  if (tvaApplicable) {
-    const taux = dp.tva_taux ?? params.prix.tva_taux;
-    rows.push({ label: 'Total HT', valeur: formatFCFA(d.total_ht) });
-    rows.push({ label: `TVA (${formatDecimal(taux)} %)`, valeur: formatFCFA(d.tva) });
-    rows.push({ label: 'Total TTC', valeur: formatFCFA(d.total_ttc), fort: true });
-  } else {
-    rows.push({ label: 'Total', valeur: formatFCFA(d.total_ttc), fort: true });
-  }
-  y = totaux(doc, y + 6, rows);
-
-  if (d.notes) y = paragraphe(doc, y + 6, 'Remarques', d.notes);
-  y = paragraphe(
-    doc,
-    y + 6,
-    'Conditions',
-    `Devis valable ${d.validite_jours} jour${d.validite_jours > 1 ? 's' : ''} à compter du ${jourFr(creation, tz)}. Montants en francs CFA (FCFA)${tvaApplicable ? '' : ', TVA non applicable'}. Le travail est lancé après acceptation du devis.`,
-  );
-  if (params.documents.mentions_devis) y = paragraphe(doc, y + 6, 'Mentions', params.documents.mentions_devis);
-  y = place(doc, y + 10, 60);
-  etiquette(doc, 'Bon pour accord (date et signature du client)', doc.page.margins.left + largeurUtile(doc) - 240, y);
-  doc.save().rect(doc.page.margins.left + largeurUtile(doc) - 240, y + 12, 240, 50).lineWidth(0.75).strokeColor(COULEURS.filet).stroke().restore();
+  const infos: [string, string][] = [
+    ['Date de création', dateCourte(creation, tz)],
+    ['Date limite de validité', dateCourte(fin, tz)],
+  ];
+  if (d.mode_reglement) infos.push(['Mode de règlement', MODE_PAIEMENT_LABELS[d.mode_reglement]]);
+  if (d.echeance_reglement) infos.push(['Date limite de règlement', d.echeance_reglement]);
+  let y = enTeteCommercial(doc, `Devis N° ${d.numero}`, infos);
+  y = blocsParties(doc, y, [params.entreprise.nom], [d.client_nom, d.client_telephone && `Tél. ${d.client_telephone}`, d.client_email]);
+  if (d.description) y = ligneObjet(doc, y, d.description);
+  y = tableauCommercial(doc, y, d.lignes);
+  y = totauxCommerciaux(doc, y + 4, lignesTotaux(d, params.prix.tva_taux));
+  y = montantAPayer(doc, y, d.total_ttc);
+  if (d.notes) y = paragrapheCommercial(doc, y, 'Remarques', d.notes);
+  if (params.documents.mentions_devis) y = paragrapheCommercial(doc, y, 'Mentions', params.documents.mentions_devis);
+  signatures(doc, y + 4, true);
 
   if (d.statut === 'refuse') filigrane(doc, 'REFUSÉ');
-  piedsDePage(doc, params.entreprise.pied_facture, `Devis ${d.numero}`);
+  piedCommercial(doc, params.entreprise);
   return versBuffer(doc);
 }
-
-// ---------------------------------------------------------------------------
-// Facture
 
 export interface FacturePdf {
   numero: string;
@@ -196,6 +180,8 @@ export interface FacturePdf {
   notes?: string | null;
   /** Conditions de paiement propres à la facture ; sinon celles de Paramètres > Documents. */
   conditions_paiement?: string | null;
+  /** Mode de règlement prévu sur le dossier. */
+  mode_reglement?: ModePaiement | null;
   annulee_at: string | Date | null;
   motif_annulation: string | null;
 }
@@ -203,70 +189,38 @@ export interface FacturePdf {
 export async function pdfFacture(f: FacturePdf, params: Parametres): Promise<Buffer> {
   const tz = params.fuseau;
   const doc = nouveauDocument({ titre: `Facture ${f.numero}`, auteur: params.entreprise.nom });
-  const enTeteLignes: [string, string][] = [
-    ['Numéro', f.numero],
-    ["Date d'émission", jourFr(f.date_emission, tz)],
-  ];
-  if (f.date_echeance) enTeteLignes.push(['À régler avant le', jourFr(f.date_echeance, tz)]);
-  if (f.dossier_numero) enTeteLignes.push(['Dossier', f.dossier_numero]);
-  let y = enTete(doc, params.entreprise, 'FACTURE', enTeteLignes);
-  const yClient = blocInfos(doc, y, 'Facturé à', f.client_nom, [f.client_adresse, f.client_telephone && `Tél. ${f.client_telephone}`, f.client_email ?? null], {
-    x: doc.page.margins.left + largeurUtile(doc) * 0.5,
-    width: largeurUtile(doc) * 0.5,
-  });
-  const lg = largeurUtile(doc) * 0.45;
-  etiquette(doc, 'Prestation', doc.page.margins.left, y + 10);
-  doc
-    .font(POLICE_GRAS)
-    .fontSize(10.5)
-    .fillColor(COULEURS.texte)
-    .text(t(f.machine ? `Impression ${MACHINE_LABELS[f.machine]}` : "Travaux d'impression"), doc.page.margins.left, y + 22, { width: lg });
-  doc
-    .font(POLICE)
-    .fontSize(9)
-    .fillColor(COULEURS.discret)
-    .text(t(f.dossier_numero ? `Dossier ${f.dossier_numero}` : 'Facture établie directement, sans dossier de production'), { width: lg });
-  if (f.objet) doc.text(t(f.objet.length > 160 ? `${f.objet.slice(0, 157)}...` : f.objet), { width: lg });
-  y = Math.max(yClient, doc.y) + 16;
-
+  const infos: [string, string][] = [['Date de création', dateCourte(f.date_emission, tz)]];
+  if (f.date_echeance) infos.push(['Date limite de règlement', dateCourte(f.date_echeance, tz)]);
+  if (f.mode_reglement) infos.push(['Mode de règlement', MODE_PAIEMENT_LABELS[f.mode_reglement]]);
+  if (f.dossier_numero) infos.push(['Dossier', f.dossier_numero]);
+  let y = enTeteCommercial(doc, `Facture N° ${f.numero}`, infos);
+  y = blocsParties(doc, y, [params.entreprise.nom], [f.client_nom, f.client_adresse, f.client_telephone && `Tél. ${f.client_telephone}`, f.client_email ?? null]);
   if (f.statut === 'annulee') {
-    y = paragraphe(
+    y = paragrapheCommercial(
       doc,
       y,
       'Facture annulée',
-      `Annulée le ${jourFr(f.annulee_at, tz)}${f.motif_annulation ? ` : ${f.motif_annulation}` : ''}. Ce document n'est plus valable ; son numéro n'est pas réutilisé.`,
-      { encadre: true },
+      `Annulée le ${dateCourte(f.annulee_at ?? new Date(), tz)}${f.motif_annulation ? ` : ${f.motif_annulation}` : ''}. Ce document n'est plus valable ; son numéro n'est pas réutilisé.`,
     );
   }
-
-  y = tableau(doc, y, COLONNES_LIGNES, lignesTableau(f.lignes));
-  const rows: LigneTotal[] = [];
-  if (f.tva_taux > 0) {
-    rows.push({ label: 'Total HT', valeur: formatFCFA(f.total_ht) });
-    rows.push({ label: `TVA (${formatDecimal(f.tva_taux)} %)`, valeur: formatFCFA(f.tva) });
-    rows.push({ label: 'Total TTC', valeur: formatFCFA(f.total_ttc), fort: true });
-  } else {
-    rows.push({ label: 'Total', valeur: formatFCFA(f.total_ttc), fort: true });
-  }
-  y = totaux(doc, y + 6, rows);
-  if (f.statut !== 'annulee' && f.deja_paye !== null && f.reste !== null) {
-    y = totaux(doc, y + 2, [
-      { label: 'Déjà réglé', valeur: formatFCFA(f.deja_paye) },
-      { label: 'Reste à payer', valeur: formatFCFA(f.reste) },
+  if (f.objet) y = ligneObjet(doc, y, f.objet.length > 200 ? `${f.objet.slice(0, 197)}...` : f.objet);
+  y = tableauCommercial(doc, y, f.lignes);
+  y = totauxCommerciaux(doc, y + 4, lignesTotaux({ total_ht: f.total_ht, tva: f.tva, total_ttc: f.total_ttc, detail_prix: { tva_taux: f.tva_taux } }, f.tva_taux, f.tva_taux > 0));
+  y = montantAPayer(doc, y, f.total_ttc);
+  if (f.statut !== 'annulee' && f.deja_paye !== null && f.reste !== null && f.deja_paye > 0) {
+    y = totauxCommerciaux(doc, y, [
+      { label: 'Déjà réglé :', valeur: formatEntier(f.deja_paye) },
+      { label: 'Reste à payer :', valeur: formatEntier(f.reste), fort: true },
     ]);
   }
-  if (f.notes) y = paragraphe(doc, y + 8, 'Remarques', f.notes);
-  y = paragraphe(
-    doc,
-    y + 8,
-    'Mentions',
-    `Montants en francs CFA (FCFA)${f.tva_taux > 0 ? '' : ', TVA non applicable'}. ${f.dossier_numero ? `Facture établie pour le dossier ${f.dossier_numero}.` : 'Facture établie directement.'}`,
-  );
+  if (f.notes) y = paragrapheCommercial(doc, y, 'Remarques', f.notes);
   const conditions = f.conditions_paiement || params.documents.conditions_paiement;
-  if (conditions) paragraphe(doc, y + 6, 'Conditions de paiement', conditions);
+  if (conditions) y = paragrapheCommercial(doc, y, 'Conditions de paiement', conditions);
+  y = signatures(doc, y + 4, false);
+  if (params.entreprise.coordonnees_bancaires) blocLibre(doc, y, params.entreprise.coordonnees_bancaires);
 
   if (f.statut === 'annulee') filigrane(doc, 'ANNULÉE');
-  piedsDePage(doc, params.entreprise.pied_facture, `Facture ${f.numero}`);
+  piedCommercial(doc, params.entreprise);
   return versBuffer(doc);
 }
 

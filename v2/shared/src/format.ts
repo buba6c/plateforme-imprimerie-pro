@@ -91,3 +91,57 @@ export function formatTaille(octets: number | null | undefined): string {
 export function formatDimensions(l: number, h: number, unite: string): string {
   return `${formatDecimal(l)} × ${formatDecimal(h)} ${unite}`;
 }
+
+const UNITES_LETTRES = ['', 'un', 'deux', 'trois', 'quatre', 'cinq', 'six', 'sept', 'huit', 'neuf', 'dix', 'onze', 'douze', 'treize', 'quatorze', 'quinze', 'seize'];
+const DIZAINES_LETTRES = ['', 'dix', 'vingt', 'trente', 'quarante', 'cinquante', 'soixante', 'soixante', 'quatre-vingt', 'quatre-vingt'];
+
+/** 0 à 999 en lettres, orthographe traditionnelle (trait d'union sous cent, « et un » sans trait). */
+function centainesEnLettres(n: number): string {
+  const c = Math.floor(n / 100);
+  const reste = n % 100;
+  const parts: string[] = [];
+  if (c > 0) parts.push(c === 1 ? 'cent' : `${UNITES_LETTRES[c]} cent${reste === 0 ? 's' : ''}`);
+  if (reste > 0) {
+    if (reste < 17) parts.push(UNITES_LETTRES[reste]!);
+    else {
+      const d = Math.floor(reste / 10);
+      const u = reste % 10;
+      // 70-79 et 90-99 se lisent soixante-dix… et quatre-vingt-dix… : l'unité vaut 10 + u.
+      const unite = d === 7 || d === 9 ? 10 + u : u;
+      let mot = DIZAINES_LETTRES[d]!;
+      if (unite === 0) mot += d === 8 ? 's' : '';
+      else if (unite === 1 && d !== 8 && d !== 9) mot += ' et un';
+      else if (unite === 11 && d === 7) mot += ' et onze';
+      else mot += `-${UNITES_LETTRES[unite]}`;
+      parts.push(mot);
+    }
+  }
+  return parts.join(' ');
+}
+
+/**
+ * Montant entier en toutes lettres, comme sur les devis : 1105000 -> "un million cent cinq mille".
+ * « mille » est invariable ; « million » et « milliard » prennent un s ; « cents » et « vingts »
+ * perdent leur s devant mille, million ou milliard.
+ */
+export function nombreEnLettres(n: number): string {
+  const v = Math.abs(Math.round(n));
+  if (v === 0) return 'zéro';
+  const tranches: [number, string, string][] = [
+    [1_000_000_000, 'milliard', 'milliards'],
+    [1_000_000, 'million', 'millions'],
+    [1_000, 'mille', 'mille'],
+  ];
+  const parts: string[] = [];
+  let reste = v;
+  for (const [base, sing, plur] of tranches) {
+    const q = Math.floor(reste / base);
+    reste %= base;
+    if (q === 0) continue;
+    const prefixe = centainesEnLettres(q).replace(/(vingt|cent)s$/, '$1');
+    if (base === 1_000) parts.push(q === 1 ? 'mille' : `${prefixe} mille`);
+    else parts.push(`${prefixe} ${q > 1 ? plur : sing}`);
+  }
+  if (reste > 0) parts.push(centainesEnLettres(reste));
+  return (n < 0 ? 'moins ' : '') + parts.join(' ');
+}

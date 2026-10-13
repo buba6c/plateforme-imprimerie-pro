@@ -12,6 +12,8 @@ export interface Entreprise {
   ninea: string;
   rccm: string;
   pied_facture: string;
+  /** Banque, IBAN, SWIFT… imprimés en grands caractères en bas de chaque facture. */
+  coordonnees_bancaires: string;
 }
 
 /** Connexion et mots de passe (modules auth et users, lib/auth). */
@@ -104,7 +106,7 @@ export function plafondsServeur() {
 // SESSION_HOURS et MAX_UPLOAD_MB donnent les valeurs initiales : une installation existante garde
 // son comportement tant que l'administrateur ne change pas ces réglages.
 export const PARAMETRES_DEFAUT: Parametres = {
-  entreprise: { nom: 'Evocom Print', adresse: '', telephone: '', email: '', ninea: '', rccm: '', pied_facture: '' },
+  entreprise: { nom: 'Evocom Print', adresse: '', telephone: '', email: '', ninea: '', rccm: '', pied_facture: '', coordonnees_bancaires: '' },
   prix: PARAMS_PRIX_DEFAUT,
   livreur_jours_historique: 7,
   fuseau: 'Africa/Dakar',

@@ -450,9 +450,11 @@ describe('factures', () => {
     expect(f.status).toBe(201);
     factureId = f.body.id;
     expect(f.body).toMatchObject({ numero: `FAC-${ANNEE}-0001`, statut: 'emise', total_ttc: 45000, total_ht: 45000, tva: 0, client_nom: 'Hôtel Saly' });
-    expect(f.body.lignes.map((l: any) => l.designation)).toEqual(['Bâche standard', 'Découpe à la forme']);
+    // Une ligne par produit, la découpe dans les précisions (modèle des documents de l'entreprise).
+    expect(f.body.lignes.map((l: any) => l.designation)).toEqual(['Impression Bâche standard']);
     expect(f.body.lignes.reduce((s: number, l: any) => s + l.total, 0)).toBe(45000);
     expect(f.body.lignes[0].detail).toContain('300 × 200 cm');
+    expect(f.body.lignes[0].detail).toContain('Découpe à la forme');
     expect(f.body).toMatchObject({ deja_paye: 0, reste: 45000, situation_paiement: 'non_paye' });
 
     const deux = await A.admin.post(`/api/dossiers/${rolandId}/facture`);
@@ -481,10 +483,12 @@ describe('factures', () => {
       const detail = calculerPrix('roland', bache.specs as any, TARIFS_DEFAUT, prix);
       if (!detail.ok) throw new Error('prix');
       const v = ventilerTTC(detail.total_ttc, prix);
-      const lignes = lignesFacture({ numero: 'CMD-X', machine: 'roland', specs: bache.specs, detail_prix: detail, montant: detail.total_ttc } as any, { ...PARAMETRES_DEFAUT, prix }, v.ht);
+      const lignes = lignesFacture({ numero: 'CMD-X', machine: 'roland', specs: bache.specs, detail_prix: detail, montant: detail.total_ttc } as any, { ...PARAMETRES_DEFAUT, prix }, v.ht, TARIFS_DEFAUT);
       expect(lignes.reduce((s2, l) => s2 + l.total, 0)).toBe(v.ht);
-      expect(lignes[0]!.designation).toBe('Bâche standard');
-      if (!prixSaisisHt) expect(lignes[0]!.total).toBe(Math.round(42000 / 1.18));
+      // Une ligne par produit (modèle des documents de l'entreprise) : le support et ses finitions regroupés.
+      expect(lignes[0]!.designation).toBe('Impression Bâche standard');
+      const groupeTtc = detail.lignes.filter((l) => l.groupe === 0).reduce((s2, l) => s2 + l.total, 0);
+      if (!prixSaisisHt) expect(lignes[0]!.total).toBe(Math.round(groupeTtc / 1.18));
     }
   });
 

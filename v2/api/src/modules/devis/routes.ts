@@ -34,7 +34,7 @@ import { creerDossier, evenement } from '../dossiers/service';
 import { contentDisposition } from '../fichiers/routes';
 import { Conditions, motifLike, pagination } from '../commun/requete';
 import { pdfDevis } from '../pdf/documents';
-import { lignesProduits } from '../pdf/lignes';
+import { lignesRegroupees } from '../pdf/lignes';
 
 export const devisRouter = Router();
 devisRouter.use(requireAuth, requireRole('admin'));
@@ -106,9 +106,12 @@ const devisSchema = z.object({
     .nullable()
     .optional(),
   conditions_paiement: texteOpt(1000, 'Conditions de paiement'),
+  /** Imprimés en tête du devis : « Mode de règlement : Chèque », « Date limite de règlement : À la commande ». */
+  mode_reglement: z.enum(MODES_PAIEMENT, { errorMap: () => ({ message: 'Mode de règlement inconnu' }) }).nullable().optional(),
+  echeance_reglement: texteOpt(100, 'Date limite de règlement'),
 });
 
-const CHAMPS_TEXTE = ['client_nom', 'client_telephone', 'client_email', 'description', 'notes', 'validite_jours', 'mode_remise', 'adresse_livraison', 'delai_jours', 'acompte_pourcent', 'conditions_paiement'] as const;
+const CHAMPS_TEXTE = ['client_nom', 'client_telephone', 'client_email', 'description', 'notes', 'validite_jours', 'mode_remise', 'adresse_livraison', 'delai_jours', 'acompte_pourcent', 'conditions_paiement', 'mode_reglement', 'echeance_reglement'] as const;
 
 /** Délai, acompte, conditions et mode de remise du devis, en phrases pour le PDF (avec les remarques). */
 function conditionsDevis(d: DevisRow): string | null {
@@ -252,8 +255,9 @@ devisRouter.post('/', async (req, res) => {
     const numero = await prochainNumero(db, 'DEV');
     const r = await one<{ id: number }>(
       `INSERT INTO devis (numero, machine, client_id, client_nom, client_telephone, client_email, description, specs, detail_prix,
-         total_ht, tva, total_ttc, validite_jours, notes, created_by, mode_remise, adresse_livraison, delai_jours, acompte_pourcent, conditions_paiement)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20) RETURNING id`,
+         total_ht, tva, total_ttc, validite_jours, notes, created_by, mode_remise, adresse_livraison, delai_jours, acompte_pourcent, conditions_paiement,
+         mode_reglement, echeance_reglement)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22) RETURNING id`,
       [
         numero,
         input.machine,
@@ -275,6 +279,8 @@ devisRouter.post('/', async (req, res) => {
         input.delai_jours ?? null,
         input.acompte_pourcent ?? null,
         input.conditions_paiement ?? null,
+        input.mode_reglement ?? null,
+        input.echeance_reglement ?? null,
       ],
       db,
     );
@@ -448,8 +454,10 @@ devisRouter.get('/:id/pdf', async (req, res) => {
       tva: d.tva,
       total_ttc: d.total_ttc,
       detail_prix: d.detail_prix,
-      lignes: lignesProduits(d.machine, d.specs, d.detail_prix),
+      lignes: lignesRegroupees(d.machine, d.specs, d.detail_prix, await getTarifs()),
       auteur_nom: d.created_by_nom,
+      mode_reglement: d.mode_reglement ?? null,
+      echeance_reglement: d.echeance_reglement ?? null,
     },
     params,
   );

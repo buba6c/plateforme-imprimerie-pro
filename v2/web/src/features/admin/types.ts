@@ -110,6 +110,7 @@ export interface Entreprise {
   ninea: string;
   rccm: string;
   pied_facture: string;
+  coordonnees_bancaires: string;
 }
 
 export interface Parametres {

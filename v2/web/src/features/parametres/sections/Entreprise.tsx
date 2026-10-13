@@ -18,7 +18,8 @@ const FUSEAUX: { value: string; label: string }[] = [
   { value: 'Africa/Lagos', label: 'Lagos — Nigeria (UTC+1)' },
 ];
 
-const CHAMPS = ['nom', 'adresse', 'telephone', 'email', 'ninea', 'rccm', 'pied_facture'] as const;
+const CHAMPS = ['nom', 'adresse', 'telephone', 'email', 'ninea', 'rccm', 'pied_facture', 'coordonnees_bancaires'] as const;
+const MAX_CHAMP: Partial<Record<(typeof CHAMPS)[number], number>> = { coordonnees_bancaires: 300 };
 
 function heureDans(fuseau: string): string {
   try {
@@ -44,13 +45,13 @@ export function SectionEntreprise({ p, onModifie }: SectionProps) {
     const e: Record<string, string> = {};
     if (!f.nom.trim()) e['entreprise.nom'] = "Le nom de l'entreprise ne peut pas être vide.";
     if (f.email.trim() && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(f.email.trim())) e['entreprise.email'] = 'Adresse e-mail invalide.';
-    for (const k of CHAMPS) if (f[k].trim().length > 200) e[`entreprise.${k}`] = '200 caractères au maximum.';
+    for (const k of CHAMPS) if ((f[k] ?? '').trim().length > (MAX_CHAMP[k] ?? 200)) e[`entreprise.${k}`] = `${MAX_CHAMP[k] ?? 200} caractères au maximum.`;
     const jours = entier(f.livreur_jours_historique, 1, 90, 'jours');
     if (typeof jours === 'string') e.livreur_jours_historique = jours;
     if (Object.keys(e).length) return { erreurs: e };
     return {
       body: {
-        entreprise: Object.fromEntries(CHAMPS.map((k) => [k, f[k].trim()])) as unknown as typeof p.entreprise,
+        entreprise: Object.fromEntries(CHAMPS.map((k) => [k, (f[k] ?? '').trim()])) as unknown as typeof p.entreprise,
         fuseau: f.fuseau,
         livreur_jours_historique: jours as number,
       },
@@ -61,7 +62,7 @@ export function SectionEntreprise({ p, onModifie }: SectionProps) {
     <SectionForm titre="Entreprise" modifie={modifie} verifier={verifier} annuler={annuler} onErreurs={setErreurs}>
       <Card title="Coordonnées">
         <div className="stack">
-          <p className="adm-explain">Ces informations figurent en en-tête et en pied des devis et des factures PDF.</p>
+          <p className="adm-explain">Ces informations figurent sur les devis et les factures PDF : le nom sous « Vendeur », l’adresse, le RC (RCCM), le NINEA, le téléphone et l’e-mail dans le pied de page.</p>
           <div className="ev-form-grid">
             <TextField label="Nom de l’entreprise" required value={f.nom} onChange={(e) => set('nom', e.target.value)} error={erreurs['entreprise.nom']} maxLength={200} />
             <TextField label="Téléphone" type="tel" value={f.telephone} onChange={(e) => set('telephone', e.target.value)} error={erreurs['entreprise.telephone']} maxLength={200} />
@@ -95,7 +96,17 @@ export function SectionEntreprise({ p, onModifie }: SectionProps) {
             onChange={(e) => set('pied_facture', e.target.value)}
             error={erreurs['entreprise.pied_facture']}
             maxLength={200}
-            help={`Une ligne en bas de chaque page des devis et des factures : coordonnées bancaires, slogan… (${f.pied_facture.length}/200)`}
+            help={`Texte court à droite du pied de page des devis et des factures : slogan, site web… (${f.pied_facture.length}/200)`}
+          />
+          <TextareaField
+            label="Coordonnées bancaires (factures)"
+            rows={2}
+            value={f.coordonnees_bancaires ?? ''}
+            onChange={(e) => set('coordonnees_bancaires', e.target.value)}
+            error={erreurs['entreprise.coordonnees_bancaires']}
+            maxLength={300}
+            placeholder={'BANQUE … \nIBAN : … SWIFT : …'}
+            help={`Imprimées en grands caractères en bas de chaque facture, sous la signature. Vide = rien. (${(f.coordonnees_bancaires ?? '').length}/300)`}
           />
         </div>
       </Card>

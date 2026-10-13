@@ -10,7 +10,7 @@
 
 import { Router } from 'express';
 import { z } from 'zod';
-import { MONTANT_MAX, situationPaiement, ventilerTTC, type ParamsPrix } from '@evocom/shared';
+import { MONTANT_MAX, situationPaiement, ventilerTTC, type ParamsPrix, type Tarif } from '@evocom/shared';
 import { getPool, one, query, tx, type Db } from '../../db/pool';
 import { me, requireAuth, requireRole } from '../../lib/auth';
 import { journal } from '../../lib/audit';
@@ -21,18 +21,19 @@ import { getParametres, type Parametres } from '../../lib/params';
 import { chargerDossier, evenement, type DossierRow } from '../dossiers/service';
 import { contentDisposition } from '../fichiers/routes';
 import { aujourdhui, Conditions, estDateValide, intervalle, motifLike, pagination } from '../commun/requete';
+import { getTarifs } from '../../lib/tarifs';
 import { pdfFacture } from '../pdf/documents';
-import { lignesProduits, type LigneDocument } from '../pdf/lignes';
+import { lignesRegroupees, type LigneDocument } from '../pdf/lignes';
 import { pdfFactureDistante } from '../vosfactures/client';
 import { compteEnClair, liaisonConfiguree, lireConfigVosFactures } from '../vosfactures/config';
 import { vosfacturesRouter } from '../vosfactures/routes';
 import { annulerCoteVosFactures, envoyerAutomatiquement, envoyerVersVosFactures, lireJournal, reessayerAnnulationVosFactures, SELECT_JOURNAL_VOSFACTURES } from '../vosfactures/service';
 
 /** Lignes de la facture d'un dossier, dont la somme vaut exactement `totalHt`. */
-export function lignesFacture(d: DossierRow, params: Parametres, totalHt: number): LigneDocument[] {
+export function lignesFacture(d: DossierRow, params: Parametres, totalHt: number, tarifs: Tarif[]): LigneDocument[] {
   const p = params.prix;
   const detail = d.detail_prix as { lignes?: unknown[]; remise?: number; total_ttc?: number } | null;
-  const produits = lignesProduits(d.machine, d.specs, detail as never);
+  const produits = lignesRegroupees(d.machine, d.specs, detail as never, tarifs);
   if (!produits.length) {
     const description = d.description ? String(d.description).slice(0, 300) : null;
     return [{ designation: `Travaux d'impression ${d.numero}`, detail: description, quantite: 1, unite: 'forfait', prix_unitaire: totalHt, total: totalHt }];
@@ -221,7 +222,7 @@ async function resoudreClient(db: Db, input: FactureDirecteInput): Promise<{ id:
 // Lecture
 
 const SELECT_FACTURE = `
-  SELECT f.*, dos.numero AS dossier_numero, dos.montant AS dossier_montant, dos.machine AS dossier_machine, dos.description AS dossier_description,
+  SELECT f.*, dos.numero AS dossier_numero, dos.montant AS dossier_montant, dos.machine AS dossier_machine, dos.description AS dossier_description, dos.mode_paiement_prevu AS dossier_mode_reglement,
          uc.nom AS created_by_nom, ua.nom AS annulee_par_nom,
          coalesce((SELECT sum(p.montant) FROM paiements p WHERE p.dossier_id = f.dossier_id AND p.statut = 'valide'), 0)::bigint AS deja_paye,
          coalesce((SELECT sum(p.montant) FROM paiements p WHERE p.dossier_id = f.dossier_id AND p.statut = 'a_valider'), 0)::bigint AS en_attente_validation,
@@ -409,6 +410,7 @@ facturesRouter.get('/:id/pdf', async (req, res) => {
       reste: f.reste,
       notes: f.notes,
       conditions_paiement: f.conditions_paiement,
+      mode_reglement: f.dossier_mode_reglement ?? null,
       annulee_at: f.annulee_at,
       motif_annulation: f.motif_annulation,
     },
@@ -499,7 +501,7 @@ dossierFactureRouter.post('/:id/facture', requireAuth, requireRole('admin'), asy
     }
     const params = await getParametres(db);
     const v = ventilerTTC(d.montant, params.prix);
-    const lignes = lignesFacture(d, params, v.ht);
+    const lignes = lignesFacture(d, params, v.ht, await getTarifs(db));
     const client = d.client_id ? await one<{ adresse: string | null; email: string | null }>(`SELECT adresse, email FROM clients WHERE id = $1`, [d.client_id], db) : null;
     const numero = await prochainNumero(db, 'FAC');
     const f = await one<{ id: number }>(

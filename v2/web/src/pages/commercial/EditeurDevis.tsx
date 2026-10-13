@@ -9,14 +9,17 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Save } from 'lucide-react';
 import {
   formatFCFA,
+  type Machine,
   MACHINE_DESCRIPTIONS,
   MACHINE_LABELS,
   MACHINES,
-  STATUT_DEVIS_LABELS,
-  telephoneSchema,
-  type Machine,
+  MODE_PAIEMENT_LABELS,
+  type ModePaiement,
+  MODES_PAIEMENT,
   type Specs,
+  STATUT_DEVIS_LABELS,
   type StatutDevis,
+  telephoneSchema,
 } from '@evocom/shared';
 import { useUser } from '../../auth/AuthContext';
 import { api, ApiError, messageErreur } from '../../lib/api';
@@ -28,7 +31,7 @@ import { FichiersEtBat, RemiseClient, UrgenceChoix, type ModeRemise } from '../.
 import { SuggestionIA } from '../../features/ia/SuggestionIA';
 import { useLibelles, useParamsPrix, useTarifs } from '../../features/specs/useTarifs';
 import { useRegles } from '../../features/parametres/api';
-import { Alert, Button, Card, EmptyState, LoadingRows, PageHeader, Segmented, TextareaField, TextField, useToast, MachineIcone } from '../../ui';
+import { Alert, Button, Card, EmptyState, LoadingRows, MachineIcone, PageHeader, Segmented, SelectField, TextField, TextareaField, useToast } from '../../ui';
 import '../../features/dossiers-ui/dossiers-ui.css';
 
 interface Devis {
@@ -51,6 +54,8 @@ interface Devis {
   delai_jours?: number | null;
   acompte_pourcent?: number | null;
   conditions_paiement?: string | null;
+  mode_reglement?: ModePaiement | null;
+  echeance_reglement?: string | null;
 }
 
 interface Formulaire {
@@ -69,6 +74,9 @@ interface Formulaire {
   delai: string;
   acompte: string;
   conditions_paiement: string;
+  /** '' : non précisé sur le devis. */
+  mode_reglement: '' | ModePaiement;
+  echeance_reglement: string;
 }
 
 const VALIDITE_DEFAUT = '15';
@@ -89,6 +97,8 @@ function vide(): Formulaire {
     delai: '',
     acompte: '',
     conditions_paiement: '',
+    mode_reglement: '',
+    echeance_reglement: '',
   };
 }
 
@@ -113,6 +123,8 @@ function depuisDevis(d: Devis): Formulaire {
     delai: d.delai_jours === null || d.delai_jours === undefined ? '' : String(d.delai_jours),
     acompte: d.acompte_pourcent === null || d.acompte_pourcent === undefined ? '' : String(d.acompte_pourcent),
     conditions_paiement: d.conditions_paiement ?? '',
+    mode_reglement: d.mode_reglement ?? '',
+    echeance_reglement: d.echeance_reglement ?? '',
   };
 }
 
@@ -136,6 +148,8 @@ function construire(f: Formulaire, specs: unknown) {
     delai_jours: entierOuNull(f.delai),
     acompte_pourcent: entierOuNull(f.acompte),
     conditions_paiement: t(f.conditions_paiement),
+    mode_reglement: f.mode_reglement || null,
+    echeance_reglement: t(f.echeance_reglement),
   };
 }
 
@@ -421,6 +435,23 @@ export default function EditeurDevis() {
                   onChange={(e) => maj('acompte', e.target.value)}
                   error={erreursForm.acompte_pourcent}
                   help={acompteMontant !== null ? `Soit ${formatFCFA(acompteMontant)} à la commande.` : 'À payer à la commande. Facultatif.'}
+                />
+              </div>
+              <div className="nd-grid">
+                <SelectField
+                  label="Mode de règlement"
+                  value={f.mode_reglement}
+                  onChange={(e) => maj('mode_reglement', e.target.value as '' | ModePaiement)}
+                  options={[{ value: '', label: 'Non précisé' }, ...MODES_PAIEMENT.map((m) => ({ value: m, label: MODE_PAIEMENT_LABELS[m] }))]}
+                  help="Imprimé en tête du devis."
+                />
+                <TextField
+                  label="Date limite de règlement"
+                  value={f.echeance_reglement}
+                  onChange={(e) => maj('echeance_reglement', e.target.value)}
+                  placeholder="À la commande, à la livraison, 30 jours…"
+                  maxLength={100}
+                  help="Imprimée en tête du devis, telle quelle."
                 />
               </div>
               <TextField
