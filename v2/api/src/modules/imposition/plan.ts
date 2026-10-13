@@ -20,7 +20,7 @@
 
 import { calculerAdaptation, calculerAdaptationCadre, type Adaptation, type MargesBlanches, type ModeAjustement } from './ajuster';
 import { FEUILLES, FONDS_PERDUS_STANDARD, type Dimension, type Feuille } from './formats';
-import { decorerPlan, type Ligne, type Segment, type Texte } from './reperes';
+import { decorerPlan, ECART_TRAIT, TRAIT_MIN, type Ligne, type Segment, type Texte } from './reperes';
 import { completerBlanches, planLivret } from './livret';
 import { planDepliant, type InfoDepliant, type Pliage } from './depliant';
 
@@ -502,7 +502,7 @@ export function construireGrille(p: ParamsImposition, o: OptionsGrille): Grille 
 
 /** Les repères de coupe autour du bloc tiennent-ils dans la zone imprimable (au moins 2 mm visibles de chaque côté) ? */
 function reperesTiennent(g: Grille, fp: number, mt: number): boolean {
-  const besoin = mt + 1 + 2; // zone non imprimable + écart (1 mm) + 2 mm de trait visibles, mesurés depuis le bord des fonds perdus
+  const besoin = mt + ECART_TRAIT + TRAIT_MIN; // zone non imprimable + écart + trait lisible, mesurés depuis le bord des fonds perdus
   void fp;
   return Math.min(g.marges.gauche, g.marges.droite, g.marges.haut, g.marges.bas) >= besoin - 1e-6;
 }
@@ -705,6 +705,13 @@ const VALEURS_FP = (voulu: number, min: number): number[] => {
  */
 type PropositionRotation = { texte: string; alternative: InfoCalepinage['alternatives'][number] };
 
+/** Fonds perdus séparés entre poses : chaque pose a sa coupe, d'où deux traits par intervalle (double coupe). */
+function phraseDoubleCoupe(fp: number, gouttiere: number, partage: boolean, n: number): string | null {
+  if (partage || fp <= 0 || n < 2) return null;
+  const chute = Math.round((2 * fp + Math.max(0, gouttiere)) * 10) / 10;
+  return `double coupe : ${chute.toLocaleString('fr-FR')} mm de chute entre deux poses (fonds perdus de chacune), donc deux traits de coupe par intervalle, c’est normal ; « Fonds perdus partagés » (bords unis) donne un seul trait`;
+}
+
 /**
  * Avec « Rotation des poses : auto », l'automatique ne tourne les poses que si la feuille est en orientation
  * automatique, et ne mélange jamais deux sens. Les autres dispositions (toutes tournées sur une feuille
@@ -735,7 +742,8 @@ export function optimiser(p: ParamsImposition, source: SourcePlan | undefined, a
   if (!auto) {
     const g = meilleureGrille(p, p.fonds_perdus_mm, p.fonds_partages === true, mt);
     const propositions = propositionsRotation(p, p.fonds_perdus_mm, p.fonds_partages === true, g.poses.length, mt);
-    const raison = ['Réglages manuels gardés', ...propositions.map((x) => x.texte)].join(' ; ') + '.';
+    const dc = phraseDoubleCoupe(p.fonds_perdus_mm, p.gouttiere_mm, g.partages, g.poses.length);
+    const raison = ['Réglages manuels gardés', ...(dc ? [dc] : []), ...propositions.map((x) => x.texte)].join(' ; ') + '.';
     return { params: { ...p, orientation: g.paysage ? 'paysage' : 'portrait' }, info: { auto: false, fonds_perdus_mm: p.fonds_perdus_mm, demande_mm: p.fonds_perdus_mm, poses: g.poses.length, orientation: g.paysage ? 'paysage' : 'portrait', partages: g.partages, rotation: g.rotation, reperes_ok: reperesTiennent(g, p.fonds_perdus_mm, mt), raison, alternatives: propositions.map((x) => x.alternative) } };
   }
   const fpVoulu = coupe.systeme === 'fonds_perdus' ? Math.max(0, p.fonds_perdus_mm) : 0;
@@ -765,6 +773,8 @@ export function optimiser(p: ParamsImposition, source: SourcePlan | undefined, a
   else if (fpVoulu > 0) parties.push(`${mm(best.fp)} mm de fonds perdus ${p.methode_fonds_perdus === 'source' ? 'du fichier conservés' : 'gardés'}, ${best.n} poses`);
   if (best.g.rotation === 'mixte') parties.push(`une bande de poses tournées complète la feuille (${best.n} poses, ${reference.n} sans rotation)`);
   else if (best.g.rotation === '90') parties.push(`poses tournées d’un quart de tour (${best.n} au lieu de ${reference.n})`);
+  const dc = phraseDoubleCoupe(best.fp, p.gouttiere_mm, best.partage, best.n);
+  if (dc) parties.push(dc);
   // Poses tournées ou bande tournée : jamais choisies seules, mais proposées quand elles logeraient plus de poses.
   const propositions = propositionsRotation(p, best.fp, best.partage, best.n, mt);
   for (const x of propositions) parties.push(x.texte);

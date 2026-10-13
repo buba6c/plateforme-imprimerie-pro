@@ -4,9 +4,9 @@
 //
 // Règle des traits de coupe (style « auto ») : aux angles de chaque pose seulement s'ils ne tombent pas
 // sur une pose voisine (gouttière ≥ 2 × (fonds perdus + 1 + 4) mm) ou pour une pose unique ; sinon un trait
-// par ligne de coupe, autour du bloc de poses, jamais sur un visuel. Repères de 5 mm en bordure de
-// feuille quand il reste de la place. Tout ce qui tombe dans le bord non imprimable de la machine est
-// raccourci, et omis s'il n'en reste rien de lisible.
+// par ligne de coupe, autour du bloc de poses, jamais sur un visuel. Un seul jeu de repères par ligne de
+// coupe : les repères en bordure de feuille ne sont tracés qu'avec le style « bord de feuille ». Tout ce
+// qui tombe dans le bord non imprimable de la machine est raccourci, et omis s'il n'en reste pas 1 mm.
 
 import type { Face, Plan, ParamsImposition, Pose, Rotation, StyleTraits } from './plan';
 
@@ -41,6 +41,8 @@ export interface Texte {
 export const LONGUEUR_TRAIT = 4; // mm
 export const ECART_TRAIT = 1; // mm au-delà des fonds perdus
 const BORD_FEUILLE = 5; // mm : repères en bordure de feuille
+/** Longueur de trait jugée lisible par le calepinage (reperesTiennent), mm. */
+export const TRAIT_MIN = 2;
 const arr = (v: number) => Math.round(v * 100) / 100;
 
 interface Boite {
@@ -148,26 +150,34 @@ export function traitsFace(face: Face, feuille: { largeur: number; hauteur: numb
     for (const x of xs) for (const s of retrancher({ x1: x, y1: 0, x2: x, y2: H }, interdites)) bruts.push(s);
     for (const y of ys) for (const s of retrancher({ x1: 0, y1: y, x2: W, y2: y }, interdites)) bruts.push(s);
   }
-  // Bordure de feuille, pour couper au massicot d'un seul trait (hors de toute pose) : repères de 5 mm
-  // qui partent du bord imprimable (le bord non imprimable de la machine ne reçoit rien).
-  if (styleEff !== 'traversants') {
+  // Style « bord de feuille » : repères de 5 mm qui partent du bord imprimable, pour couper au massicot
+  // d'un seul trait. Jamais en plus des repères du bloc (ils doubleraient chaque ligne de coupe).
+  if (styleEff === 'bord_feuille') {
     const marge = BORD_FEUILLE;
-    const bord = styleEff === 'bord_feuille';
     for (const x of xs) {
-      if (bord || minY - e - L > mt + marge) seg(x, mt, x, mt + marge);
-      if (bord || H - (maxY + e + L) > mt + marge) seg(x, H - mt, x, H - mt - marge);
+      seg(x, mt, x, mt + marge);
+      seg(x, H - mt, x, H - mt - marge);
     }
     for (const y of ys) {
-      if (bord || minX - e - L > mt + marge) seg(mt, y, mt + marge, y);
-      if (bord || W - (maxX + e + L) > mt + marge) seg(W - mt, y, W - mt - marge, y);
+      seg(mt, y, mt + marge, y);
+      seg(W - mt, y, W - mt - marge, y);
     }
   }
   const traits: Segment[] = [];
+  const vus = new Set<string>();
   let perdus = 0;
   for (const s of bruts) {
     const b = borner(s, W, H, mt);
-    if (b) traits.push(b);
-    else perdus++;
+    if (!b) {
+      perdus++;
+      continue;
+    }
+    // Deux poses voisines produisent le même repère d'angle : un seul trait.
+    const cle = [b.x1, b.y1, b.x2, b.y2].join('|');
+    const inverse = [b.x2, b.y2, b.x1, b.y1].join('|');
+    if (vus.has(cle) || vus.has(inverse)) continue;
+    vus.add(cle);
+    traits.push(b);
   }
   return { traits, perdus };
 }

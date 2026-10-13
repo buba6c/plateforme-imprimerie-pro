@@ -501,6 +501,28 @@ describe('imposition : formats et plans (sans serveur)', () => {
     expect(paramsSchema.safeParse({ ...dep, pliage: 'roule_3' }).success).toBe(true);
   });
 
+  it('cartes 85 × 55 à fonds perdus séparés : un seul repère par bout de ligne de coupe, aucun repère en bord de feuille', () => {
+    const p = { ...base, fini: { largeur: 85, hauteur: 55 }, fonds_perdus_mm: 3, methode_fonds_perdus: 'source' as const, marge_mm: 5, gouttiere_mm: 0, rotation_poses: 'auto' as const, recto_verso: false, calepinage: 'auto' as const };
+    for (const orientation of ['auto', 'paysage'] as const) {
+      const plan = calculerPlan({ ...p, orientation }, 1, undefined, sourceMarge(0));
+      const face = plan.feuilles[0]!.recto;
+      const traits = face.traits!;
+      // Pas de doublon exact.
+      const cles = traits.map((t) => [t.x1, t.y1, t.x2, t.y2].join('|'));
+      expect(new Set(cles).size).toBe(cles.length);
+      // Chaque ligne de coupe verticale a au plus un repère en haut et un en bas (pas de second jeu au bord de la feuille).
+      const parX = new Map<number, number>();
+      for (const t of traits) if (Math.abs(t.x1 - t.x2) < 0.01) parX.set(t.x1, (parX.get(t.x1) ?? 0) + 1);
+      for (const n of parX.values()) expect(n).toBeLessThanOrEqual(2);
+      const parY = new Map<number, number>();
+      for (const t of traits) if (Math.abs(t.y1 - t.y2) < 0.01) parY.set(t.y1, (parY.get(t.y1) ?? 0) + 1);
+      for (const n of parY.values()) expect(n).toBeLessThanOrEqual(2);
+      // Double coupe expliquée dans le rapport.
+      // (6 mm en portrait ; en paysage, fonds perdus ramenés à 2,5 mm pour que les repères tiennent : 5 mm.)
+      expect(plan.calepinage!.raison).toMatch(new RegExp(`double coupe : ${String(2 * plan.fonds_perdus_mm).replace('.', ',')} mm de chute`));
+    }
+  });
+
   it('trois flyers différents dans un fichier : séquence sur une feuille, ou répétition sur une feuille par visuel', () => {
     const p = { ...base, fini: { largeur: 150, hauteur: 200 }, methode_fonds_perdus: 'intelligent' as const, marge_mm: 5, mode: 'sequence' as const, recto_verso: false, quantite: 1000 };
     // 150 × 200 mm sur SRA3 : quatre poses avec 1 mm de fonds perdus et des repères lisibles (le plancher par défaut est 1 mm).

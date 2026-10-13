@@ -1097,7 +1097,7 @@ export default function Imposition() {
                     {params.operation !== 'fonds_perdus' && params.operation !== 'assembler' && (
                       <div className="ws__faces" role="group" aria-label="Sens du papier">
                         {(['auto', 'portrait', 'paysage'] as const).map((o) => (
-                          <button key={o} type="button" aria-pressed={params.orientation === o} onClick={() => setParams({ ...params, orientation: o, calepinage: o === 'auto' ? params.calepinage : 'manuel' })}>{o === 'auto' ? 'Auto' : o === 'portrait' ? 'Portrait' : 'Paysage'}</button>
+                          <button key={o} type="button" aria-pressed={params.orientation === o} onClick={() => setParams({ ...params, orientation: o })}>{o === 'auto' ? 'Auto' : o === 'portrait' ? 'Portrait' : 'Paysage'}</button>
                         ))}
                       </div>
                     )}
