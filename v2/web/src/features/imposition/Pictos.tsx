@@ -45,7 +45,8 @@ export function PictoRole({ role }: { role: 'recto' | 'verso' | 'pages' }) {
 }
 
 /** Opérations. */
-export function PictoOperation({ op }: { op: 'poses' | 'livret' | 'fonds_perdus' | 'assembler' }) {
+export function PictoOperation({ op }: { op: 'poses' | 'livret' | 'fonds_perdus' | 'assembler' | 'depliant' }) {
+  if (op === 'depliant') return <svg {...base}><path d="M6 6l12 3v22L6 28z" fill="currentColor" fillOpacity="0.3" /><path d="M18 9l12-3v22l-12 3z" fill="currentColor" fillOpacity="0.18" /><path d="M30 6l12 3v22l-12-3z" fill="currentColor" fillOpacity="0.3" /><path d="M18 9v22M30 6v22" strokeDasharray="2 2" /></svg>;
   if (op === 'assembler') return <svg {...base}><rect x="4" y="8" width="12" height="16" rx="1" fill="currentColor" fillOpacity="0.3" /><rect x="18" y="8" width="12" height="16" rx="1" fill="currentColor" fillOpacity="0.2" /><path d="M32 16h5" /><path d="M35 13l3 3-3 3" /><rect x="39" y="6" width="6" height="20" rx="1" fill="currentColor" fillOpacity="0.35" /><path d="M39 11h6M39 16h6M39 21h6" strokeWidth="1" /></svg>;
   if (op === 'poses') return <svg {...base}><rect x="4" y="3" width="40" height="30" rx="2" fill="currentColor" fillOpacity="0.06" />{[0, 1, 2, 3, 4, 5, 6, 7].map((i) => <rect key={i} x={7 + (i % 4) * 9.5} y={6 + Math.floor(i / 4) * 12.5} width="7.5" height="10" rx="1" fill="currentColor" fillOpacity="0.3" />)}</svg>;
   if (op === 'livret') return <svg {...base}><path d="M24 5v26" strokeDasharray="3 2" /><rect x="5" y="5" width="19" height="26" rx="1" fill="currentColor" fillOpacity="0.25" /><rect x="24" y="5" width="19" height="26" rx="1" fill="currentColor" fillOpacity="0.15" /><text x="14" y="21" fontSize="8" textAnchor="middle" fill="currentColor" stroke="none">8</text><text x="33" y="21" fontSize="8" textAnchor="middle" fill="currentColor" stroke="none">1</text></svg>;
@@ -130,4 +131,33 @@ export function PictoRetournement({ mode }: { mode: 'auto' | 'bord_long' | 'bord
   if (mode === 'bord_long') return <svg {...base}><rect x="12" y="4" width="20" height="28" rx="1" fill="currentColor" fillOpacity="0.2" /><path d="M34 10c6 2 6 14 0 16" /><path d="M35 23l-1 4-4-1" /></svg>;
   if (mode === 'bord_court') return <svg {...base}><rect x="12" y="4" width="20" height="28" rx="1" fill="currentColor" fillOpacity="0.2" /><path d="M16 2c4-4 12-4 16 0" transform="translate(0 2)" /><path d="M31 1l2 3-3 2" transform="translate(0 2)" /></svg>;
   return <svg {...base}><rect x="12" y="4" width="20" height="28" rx="1" fill="currentColor" fillOpacity="0.2" /><path d="M42 3l1.2 2.6L46 6.8l-2.8 1.2L42 11l-1.2-3L38 6.8l2.8-1.2z" fill="currentColor" stroke="none" /></svg>;
+}
+
+/** Types de pli, vus de dessus (volets en coupe). */
+export function PictoPliage({ pliage }: { pliage: 'simple' | 'roule_3' | 'accordeon_3' | 'accordeon_4' | 'fenetre' | 'portefeuille' | 'parallele_double' | 'roule_4' | 'croise_8' | 'italienne' | 'chevalet' }) {
+  const p = { ...base, strokeWidth: 2 };
+  switch (pliage) {
+    case 'simple':
+      return <svg {...p}><path d="M8 28L24 8l16 20" /></svg>;
+    case 'roule_3':
+      return <svg {...p}><path d="M6 10h24c3 0 3 6 0 6H12c-3 0-3 6 0 6h22" /><path d="M6 10l-1 1" /></svg>;
+    case 'accordeon_3':
+      return <svg {...p}><path d="M5 26l12-16 12 16 12-16" /></svg>;
+    case 'accordeon_4':
+      return <svg {...p}><path d="M4 26l9-16 9 16 9-16 9 16" /></svg>;
+    case 'fenetre':
+      return <svg {...p}><path d="M6 24V14h10v10M42 24V14H32v10" /><path d="M16 14h16" /></svg>;
+    case 'portefeuille':
+      return <svg {...p}><path d="M8 24V14h8v10M40 24V14h-8v10" /><path d="M16 14h16" /><path d="M24 10v8" strokeDasharray="2 2" /></svg>;
+    case 'parallele_double':
+      return <svg {...p}><path d="M6 24h8V12h8v12h8V12h8v12" /></svg>;
+    case 'roule_4':
+      return <svg {...p}><path d="M6 8h28c3 0 3 6 0 6H14c-3 0-3 6 0 6h16c3 0 3 6 0 6H10" /></svg>;
+    case 'croise_8':
+      return <svg {...p}><rect x="10" y="4" width="28" height="28" fill="currentColor" fillOpacity="0.15" strokeWidth="1.4" /><path d="M24 4v28M10 18h28" strokeDasharray="3 2" strokeWidth="1.4" /></svg>;
+    case 'italienne':
+      return <svg {...p}><path d="M8 30h32" /><path d="M12 30l12-20 12 20" /></svg>;
+    case 'chevalet':
+      return <svg {...p}><path d="M10 30L24 8l14 22" /><path d="M14 30h20" strokeOpacity="0.5" /></svg>;
+  }
 }

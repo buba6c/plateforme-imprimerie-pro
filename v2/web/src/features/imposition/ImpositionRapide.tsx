@@ -20,7 +20,7 @@ const genreDe = (f: Pick<Fichier, 'nom_original' | 'mime'>): 'pdf' | 'image' | n
   if (m.startsWith('image/') || /\.(png|jpe?g|webp|tiff?)$/i.test(f.nom_original)) return 'image';
   return null;
 };
-export const imposable = (f: Pick<Fichier, 'nom_original' | 'mime'>) => genreDe(f) !== null && !/_(IMPOSITION-\d+POSES|LIVRET|FONDS-PERDUS|ASSEMBLE)\.pdf$/i.test(f.nom_original);
+export const imposable = (f: Pick<Fichier, 'nom_original' | 'mime'>) => genreDe(f) !== null && !/_(IMPOSITION-\d+POSES|LIVRET|FONDS-PERDUS|ASSEMBLE|DEPLIANT-[A-Z0-9-]+)\.pdf$/i.test(f.nom_original);
 
 export interface ResultatRapide {
   jeton: string;
@@ -147,7 +147,7 @@ export function ImpositionRapide({ dossierId, fichier, fichierLocal, onClose, on
           </div>
           <div className="rapide__infos">
             <div className="rapide__choix" role="radiogroup" aria-label="Type d’imposition">
-              {(['poses', 'livret', 'fonds_perdus'] as Operation[]).map((op) => (
+              {(['poses', 'livret', 'depliant', 'fonds_perdus'] as Operation[]).map((op) => (
                 <button key={op} type="button" role="radio" aria-checked={params.operation === op} onClick={() => analyse.data && setParams(reglagesPour(op, analyse.data, params))}>
                   {OPERATION_LABELS[op].titre}
                 </button>

@@ -16,7 +16,7 @@ export const genreDe = (nom: string, mime: string | null): 'pdf' | 'image' | nul
   if (m.startsWith('image/') || /\.(png|jpe?g|webp|tiff?|gif|heic|heif)$/i.test(nom)) return 'image';
   return null;
 };
-export const estGenere = (f: Pick<Fichier, 'nom_original'>) => /_(IMPOSITION-\d+POSES|LIVRET|FONDS-PERDUS|ASSEMBLE)\.pdf$/i.test(f.nom_original);
+export const estGenere = (f: Pick<Fichier, 'nom_original'>) => /_(IMPOSITION-\d+POSES|LIVRET|FONDS-PERDUS|ASSEMBLE|DEPLIANT-[A-Z0-9-]+)\.pdf$/i.test(f.nom_original);
 
 function Mini({ id, nom }: { id: number; nom: string }) {
   const [ko, setKo] = useState(false);

@@ -418,6 +418,75 @@ describe('imposition : formats et plans (sans serveur)', () => {
     expect(chasse.feuilles[3]!.recto.poses[0]!.decalage_x).toBeCloseTo(0.48, 2);
   });
 
+  it('dépliants : volets, tables dos à dos, roulé 3, fenêtre, croisé, italienne, chevalet, entrée développée', () => {
+    const dep = { ...base, operation: 'depliant' as const, feuille: 'sra3' as const, fini: { largeur: 297, hauteur: 210 }, fonds_perdus_mm: 3, methode_fonds_perdus: 'intelligent' as const, marge_mm: 5, recto_verso: true, entree: 'volets' as const };
+    const srcDL: SourcePlan = { ...sourceMarge(0), fini: { largeur: 99, hauteur: 210 } };
+    // Roulé 3 : volets 97 | 100 | 100 au recto (rabat rentrant à gauche), 100 | 100 | 97 au verso ; pages [5 | 6 | 1] / [2 | 3 | 4].
+    const roule = calculerPlan({ ...dep, pliage: 'roule_3' }, 6, undefined, srcDL);
+    expect(roule.depliant).toMatchObject({ pliage: 'roule_3', entree: 'volets', pages_attendues: 6, ferme: { largeur: 99, hauteur: 210 } });
+    expect(roule.depliant!.volets.recto.map((v) => v.largeur)).toEqual([97, 100, 100]);
+    expect(roule.depliant!.volets.verso.map((v) => v.largeur)).toEqual([100, 100, 97]);
+    expect(roule.depliant!.plis).toEqual({ recto: [97, 197], verso: [100, 200] });
+    const r = roule.feuilles[0]!.recto.poses;
+    expect(r.slice(0, 3).map((q) => q.page)).toEqual([5, 6, 1]);
+    expect(r.slice(0, 3).map((q) => q.largeur)).toEqual([97, 100, 100]);
+    expect(r[1]!.x - (r[0]!.x + r[0]!.largeur)).toBeCloseTo(0, 5);
+    expect(roule.feuilles[0]!.verso!.poses.slice(0, 3).map((q) => q.page)).toEqual([2, 3, 4]);
+    // Les plis ne reçoivent pas de trait de coupe ; ils sont tracés en pointillé.
+    const xsTraits = new Set(roule.feuilles[0]!.recto.traits!.filter((t) => Math.abs(t.x1 - t.x2) < 0.01).map((t) => t.x1));
+    for (const pl of roule.feuilles[0]!.recto.plis) expect(xsTraits.has(pl)).toBe(false);
+    expect(roule.feuilles[0]!.recto.lignes!.filter((l) => l.genre === 'pli').length).toBeGreaterThan(0);
+    // Vérification dos à dos de toutes les tables à plis verticaux : recto volet j ↔ verso volet V−1−j, pages 2k−1 / 2k.
+    const paires: Record<string, [number, number][]> = {
+      simple: [[1, 2], [4, 3]], roule_3: [[1, 2], [6, 3], [5, 4]], accordeon_4: [[1, 8], [2, 7], [3, 6], [4, 5]], portefeuille: [[3, 7], [1, 6], [8, 5], [2, 4]], parallele_double: [[1, 7], [8, 6], [2, 5], [3, 4]], roule_4: [[8, 7], [1, 6], [2, 5], [3, 4]],
+    };
+    for (const [pliage, attendu] of Object.entries(paires)) {
+      const plan = calculerPlan({ ...dep, pliage: pliage as 'simple', fini: { largeur: 300, hauteur: 210 } }, 8, undefined, srcDL);
+      // Première pièce de la feuille seulement (plusieurs pièces identiques peuvent être posées) ; paires comparées sans ordre.
+      const V = plan.depliant!.volets.recto.length;
+      const rp = plan.feuilles[0]!.recto.poses.slice(0, V).map((q) => q.page);
+      const vp = plan.feuilles[0]!.verso!.poses.slice(0, V).map((q) => q.page);
+      const trier = (l: (number | null | undefined)[][]) => [...l].map((x) => x.join('/')).sort();
+      expect(trier(rp.map((pg, j) => [pg, vp[V - 1 - j]])), pliage).toEqual(trier(attendu));
+    }
+    // Fenêtre A4 : volets 73,5 | 150 | 73,5, jeu central 3 mm.
+    expect(calculerPlan({ ...dep, pliage: 'fenetre' }, 6, undefined, srcDL).depliant!.volets.recto.map((v) => v.largeur)).toEqual([73.5, 150, 73.5]);
+    // Croisé 8 : grille 2 × 2, rang du haut tourné de 180°, dos à dos après un retournement sur l'axe vertical.
+    const croise = calculerPlan({ ...dep, pliage: 'croise_8', fini: { largeur: 296, hauteur: 420 }, feuille: 'sra3' }, 8, undefined, { ...sourceMarge(0), fini: { largeur: 148, hauteur: 210 } });
+    const cr = croise.feuilles[0]!.recto.poses;
+    expect(cr.map((q) => q.page)).toEqual([5, 4, 8, 1]);
+    expect(cr.slice(0, 2).every((q) => q.rotation === 180)).toBe(true);
+    expect(croise.feuilles[0]!.verso!.poses.map((q) => q.page)).toEqual([3, 6, 2, 7]);
+    expect(croise.feuilles[0]!.recto.plis_h).toHaveLength(1);
+    // Italienne A6 fermée : développé 105 × 296, recto bas = 1, haut = 4 tourné ; verso haut = 2, bas = 3 droits ; axe horizontal.
+    const ital = calculerPlan({ ...dep, pliage: 'italienne', fini: { largeur: 105, hauteur: 148 } }, 4, undefined, { ...sourceMarge(0), fini: { largeur: 105, hauteur: 148 } });
+    expect(ital.depliant!.developpe).toEqual({ largeur: 105, hauteur: 296 });
+    const ir = ital.feuilles[0]!.recto.poses.slice(0, 2);
+    expect(ir.map((q) => q.page)).toEqual([1, 4]);
+    expect(ir[1]!.rotation).toBe(180);
+    expect(ir[1]!.y).toBeGreaterThan(ir[0]!.y);
+    const iv = [...ital.feuilles[0]!.verso!.poses.slice(0, 2)].sort((a, b) => b.y - a.y);
+    expect(iv.map((q) => q.page)).toEqual([2, 3]);
+    expect(iv.every((q) => !q.rotation)).toBe(true);
+    expect(ital.axe_verso).toBe('horizontal');
+    // Chevalet 100 × 150, base 25 : développé 100 × 325, recto seul, face B tournée, deux rainages.
+    const chev = calculerPlan({ ...dep, pliage: 'chevalet', fini: { largeur: 100, hauteur: 150 }, base_mm: 25 }, 2, undefined, { ...sourceMarge(0), fini: { largeur: 100, hauteur: 150 } });
+    expect(chev.depliant!.developpe).toEqual({ largeur: 100, hauteur: 325 });
+    expect(chev.feuilles[0]!.verso).toBeNull();
+    const ch = chev.feuilles[0]!.recto.poses.slice(0, 3);
+    expect(ch.map((q) => q.page)).toEqual([null, 1, 2]);
+    expect(ch[2]!.rotation).toBe(180);
+    expect(chev.feuilles[0]!.recto.lignes!.filter((l) => l.genre === 'rainage').length).toBeGreaterThanOrEqual(4);
+    // Entrée développée : deux pages A4 paysage, une pose par face, plis tracés aux largeurs des volets.
+    const dev = calculerPlan({ ...dep, pliage: 'roule_3', entree: 'developpe' }, 2, undefined, { ...sourceMarge(0), fini: { largeur: 297, hauteur: 210 } });
+    expect(dev.feuilles[0]!.recto.poses[0]).toMatchObject({ page: 1, largeur: 297, hauteur: 210 });
+    expect(dev.feuilles[0]!.verso!.poses[0]!.page).toBe(2);
+    expect(dev.feuilles[0]!.recto.plis.length).toBeGreaterThanOrEqual(2);
+    expect(dev.depliant!.pieces_par_feuille).toBeGreaterThanOrEqual(2);
+    // Le schéma zod accepte le dépliant.
+    expect(paramsSchema.safeParse({ ...dep, pliage: 'roule_3' }).success).toBe(true);
+  });
+
   it('refuse une pose qui ne tient pas sur la feuille', () => {
     expect(() => calculerPlan({ ...base, feuille: 'a4', fini: { largeur: 300, hauteur: 300 } }, 1)).toThrow(/Aucune pose/);
   });
@@ -547,6 +616,21 @@ describe('imposition : routes', () => {
     const contenu = await A.prep.get(`/api/fichiers/${g.body.fichier.id}/contenu`).buffer(true).parse((res, cb) => { const chunks: Buffer[] = []; res.on('data', (c: Buffer) => chunks.push(c)); res.on('end', () => cb(null, Buffer.concat(chunks))); });
     const doc = await PDFDocument.load(contenu.body as Buffer);
     expect(doc.getPageCount()).toBe(2);
+  });
+
+  it('dépliant : six volets DL roulés en 3, générés avec le suffixe du pli', async () => {
+    const f = (await envoyerFichier(A.prep, dossierId, 'depliant-dl.pdf', await pdfTest(99, 210, 6))).fichierId!;
+    const a = await A.prep.post('/api/imposition/analyser').send({ fichier_id: f });
+    expect(a.status, JSON.stringify(a.body)).toBe(200);
+    const params = { ...a.body.params_defaut, operation: 'depliant', pliage: 'roule_3', entree: 'volets', fini: { largeur: 297, hauteur: 210 }, recto_verso: true };
+    const plan = await A.prep.post('/api/imposition/plan').send({ fichier_id: f, params });
+    expect(plan.status, JSON.stringify(plan.body)).toBe(200);
+    expect(plan.body.plan.depliant).toMatchObject({ pliage: 'roule_3', pages_attendues: 6 });
+    expect(plan.body.plan.feuilles[0].recto.poses.slice(0, 3).map((q: { page: number }) => q.page)).toEqual([5, 6, 1]);
+    const g = await A.prep.post('/api/imposition/generer').send({ fichier_id: f, params });
+    expect(g.status, JSON.stringify(g.body)).toBe(201);
+    expect(g.body.fichier.nom).toBe('depliant-dl_DEPLIANT-ROULE-3.pdf');
+    expect(g.body.plan.nb_pages_sortie).toBe(2);
   });
 
   it('refuse les dossiers Roland (grand format, pas d’imposition)', async () => {

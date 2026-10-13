@@ -22,10 +22,12 @@ import { calculerAdaptation, calculerAdaptationCadre, type Adaptation, type Marg
 import { FEUILLES, FONDS_PERDUS_STANDARD, type Dimension, type Feuille } from './formats';
 import { decorerPlan, type Ligne, type Segment, type Texte } from './reperes';
 import { completerBlanches, planLivret } from './livret';
+import { planDepliant, type InfoDepliant, type Pliage } from './depliant';
 
-export { completerBlanches, planLivret };
+export { completerBlanches, planLivret, planDepliant };
+export type { InfoDepliant, Pliage };
 
-export type Operation = 'poses' | 'livret' | 'fonds_perdus' | 'assembler';
+export type Operation = 'poses' | 'livret' | 'fonds_perdus' | 'assembler' | 'depliant';
 export type ModePoses = 'repetition' | 'sequence' | 'coupe_empile';
 export type MethodeFondsPerdus = 'source' | 'intelligent' | 'prolonger' | 'miroir' | 'etirer' | 'blanc';
 /** Bord de la feuille sur lequel la Xerox la retourne ; « auto » = le bord qui évite de tourner le verso. */
@@ -155,6 +157,18 @@ export interface ParamsImposition {
   gardes?: 0 | 4;
   /** Chasse calculée d'après l'épaisseur des feuilles quand chasse_mm est absent (piqûre à cheval). */
   chasse_auto?: boolean;
+  /** Dépliant : type de pli. */
+  pliage?: Pliage;
+  /** Dépliant : fichier reçu développé (une page par face) ou un volet par page. */
+  entree?: 'developpe' | 'volets';
+  /** Pli roulé : réduction du rabat rentrant (mm). */
+  reduction_volet_mm?: number;
+  /** Pli fenêtre : jeu central entre les deux volets rabattus (mm). */
+  jeu_central_mm?: number;
+  /** Plis marqués comme rainages (papier épais). */
+  rainage?: boolean;
+  /** Chevalet : hauteur de la base (mm). */
+  base_mm?: number;
   /**
    * Planches : chaque page double est coupée en deux pages (« simple ») ; avec « couverture », la
    * première planche est la couverture à plat (4e à gauche, 1re à droite) : la 4e passe à la fin.
@@ -288,6 +302,8 @@ export interface Plan {
   consignes: string[];
   /** Livret : ce qui a été retenu (planches, reliure, dos, rognage, chasse). */
   livret?: InfoLivret;
+  /** Dépliant : volets, plis, pages attendues. */
+  depliant?: InfoDepliant;
   feuilles: FeuillePlan[];
   avertissements: string[];
 }
@@ -958,7 +974,7 @@ export function calculerPlan(p0: ParamsImposition, nbPages: number, pages?: { la
     marge_mm: Math.max(Math.max(0, p.marge_mm), mt),
   };
   if (coupe.systeme === 'aucune') pEff = { ...pEff, traits_de_coupe: false, traits_style: 'aucun' };
-  // 2. Calepinage des poses.
+  // 2. Calepinage des poses (le dépliant garde ses fonds perdus demandés : une pièce développée n'a pas de rotation).
   let calepinage: InfoCalepinage | null = null;
   if (pEff.operation === 'poses' && coupe.systeme !== 'aucune') {
     const r = optimiser(pEff, source, { ...atelier, marge_technique_mm: mt }, coupe);
@@ -966,8 +982,10 @@ export function calculerPlan(p0: ParamsImposition, nbPages: number, pages?: { la
     calepinage = r.info;
   }
   // 3. Plan.
-  const brut = coupe.systeme === 'aucune' && pEff.operation !== 'livret'
+  const brut = coupe.systeme === 'aucune' && pEff.operation !== 'livret' && pEff.operation !== 'depliant'
     ? planFondsPerdus(pEff, nbPages, true)
+    : pEff.operation === 'depliant'
+      ? planDepliant(pEff, nbPages)
     : pEff.operation === 'livret'
       ? planLivret(pEff, nbPages, coupe.systeme !== 'fonds_perdus')
       : pEff.operation === 'fonds_perdus'

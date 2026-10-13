@@ -96,6 +96,17 @@ export function reglagesPour(op: Operation, r: ReponseAnalyse, courant: ParamsIm
   if (op === 'assembler') {
     return { ...base, recto_verso: false, numerotation: null };
   }
+  if (op === 'depliant') {
+    // Deux pages larges = développé (extérieur, intérieur) ; sinon un volet par page. Le pli est deviné d'après
+    // le nombre de pages : 4 → simple, 6 → roulé 3, 8 → portefeuille.
+    const nb = a.nb_pages;
+    const large = a.largeur > a.hauteur * 1.3;
+    const entree: 'developpe' | 'volets' = nb <= 2 && large ? 'developpe' : 'volets';
+    const pliage = courant.pliage ?? (nb === 4 ? 'simple' : nb === 8 ? 'portefeuille' : 'roule_3');
+    const voletsParFace = pliage === 'simple' ? 2 : pliage === 'roule_3' || pliage === 'accordeon_3' || pliage === 'fenetre' ? 3 : pliage === 'croise_8' ? 2 : 4;
+    const fini = entree === 'developpe' || pliage === 'italienne' || pliage === 'chevalet' ? (courant.fini?.largeur ? courant.fini : a.fini) : { largeur: Math.round(a.fini.largeur * voletsParFace * 10) / 10, hauteur: a.fini.hauteur };
+    return { ...base, fini, entree, pliage, feuille: feuillePoses({ largeur: fini.largeur, hauteur: fini.hauteur }, fonds.fonds_perdus_mm), marge_mm: 5, recto_verso: pliage !== 'chevalet', retournement: 'auto', mode: 'sequence', numerotation: null, rotation_poses: 'aucune' };
+  }
   // Poses
   const rv = paires > 0 || (r.paires === null && a.nb_pages === 2);
   const ticket = famille === 'ticket';
@@ -135,6 +146,11 @@ export function resumeAuto(p: ParamsImposition, plan?: Plan | null): string {
     return `Livret ${reliure}${p.reliure_bord === 'haut' ? ', relié en haut' : ''} sur ${feuille}${planches}${p.couverture_separee ? ', couverture à part' : ''}${plan?.livret?.dos_mm ? ` (dos ${plan.livret.dos_mm} mm)` : ''}${p.lecture === 'droite_gauche' ? ', lecture de droite à gauche' : ''}, ${fonds}${plan?.livret?.rognage ? `, ${plan.livret.rognage === 'aucun' ? 'plié non rogné' : plan.livret.rognage === 'face' ? 'rognage de face' : 'rogné sur trois côtés'}` : ''}.`;
   }
   if (p.operation === 'fonds_perdus') return `Une page par page, ${fonds}, traits de coupe.`;
+  if (p.operation === 'depliant') {
+    const d = plan?.depliant;
+    const volets = d && d.volets.recto.length ? ` : volets ${d.volets.recto.map((v) => v.largeur).join(' | ')} mm` : '';
+    return `Dépliant ${p.pliage ?? 'roulé 3 volets'}${volets}, ${p.entree === 'volets' ? 'un volet par page' : 'développé'}${d ? `, ${d.pieces_par_feuille} pièce${d.pieces_par_feuille > 1 ? 's' : ''} par feuille` : ''} sur ${feuille}, ${fonds}.`;
+  }
   if (p.operation === 'assembler') return 'Pièces réunies dans l’ordre, pages inchangées.';
   const mode = p.mode === 'repetition' ? 'même visuel sur toutes les poses' : p.mode === 'sequence' ? 'visuels à la suite' : 'coupe & empile';
   const poses = plan && plan.operation === 'poses' ? `, ${plan.poses_par_face} pose${plan.poses_par_face > 1 ? 's' : ''} par feuille${plan.calepinage?.rotation === 'mixte' ? ' (bande tournée)' : plan.calepinage?.rotation === '90' ? ' (tournées)' : ''}` : '';

@@ -1,5 +1,6 @@
 // Types de l'imposition (miroir de api/src/modules/imposition).
-export type Operation = 'poses' | 'livret' | 'fonds_perdus' | 'assembler';
+export type Operation = 'poses' | 'livret' | 'fonds_perdus' | 'assembler' | 'depliant';
+export type Pliage = 'simple' | 'roule_3' | 'accordeon_3' | 'accordeon_4' | 'fenetre' | 'portefeuille' | 'parallele_double' | 'roule_4' | 'croise_8' | 'italienne' | 'chevalet';
 export type ModePoses = 'repetition' | 'sequence' | 'coupe_empile';
 export type MethodeFondsPerdus = 'source' | 'intelligent' | 'prolonger' | 'miroir' | 'etirer' | 'blanc';
 export type ModeAjustement = 'auto' | 'centrer' | 'adapter' | 'remplir' | 'etirer';
@@ -77,6 +78,12 @@ export interface ParamsImposition {
   folios?: { actif: boolean; debut?: number; position?: 'bas_exterieur' | 'bas_centre' | 'haut_exterieur'; taille_pt?: number; exclure_couverture?: boolean } | null;
   gardes?: 0 | 4;
   chasse_auto?: boolean;
+  pliage?: Pliage;
+  entree?: 'developpe' | 'volets';
+  reduction_volet_mm?: number;
+  jeu_central_mm?: number;
+  rainage?: boolean;
+  base_mm?: number;
   cahier_feuilles?: number;
   couverture_separee?: boolean;
   lecture?: 'gauche_droite' | 'droite_gauche';
@@ -194,6 +201,7 @@ export interface Plan {
   cotes?: { x: number[]; y: number[] };
   consignes: string[];
   livret?: { planches: number; mode: 'repetition' | 'empile'; reliure: 'piqure' | 'dos_carre' | 'feuilles_volantes'; bord: 'gauche' | 'haut'; dos_mm: number | null; rognage: 'aucun' | 'face' | 'trois_cotes' | null; chasse_mm: number };
+  depliant?: { pliage: Pliage; entree: 'developpe' | 'volets'; developpe: Dimension; ferme: Dimension; volets: { recto: { largeur: number; page: number | null }[]; verso: { largeur: number; page: number | null }[] }; plis: { recto: number[]; verso: number[] }; pages_attendues: number; pieces_par_feuille: number; axe: 'vertical' | 'horizontal' };
   feuilles: FeuillePlan[];
   avertissements: string[];
 }
@@ -384,6 +392,21 @@ export const OPERATION_LABELS: Record<Operation, { titre: string; aide: string }
   livret: { titre: 'Livret, brochure', aide: 'Piqûre à cheval : deux pages par face, ordre des pages recalculé, pages blanches ajoutées.' },
   fonds_perdus: { titre: 'Fonds perdus seuls', aide: 'Une page par page du fichier, avec des fonds perdus ajoutés et des traits de coupe.' },
   assembler: { titre: 'Assembler seulement', aide: 'Réunir les pièces dans l’ordre en un seul PDF, pages inchangées (recto 1, verso 1, recto 2…).' },
+  depliant: { titre: 'Dépliant, carte pliée', aide: 'Pli simple, roulé, accordéon, fenêtre, portefeuille, croisé, italienne, chevalet : volets imposés dans le bon ordre.' },
+};
+
+export const PLIAGE_LABELS: Record<Pliage, { label: string; aide: string; pages: number }> = {
+  simple: { label: 'Pli simple', aide: '4 pages : carte, invitation.', pages: 4 },
+  roule_3: { label: 'Roulé 3 volets', aide: '6 pages, rabat rentrant plus étroit de 2 mm (dépliant DL).', pages: 6 },
+  accordeon_3: { label: 'Accordéon 3 volets', aide: '6 pages, pli en Z, volets égaux.', pages: 6 },
+  accordeon_4: { label: 'Accordéon 4 volets', aide: '8 pages en zigzag, lecture continue.', pages: 8 },
+  fenetre: { label: 'Pli fenêtre', aide: '6 pages, deux volets qui se rabattent au centre (jeu de 3 mm).', pages: 6 },
+  portefeuille: { label: 'Portefeuille', aide: '8 pages : volets rabattus puis pliés en deux.', pages: 8 },
+  parallele_double: { label: 'Parallèle double', aide: '8 pages, plié en deux puis encore en deux dans le même sens.', pages: 8 },
+  roule_4: { label: 'Roulé 4 volets', aide: '8 pages, volets de plus en plus étroits vers l’intérieur.', pages: 8 },
+  croise_8: { label: 'Pli croisé 8 pages', aide: 'Plié en deux puis en deux en croix : cahier de 8 pages.', pages: 8 },
+  italienne: { label: 'Carte à l’italienne', aide: '4 pages, pli en haut (le format fini est le format fermé).', pages: 4 },
+  chevalet: { label: 'Chevalet de table', aide: 'Recto seul : deux faces dos à dos et une base, deux rainages.', pages: 2 },
 };
 
 export const METHODE_LABELS: Record<MethodeFondsPerdus, { label: string; aide: string }> = {

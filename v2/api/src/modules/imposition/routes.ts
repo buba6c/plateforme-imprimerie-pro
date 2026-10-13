@@ -47,7 +47,7 @@ const numerotationSchema = z.object({
   verso: z.boolean().default(false),
 });
 export const paramsSchema = z.object({
-  operation: z.enum(['poses', 'livret', 'fonds_perdus', 'assembler']),
+  operation: z.enum(['poses', 'livret', 'fonds_perdus', 'assembler', 'depliant']),
   feuille: z.enum(CODES_FEUILLE as unknown as [Feuille, ...Feuille[]]),
   feuille_personnalisee: dim.optional(),
   orientation: z.enum(['auto', 'portrait', 'paysage']).default('auto'),
@@ -91,6 +91,12 @@ export const paramsSchema = z.object({
   folios: z.object({ actif: z.boolean(), debut: z.number().int().min(0).max(9999).optional(), position: z.enum(['bas_exterieur', 'bas_centre', 'haut_exterieur']).optional(), taille_pt: z.number().min(6).max(14).optional(), exclure_couverture: z.boolean().optional() }).nullable().optional(),
   gardes: z.union([z.literal(0), z.literal(4)]).optional(),
   chasse_auto: z.boolean().optional(),
+  pliage: z.enum(['simple', 'roule_3', 'accordeon_3', 'accordeon_4', 'fenetre', 'portefeuille', 'parallele_double', 'roule_4', 'croise_8', 'italienne', 'chevalet']).optional(),
+  entree: z.enum(['developpe', 'volets']).optional(),
+  reduction_volet_mm: z.number().min(0).max(5).optional(),
+  jeu_central_mm: z.number().min(0).max(8).optional(),
+  rainage: z.boolean().optional(),
+  base_mm: z.number().min(10).max(80).optional(),
   cahier_feuilles: z.number().int().min(1).max(16).optional(),
   couverture_separee: z.boolean().optional(),
   lecture: z.enum(['gauche_droite', 'droite_gauche']).optional(),
@@ -522,7 +528,7 @@ export function impositionRouter(config: Config) {
     const base = f.nom_original.replace(/\.(pdf|ai|png|jpe?g|webp|tiff?)$/i, '');
     // Sans dossier : résultat gardé six heures, à télécharger.
     if (dossierId === null || !d) {
-      const suffixeLibre = params.operation === 'livret' ? 'LIVRET' : params.operation === 'fonds_perdus' ? 'FONDS-PERDUS' : params.operation === 'assembler' ? 'ASSEMBLE' : `IMPOSITION-${plan.poses_par_face}POSES`;
+      const suffixeLibre = params.operation === 'livret' ? 'LIVRET' : params.operation === 'fonds_perdus' ? 'FONDS-PERDUS' : params.operation === 'assembler' ? 'ASSEMBLE' : params.operation === 'depliant' ? `DEPLIANT-${(params.pliage ?? 'roule_3').toUpperCase().replace(/_/g, '-')}` : `IMPOSITION-${plan.poses_par_face}POSES`;
       const nomLibre = (r.data.nom && r.data.nom.trim()) || `${base}_${suffixeLibre}.pdf`;
       const jeton = crypto.randomBytes(16).toString('hex');
       await fs.promises.mkdir(libreDir, { recursive: true });
@@ -536,7 +542,7 @@ export function impositionRouter(config: Config) {
       return;
     }
     // Enregistrement comme fichier du dossier, à côté de la source.
-    const suffixe = r.data.params.operation === 'livret' ? 'LIVRET' : r.data.params.operation === 'fonds_perdus' ? 'FONDS-PERDUS' : r.data.params.operation === 'assembler' ? 'ASSEMBLE' : `IMPOSITION-${plan.poses_par_face}POSES`;
+    const suffixe = r.data.params.operation === 'livret' ? 'LIVRET' : r.data.params.operation === 'fonds_perdus' ? 'FONDS-PERDUS' : r.data.params.operation === 'assembler' ? 'ASSEMBLE' : r.data.params.operation === 'depliant' ? `DEPLIANT-${(r.data.params.pliage ?? 'roule_3').toUpperCase().replace(/_/g, '-')}` : `IMPOSITION-${plan.poses_par_face}POSES`;
     const nom = (r.data.nom && r.data.nom.trim()) || `${base}_${suffixe}.pdf`;
     const id = crypto.randomUUID();
     const relDir = path.join('dossiers', String(dossierId));

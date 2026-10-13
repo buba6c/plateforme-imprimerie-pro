@@ -41,7 +41,7 @@ interface SourcePage {
 
 interface Source {
   doc: PDFDocument;
-  pages: Map<number, SourcePage>;
+  pages: Map<string, SourcePage>;
   /** Chemin du PDF source sur le disque (pour le rendu des fonds perdus raster), si connu. */
   chemin?: string;
   raster: boolean;
@@ -79,16 +79,22 @@ function zoneSource(page: PDFPage, finiMm: Dimension, fondsVoulusMm: number, ada
   return { x, y, largeur, hauteur, fonds, fondsMm: enMm(fonds * echelle), rotation, tourne, media, echelle };
 }
 
-async function preparerSource(doc: PDFDocument, src: PDFDocument, numeros: number[], params: ParamsImposition, adaptation: Adaptation | null | undefined): Promise<Source> {
-  const pages = new Map<number, SourcePage>();
+/** Clé d'une page intégrée : page source et taille du contenu (un volet de dépliant a sa propre largeur). */
+const cleSource = (q: Pick<Pose, 'page' | 'largeur' | 'hauteur'>) => `${q.page}|${q.largeur}x${q.hauteur}`;
+
+async function preparerSource(doc: PDFDocument, src: PDFDocument, poses: Pick<Pose, 'page' | 'largeur' | 'hauteur'>[], params: ParamsImposition, adaptation: Adaptation | null | undefined): Promise<Source> {
+  const pages = new Map<string, SourcePage>();
   let fondsSource = Infinity;
-  for (const n of numeros) {
-    const page = src.getPage(n - 1);
-    const z = zoneSource(page, params.fini, params.fonds_perdus_mm, adaptation);
+  for (const q of poses) {
+    const cle = cleSource(q);
+    if (q.page === null || pages.has(cle)) continue;
+    const page = src.getPage(q.page - 1);
+    const auFormat = Math.abs(q.largeur - params.fini.largeur) < 0.01 && Math.abs(q.hauteur - params.fini.hauteur) < 0.01;
+    const z = zoneSource(page, { largeur: q.largeur, hauteur: q.hauteur }, params.fonds_perdus_mm, auFormat ? adaptation : null);
     fondsSource = Math.min(fondsSource, z.fondsMm);
     const avecFonds = params.methode_fonds_perdus === 'source' ? z.fonds : 0;
     const emb = await doc.embedPage(page, { left: z.x - avecFonds, bottom: z.y - avecFonds, right: z.x + z.largeur + avecFonds, top: z.y + z.hauteur + avecFonds });
-    pages.set(n, {
+    pages.set(cle, {
       emb,
       largeur: z.largeur + 2 * avecFonds,
       hauteur: z.hauteur + 2 * avecFonds,
@@ -274,7 +280,7 @@ async function dessinerPose(page: PDFPage, src: Source, pose: Pose, params: Para
 /** Une pose : visuel + fonds perdus selon la méthode, découpée à la zone fini + fonds perdus. */
 async function dessinerPoseInterne(page: PDFPage, src: Source, pose: Pose, params: ParamsImposition, unis: (n: number) => BordsUnis | null) {
   if (pose.page === null) return;
-  const s = src.pages.get(pose.page);
+  const s = src.pages.get(cleSource(pose));
   if (!s) return;
   const fp = pt(Math.max(0, params.fonds_perdus_mm));
   const x = pt(pose.x);
@@ -364,9 +370,9 @@ export async function genererPdf(octetsSource: Uint8Array, plan: Plan, paramsDem
   doc.setTitle(`${nom} — imposition`);
   doc.setProducer('Evocom Print v2 — imposition');
   doc.setCreator('Evocom Print v2');
-  const numeros = new Set<number>();
-  for (const f of plan.feuilles) for (const face of [f.recto, f.verso]) if (face) for (const q of face.poses) if (q.page !== null && q.page <= src.getPageCount()) numeros.add(q.page);
-  const source = await preparerSource(doc, src, [...numeros], params, plan.adaptation);
+  const aIntegrer: Pick<Pose, 'page' | 'largeur' | 'hauteur'>[] = [];
+  for (const f of plan.feuilles) for (const face of [f.recto, f.verso]) if (face) for (const q of face.poses) if (q.page !== null && q.page <= src.getPageCount()) aIntegrer.push(q);
+  const source = await preparerSource(doc, src, aIntegrer, params, plan.adaptation);
   source.chemin = cheminSource;
   source.raster = !!cheminSource && (await bordureDisponible());
   const avecTextes = plan.feuilles.some((f) => [f.recto, f.verso].some((face) => face?.textes?.length));

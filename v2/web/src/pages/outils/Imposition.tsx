@@ -18,12 +18,12 @@ import { useStatutIA } from '../../features/ia/hooks';
 import { useAnalyse, useCatalogueImposition, useGenerer, useModelesImposition, useModelesMutations, usePlan, useProposerIA, useRattacher, useTeleverserLibre } from '../../features/imposition/hooks';
 import { useDossiers } from '../../features/dossiers/hooks';
 import { OptionCartes } from '../../features/imposition/OptionCartes';
-import { PictoAjustement, PictoCalage, PictoCoupe, PictoFondsPerdus, PictoMode, PictoOperation, PictoOrientation, PictoPlanches, PictoRetournement, PictoRotationPoses, PictoSystemeCoupe, PictoTeteBeche, PictoTraitsStyle } from '../../features/imposition/Pictos';
+import { PictoAjustement, PictoCalage, PictoCoupe, PictoFondsPerdus, PictoMode, PictoOperation, PictoOrientation, PictoPlanches, PictoPliage, PictoRetournement, PictoRotationPoses, PictoSystemeCoupe, PictoTeteBeche, PictoTraitsStyle } from '../../features/imposition/Pictos';
 import { SchemaFeuille, type AffichageSchema } from '../../features/imposition/SchemaFeuille';
 import { ListeFeuilles, PagesDocument } from '../../features/imposition/VuePages';
 import { libelleCoupe, reglagesPour, resumeAuto, rolesAuto, texteAdaptation } from '../../features/imposition/auto';
 import { useApercuPage } from '../../features/imposition/rendu';
-import { AJUSTEMENT_LABELS, BLANCHES_LABELS, CALAGE_LABELS, COUPE_LABELS, FOURNISSEUR_LABELS_IA, METHODE_LABELS, MODE_LABELS, OPERATION_LABELS, PLANCHES_LABELS, RELIURE_LABELS, RETOURNEMENT_LABELS, ROGNAGE_LABELS, ROTATION_POSES_LABELS, SYSTEME_COUPE_LABELS, SYSTEME_LABELS, TETE_BECHE_LABELS, TRAITS_LABELS, type Calage, type Coupe, type Dimension, type Feuille, type ModeAjustement, type ModeBlanches, type ModeleImposition, type ModePlanches, type Operation, type ParamsImposition, type Piece, type PieceAnalysee, type Plan, type PropositionImposition, type ReponseAnalyse, type ResultatGeneration, type Retournement, type RolePiece, type RotationPoses, type StyleTraits, type TeteBeche } from '../../features/imposition/types';
+import { AJUSTEMENT_LABELS, BLANCHES_LABELS, CALAGE_LABELS, COUPE_LABELS, FOURNISSEUR_LABELS_IA, METHODE_LABELS, MODE_LABELS, OPERATION_LABELS, PLANCHES_LABELS, PLIAGE_LABELS, RELIURE_LABELS, RETOURNEMENT_LABELS, ROGNAGE_LABELS, ROTATION_POSES_LABELS, SYSTEME_COUPE_LABELS, SYSTEME_LABELS, TETE_BECHE_LABELS, TRAITS_LABELS, type Calage, type Coupe, type Dimension, type Feuille, type ModeAjustement, type ModeBlanches, type ModeleImposition, type ModePlanches, type Operation, type ParamsImposition, type Piece, type PieceAnalysee, type Plan, type Pliage, type PropositionImposition, type ReponseAnalyse, type ResultatGeneration, type Retournement, type RolePiece, type RotationPoses, type StyleTraits, type TeteBeche } from '../../features/imposition/types';
 import '../../features/imposition/imposition.css';
 import { apercuUrl, fichierUrl, messageErreur } from '../../lib/api';
 import { Alert, Button, Checkbox, ConfirmDialog, Dialog, MachineChip, PageHeader, Ref, SelectField, Skeleton, TextField, TextareaField, useToast } from '../../ui';
@@ -90,6 +90,7 @@ function ChoixFormat({ p, maj, analyse }: { p: ParamsImposition; maj: (patch: Pa
   const fichier = analyse?.analyse.fini;
   const proche = analyse?.format_proche ?? null;
   const code = fichier && memeDim(p.fini, fichier) ? 'fichier' : (formats.find((f) => memeDim(p.fini, f) || memeDim(p.fini, { largeur: f.hauteur, hauteur: f.largeur }))?.code ?? 'personnalise');
+  const legende = p.operation === 'depliant' ? (p.pliage === 'italienne' || p.pliage === 'chevalet' ? 'Format fini = format fermé (une face)' : 'Format fini = format développé (pièce ouverte)') : null;
   const options = [
     ...(fichier ? [{ value: 'fichier', label: `Taille du fichier · ${fichier.largeur} × ${fichier.hauteur} mm${analyse?.analyse.format ? ` (${analyse.analyse.format.libelle.replace(/ \d+ × \d+ mm.*$/, '')})` : ''}` }] : []),
     ...formats.map((f) => ({ value: f.code, label: `${f.libelle}${proche && proche.code === f.code ? ' · le plus proche du fichier' : ''}` })),
@@ -98,6 +99,7 @@ function ChoixFormat({ p, maj, analyse }: { p: ParamsImposition; maj: (patch: Pa
   return (
     <div className="ws__section">
       <p className="ws__section-titre">Format fini</p>
+      {legende && <p className="ev-help" style={{ margin: 0 }}>{legende}</p>}
       <SelectField label="Format" value={code} options={options}
         onChange={(e) => {
           const v = e.target.value;
@@ -280,6 +282,32 @@ function Reglages({ p, onChange, nbPages, analyse, plan }: { p: ParamsImposition
         </div>
       )}
 
+      {p.operation === 'depliant' && (
+        <div className="ws__section">
+          <p className="ws__section-titre">Dépliant</p>
+          <OptionCartes<Pliage> name="imp-pliage" label="Type de pli" tone="violet" compact value={p.pliage ?? 'roule_3'} onChange={(pliage) => maj({ pliage, recto_verso: pliage !== 'chevalet' })}
+            options={(Object.keys(PLIAGE_LABELS) as Pliage[]).map((m) => ({ value: m, label: PLIAGE_LABELS[m].label, aide: PLIAGE_LABELS[m].aide, picto: <PictoPliage pliage={m} /> }))}
+          />
+          <p className="ev-help" style={{ margin: 0 }}>{PLIAGE_LABELS[p.pliage ?? 'roule_3'].aide}{plan?.depliant ? ` Pages attendues : ${plan.depliant.pages_attendues}.` : ''}</p>
+          <OptionCartes<'developpe' | 'volets'> name="imp-entree" label="Fichier reçu" tone="teal" compact value={p.entree ?? 'developpe'} onChange={(entree) => maj({ entree })}
+            options={[
+              { value: 'developpe', label: 'Développé', aide: 'Une page par face, déjà à la taille de la pièce ouverte (extérieur, intérieur).', picto: <PictoOrientation sens="paysage" /> },
+              { value: 'volets', label: 'Un volet par page', aide: 'Les pages du fichier sont les volets, dans l’ordre de lecture (P1 = couverture).', picto: <PictoMode mode="sequence" /> },
+            ]}
+          />
+          <div className="imp-ligne">
+            {(p.pliage === 'roule_3' || p.pliage === 'roule_4') && <Nombre label="Rabat rentrant réduit de" value={p.reduction_volet_mm ?? 2} onChange={(v) => maj({ reduction_volet_mm: v })} max={5} step={0.5} help="2 mm (3 mm pour un papier épais)." />}
+            {p.pliage === 'fenetre' && <Nombre label="Jeu central" value={p.jeu_central_mm ?? 3} onChange={(v) => maj({ jeu_central_mm: v })} max={8} step={0.5} help="Espace entre les deux volets rabattus." />}
+            {p.pliage === 'chevalet' && <Nombre label="Base du chevalet" value={p.base_mm ?? 25} onChange={(v) => maj({ base_mm: v })} min={10} max={80} step={1} help="Hauteur de la bande qui se glisse sous la face avant." />}
+          </div>
+          <Checkbox label="Rainage (papier épais) : plis marqués comme rainages" checked={!!p.rainage || p.pliage === 'chevalet'} onChange={(rainage) => maj({ rainage })} />
+          {plan?.depliant && plan.depliant.volets.recto.length > 0 && (
+            <p className="ev-help" style={{ margin: 0 }}>
+              Volets extérieur : {plan.depliant.volets.recto.map((v) => `${v.largeur} mm${v.page ? ` (p.${v.page})` : ''}`).join(' | ')} · intérieur : {plan.depliant.volets.verso.map((v) => `${v.largeur} mm${v.page ? ` (p.${v.page})` : ''}`).join(' | ')} · plis à {plan.depliant.plis.recto.join(' et ')} mm.
+            </p>
+          )}
+        </div>
+      )}
       {p.operation === 'livret' && (
         <div className="ws__section">
           <p className="ws__section-titre">Brochure</p>
@@ -474,6 +502,11 @@ function lignesRapport(r: ReponseAnalyse, p: ParamsImposition, plan: Plan | unde
     const choix = k.alternatives.map((alt) => ({ label: `${alt.partages ? 'Partagés ' : ''}${mm(alt.fonds_perdus_mm)} mm${alt.rotation === 'mixte' ? ', bande tournée' : alt.rotation === '90' ? ', tournées' : ''} → ${alt.poses} poses${alt.reperes_ok ? '' : ' (sans repères)'}`, patch: { fonds_perdus_mm: alt.fonds_perdus_mm, fonds_partages: alt.partages ? true : false, rotation_poses: alt.rotation === 'mixte' ? 'auto' : alt.rotation === '90' ? '90' : 'aucune', calepinage: 'manuel' } as Partial<ParamsImposition> }));
     if (!k.auto) choix.unshift({ label: 'Remettre le calepinage automatique', patch: { calepinage: 'auto', fonds_partages: 'auto', rotation_poses: 'auto' } });
     l.push({ ton: k.auto ? 'auto' : 'info', texte: `Calepinage : ${k.raison}`, choix: choix.slice(0, 5) });
+  }
+  if (plan?.depliant) {
+    const d = plan.depliant;
+    const manque = a.nb_pages < d.pages_attendues;
+    l.push({ ton: manque ? 'attention' : 'auto', texte: `${PLIAGE_LABELS[d.pliage].label} : ${d.entree === 'developpe' ? `fichier développé ${d.developpe.largeur} × ${d.developpe.hauteur} mm` : `${d.pages_attendues} volets attendus, ${a.nb_pages} page${a.nb_pages > 1 ? 's' : ''} reçue${a.nb_pages > 1 ? 's' : ''}`}${d.volets.recto.length ? ` · volets extérieur ${d.volets.recto.map((v) => v.largeur).join(' | ')} mm, intérieur ${d.volets.verso.map((v) => v.largeur).join(' | ')} mm` : ''} · format fermé ${d.ferme.largeur} × ${d.ferme.hauteur} mm · ${d.pieces_par_feuille} pièce${d.pieces_par_feuille > 1 ? 's' : ''} par feuille.` });
   }
   for (const c of plan?.consignes ?? []) l.push({ ton: 'info', texte: c });
   for (const piece of r.pieces) for (const m of piece.avertissements) if (/résolution|dpi|flou/i.test(m)) l.push({ ton: 'attention', texte: `${piece.nom} : ${m}` });

@@ -5,7 +5,7 @@
 // Une pose tournée est dessinée droite dans un repère tourné autour de son emprise.
 import { useId, useState } from 'react';
 import { useApercuPage, type Cadre } from './rendu';
-import type { Adaptation, Dimension, Face, MethodeFondsPerdus, PageVirtuelle, Plan } from './types';
+import type { Adaptation, Dimension, Face, MethodeFondsPerdus, PageVirtuelle, Plan, Pose } from './types';
 
 /**
  * Cadre de la page rendue (fractions, origine haut-gauche) qui correspond au format fini, d'après la
@@ -165,9 +165,13 @@ export function SchemaFeuille({
   const marge = Math.max(0, plan.marge_mm ?? 0) * k;
   const pageDe = (n: number | null) => (n === null ? null : (pages ?? []).find((p) => p.numero === n) ?? null);
   const avecFondsSource = methode === 'source' && sourceAvecFonds;
-  const cadreDe = (n: number): Cadre | undefined => {
+  // Cadre de l'aperçu : le format de la pose (un volet de dépliant a sa propre largeur) ; la mise au format
+  // ne concerne que les poses au format fini.
+  const cadreDe = (n: number, q: Pose): Cadre | undefined => {
     const d = dimsDe?.(n);
-    return d && d.largeur > 0 && d.hauteur > 0 ? cadrePage(d, plan.fini, plan.adaptation, avecFondsSource ? plan.fonds_perdus_mm : 0) : undefined;
+    if (!d || !(d.largeur > 0) || !(d.hauteur > 0)) return undefined;
+    const auFormat = Math.abs(q.largeur - plan.fini.largeur) < 0.01 && Math.abs(q.hauteur - plan.fini.hauteur) < 0.01;
+    return cadrePage(d, { largeur: q.largeur, hauteur: q.hauteur }, auFormat ? plan.adaptation : null, avecFondsSource ? plan.fonds_perdus_mm : 0);
   };
   // Identifiants des découpes propres à ce schéma : plusieurs feuilles s'affichent sur la même page.
   const uid = useId().replace(/[^a-zA-Z0-9_-]/g, '');
@@ -235,7 +239,7 @@ export function SchemaFeuille({
                 </defs>
               )}
               {affichage.fonds && fp > 0 && <rect x={x - fp} y={y - fp} width={w + 2 * fp} height={h + 2 * fp} className="imp-schema__fonds-fond" />}
-              {pg ? <Visuel pg={pg} x={x} y={y} w={w} h={h} fp={fp} methode={methode} sourceAvecFonds={sourceAvecFonds} id={`${uid}-p${i}-${pg.numero}`} afficherFonds={affichage.fonds} unis={unisDe?.(pg.numero) ?? null} cadre={cadreDe(pg.numero)} /> : <rect x={x} y={y} width={w} height={h} className="imp-schema__fini" />}
+              {pg ? <Visuel pg={pg} x={x} y={y} w={w} h={h} fp={fp} methode={methode} sourceAvecFonds={sourceAvecFonds} id={`${uid}-p${i}-${pg.numero}`} afficherFonds={affichage.fonds} unis={unisDe?.(pg.numero) ?? null} cadre={cadreDe(pg.numero, q)} /> : <rect x={x} y={y} width={w} height={h} className="imp-schema__fini" />}
               {vide && plan.operation === 'livret' && !affichage.numeros && (
                 <text x={x + w / 2} y={y + h / 2} className="imp-schema__blanche" fontSize={Math.max(8, Math.min(14, w / 10))} textAnchor="middle" dominantBaseline="central">Page blanche</text>
               )}

@@ -109,6 +109,11 @@ export function traitsFace(face: Face, feuille: { largeur: number; hauteur: numb
     xs.add(arr(b.x)); xs.add(arr(b.x + b.w)); ys.add(arr(b.y)); ys.add(arr(b.y + b.h));
     minX = Math.min(minX, b.x); minY = Math.min(minY, b.y); maxX = Math.max(maxX, b.x + b.w); maxY = Math.max(maxY, b.y + b.h);
   }
+  // Un pli n'est pas une coupe : les bords de poses qui tombent sur un pli (ou un rainage) ne reçoivent pas de trait.
+  const plisX = new Set([...face.plis, ...(face.lignes ?? []).filter((l) => l.axe === 'x' && l.genre !== 'perforation').map((l) => l.pos)].map(arr));
+  const plisY = new Set([...(face.plis_h ?? []), ...(face.lignes ?? []).filter((l) => l.axe === 'y' && l.genre !== 'perforation').map((l) => l.pos)].map(arr));
+  for (const x of plisX) xs.delete(x);
+  for (const y of plisY) ys.delete(y);
   const anglesPossibles = gouttiereMm >= 2 * (fondsMm + ECART_TRAIT + L) || pleines.length === 1;
   const styleEff: Exclude<StyleTraits, 'auto'> = style === 'auto' ? (anglesPossibles ? 'angles' : 'bloc') : style;
   const bruts: Segment[] = [];
