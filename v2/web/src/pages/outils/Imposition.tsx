@@ -120,6 +120,8 @@ function ChoixFormat({ p, maj, analyse }: { p: ParamsImposition; maj: (patch: Pa
 }
 
 function Reglages({ p, onChange, nbPages, analyse, plan }: { p: ParamsImposition; onChange: (p: ParamsImposition) => void; nbPages: number; analyse?: ReponseAnalyse; plan?: Plan }) {
+  // Visuels différents dans le fichier : une paire recto/verso par visuel, sinon une page (ou deux en recto-verso).
+  const nbVisuels = analyse?.paires ? analyse.paires.length : p.recto_verso ? Math.ceil(nbPages / 2) : nbPages;
   const maj = (patch: Partial<ParamsImposition>) => onChange({ ...p, ...patch });
   const adaptation = plan?.adaptation ?? null;
   const planches = analyse?.planches;
@@ -235,6 +237,14 @@ function Reglages({ p, onChange, nbPages, analyse, plan }: { p: ParamsImposition
           <OptionCartes name="imp-mode" label="Répartition des pages" tone="violet" value={p.mode} onChange={(mode) => maj({ mode, numerotation: mode === 'coupe_empile' ? p.numerotation : null })}
             options={(Object.keys(MODE_LABELS) as ParamsImposition['mode'][]).map((m) => ({ value: m, label: MODE_LABELS[m].label, aide: MODE_LABELS[m].aide, picto: <PictoMode mode={m} /> }))}
           />
+          {p.mode === 'repetition' && nbVisuels > 1 && (
+            <OptionCartes<'chacun' | 'premier'> name="imp-repetition-visuels" label={`${nbVisuels} visuels dans le fichier`} tone="violet" compact value={p.repetition_visuels ?? 'chacun'} onChange={(repetition_visuels) => maj({ repetition_visuels })}
+              options={[
+                { value: 'chacun', label: `Chaque visuel sur sa feuille (${nbVisuels} feuilles)`, aide: 'Chaque visuel est répété sur toutes les poses de sa propre feuille : aucune pose vide, une pile par visuel après la coupe.', picto: <PictoMode mode="repetition" /> },
+                { value: 'premier', label: 'Seulement le premier visuel', aide: 'Les autres pages du fichier sont ignorées.', picto: <PictoMode mode="sequence" /> },
+              ]}
+            />
+          )}
           <Checkbox label={`Recto-verso${nbPages >= 2 ? '' : ' (une seule page : verso vide)'}`} checked={p.recto_verso} onChange={(recto_verso) => maj({ recto_verso })} />
           {p.recto_verso && (
             <OptionCartes<Retournement> name="imp-retournement" label="Retournement de la feuille" tone="teal" compact value={p.retournement ?? 'auto'} onChange={(retournement) => maj({ retournement })}
@@ -263,7 +273,7 @@ function Reglages({ p, onChange, nbPages, analyse, plan }: { p: ParamsImposition
               )}
             </div>
           </details>
-          <Nombre label={p.mode === 'coupe_empile' ? 'Nombre d’exemplaires' : 'Quantité à produire'} value={p.quantite ?? 0} onChange={(v) => maj({ quantite: v > 0 ? Math.round(v) : undefined })} min={0} max={100000} step={1} addon="ex." help={p.mode === 'coupe_empile' ? 'Tickets ou exemplaires à sortir.' : 'Pour compter les feuilles à imprimer.'} />
+          <Nombre label={p.mode === 'coupe_empile' ? 'Nombre d’exemplaires' : p.mode === 'repetition' && nbVisuels > 1 && p.repetition_visuels !== 'premier' ? 'Quantité de chaque visuel' : 'Quantité à produire'} value={p.quantite ?? 0} onChange={(v) => maj({ quantite: v > 0 ? Math.round(v) : undefined })} min={0} max={100000} step={1} addon="ex." help={p.mode === 'coupe_empile' ? 'Tickets ou exemplaires à sortir.' : p.mode === 'repetition' && nbVisuels > 1 && p.repetition_visuels !== 'premier' ? 'Par visuel : les feuilles à imprimer de chaque feuille s’additionnent.' : 'Pour compter les feuilles à imprimer.'} />
           {p.mode === 'coupe_empile' && (
             <div className="stack-sm">
               <Checkbox label="Numéroter les exemplaires (tickets, bons, billets)" checked={!!num} onChange={(on) => maj({ numerotation: on ? { debut: 1, chiffres: 4, prefixe: '', position: 'bas_droite', taille_pt: 12, verso: false } : null })} />
@@ -512,9 +522,21 @@ function lignesRapport(r: ReponseAnalyse, p: ParamsImposition, plan: Plan | unde
   for (const piece of r.pieces) for (const m of piece.avertissements) if (/résolution|dpi|flou/i.test(m)) l.push({ ton: 'attention', texte: `${piece.nom} : ${m}` });
   if (plan) {
     if (plan.operation === 'poses') l.push({ ton: 'auto', texte: `${plan.poses_par_face} poses par face sur ${plan.feuille.largeur} × ${plan.feuille.hauteur} mm (${plan.paysage ? 'paysage' : 'portrait'})${plan.feuilles_a_imprimer ? `, ${plan.feuilles_a_imprimer} feuilles à imprimer` : ''}.` });
-    if (plan.operation === 'poses' && p.mode === 'sequence' && a.nb_pages > 1) {
+    if (plan.operation === 'poses' && a.nb_pages > 1 && (p.mode === 'sequence' || p.mode === 'repetition')) {
       const visuels = r.paires ? r.paires.length : p.recto_verso ? Math.ceil(a.nb_pages / 2) : a.nb_pages;
-      l.push({ ton: 'auto', texte: `${visuels} visuel${visuels > 1 ? 's' : ''} différent${visuels > 1 ? 's' : ''}, chacun sur sa pose (séquence)${p.recto_verso ? ', recto-verso' : ', recto seul'} : chaque feuille imprimée donne un exemplaire de chaque visuel${plan.nb_feuilles > 1 ? ` (${plan.nb_feuilles} feuilles différentes)` : ''}.`, choix: visuels > 1 && !p.recto_verso ? [{ label: 'Même visuel partout (répétition)', patch: { mode: 'repetition' } }] : undefined });
+      const n = plan.poses_par_face;
+      const q = p.quantite && p.quantite > 0 ? p.quantite : null;
+      const faces = p.recto_verso ? ', recto-verso' : ', recto seul';
+      // Feuilles pour q exemplaires de chaque visuel : séquence = q tirages de chaque feuille différente ;
+      // répétition = un visuel par feuille, chacune tirée q / poses fois (jamais plus dès que q ≥ poses).
+      const comparaison = q && visuels > 1 ? ` Pour ${q} ex. de chaque visuel : ${visuels * Math.ceil(q / n)} feuilles en répétition, ${Math.ceil(visuels / n) * q} en séquence.` : '';
+      if (p.mode === 'sequence') {
+        l.push({ ton: 'auto', texte: `${visuels} visuel${visuels > 1 ? 's' : ''} différent${visuels > 1 ? 's' : ''}, chacun sur sa pose (séquence)${faces} : chaque feuille imprimée donne un exemplaire de chaque visuel${plan.nb_feuilles > 1 ? ` (${plan.nb_feuilles} feuilles différentes)` : ''}.${comparaison}`, choix: visuels > 1 ? [{ label: `Un visuel par feuille (répétition, ${visuels} feuilles)`, patch: { mode: 'repetition', repetition_visuels: 'chacun' } }] : undefined });
+      } else if (visuels > 1 && p.repetition_visuels === 'premier') {
+        l.push({ ton: 'attention', texte: `${visuels} visuels dans le fichier : seul le premier est imposé.`, choix: [{ label: `Chaque visuel sur sa feuille (${visuels} feuilles)`, patch: { repetition_visuels: 'chacun' } }, { label: 'Tous à la suite sur une feuille (séquence)', patch: { mode: 'sequence' } }] });
+      } else if (visuels > 1) {
+        l.push({ ton: 'auto', texte: `${visuels} visuels différents, chacun répété sur toutes les poses de sa propre feuille (${visuels} feuilles de ${n} poses)${faces} : aucune pose vide, une pile par visuel après la coupe.${comparaison}`, choix: [{ label: 'Tous à la suite sur une feuille (séquence)', patch: { mode: 'sequence' } }, { label: 'Seulement le premier visuel', patch: { repetition_visuels: 'premier' } }] });
+      }
     }
     if (plan.operation === 'livret') l.push({ ton: 'auto', texte: `Livret de ${plan.nb_feuilles * 4} pages sur ${plan.nb_feuilles} feuille${plan.nb_feuilles > 1 ? 's' : ''} ${plan.feuille.largeur} × ${plan.feuille.hauteur} mm${plan.pages_blanches ? `, ${plan.pages_blanches} page${plan.pages_blanches > 1 ? 's' : ''} blanche${plan.pages_blanches > 1 ? 's' : ''} ajoutée${plan.pages_blanches > 1 ? 's' : ''}` : ''}.` });
     for (const m of plan.avertissements) l.push({ ton: 'attention', texte: m });

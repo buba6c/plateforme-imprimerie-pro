@@ -61,7 +61,6 @@ export function reglagesPour(op: Operation, r: ReponseAnalyse, courant: ParamsIm
   const fini = courant.fini?.largeur ? courant.fini : a.fini;
   const fonds = fondsAuto(a);
   const paires = r.paires?.filter((x) => x.verso !== null).length ?? 0;
-  const nbVisuels = r.paires ? r.paires.length : a.nb_pages;
   const famille = a.format?.famille;
   const base: ParamsImposition = {
     ...courant,
@@ -126,7 +125,8 @@ export function reglagesPour(op: Operation, r: ReponseAnalyse, courant: ParamsIm
   // Poses
   const rv = paires > 0 || (r.paires === null && a.nb_pages === 2);
   const ticket = famille === 'ticket';
-  const mode = ticket ? 'coupe_empile' : nbVisuels > (rv ? 1 : 1) && !(r.paires === null && a.nb_pages === 2) ? 'sequence' : 'repetition';
+  // Plusieurs visuels : répétition, chacun sur sa feuille (aucune pose vide, une pile par visuel) ; la séquence reste un clic dans le rapport.
+  const mode = ticket ? 'coupe_empile' : 'repetition';
   return {
     ...base,
     feuille: feuillePoses(fini, fonds.fonds_perdus_mm),
@@ -168,7 +168,7 @@ export function resumeAuto(p: ParamsImposition, plan?: Plan | null): string {
     return `Dépliant ${p.pliage ?? 'roulé 3 volets'}${volets}, ${p.entree === 'volets' ? 'un volet par page' : 'développé'}${d ? `, ${d.pieces_par_feuille} pièce${d.pieces_par_feuille > 1 ? 's' : ''} par feuille` : ''} sur ${feuille}, ${fonds}.`;
   }
   if (p.operation === 'assembler') return 'Pièces réunies dans l’ordre, pages inchangées.';
-  const mode = p.mode === 'repetition' ? 'même visuel sur toutes les poses' : p.mode === 'sequence' ? 'visuels à la suite' : 'coupe & empile';
+  const mode = p.mode === 'repetition' ? (plan && plan.operation === 'poses' && plan.nb_feuilles > 1 ? `un visuel par feuille (${plan.nb_feuilles} feuilles), répété sur toutes les poses` : 'même visuel sur toutes les poses') : p.mode === 'sequence' ? 'visuels à la suite' : 'coupe & empile';
   const poses = plan && plan.operation === 'poses' ? `, ${plan.poses_par_face} pose${plan.poses_par_face > 1 ? 's' : ''} par feuille${plan.calepinage?.rotation === 'mixte' ? ' (bande tournée)' : plan.calepinage?.rotation === '90' ? ' (tournées)' : ''}` : '';
   return `${feuille}${poses}, ${mode}${p.recto_verso ? ', recto-verso' : ''}, ${fonds}${p.numerotation ? ', numérotation' : ''}.`;
 }

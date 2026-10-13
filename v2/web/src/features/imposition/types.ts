@@ -58,6 +58,8 @@ export interface ParamsImposition {
   marge_pince_mm?: number;
   fonds_partages?: boolean | 'auto';
   mode: ModePoses;
+  /** Répétition avec plusieurs visuels : chacun répété sur sa propre feuille (défaut) ou seulement le premier. */
+  repetition_visuels?: 'chacun' | 'premier';
   quantite?: number;
   numerotation?: Numerotation | null;
   ajustement: ModeAjustement;
@@ -419,7 +421,7 @@ export const METHODE_LABELS: Record<MethodeFondsPerdus, { label: string; aide: s
 };
 
 export const MODE_LABELS: Record<ModePoses, { label: string; aide: string }> = {
-  repetition: { label: 'Répétition', aide: 'Le même visuel sur toutes les poses (page 1 au recto, page 2 au verso).' },
+  repetition: { label: 'Répétition', aide: 'Le même visuel sur toutes les poses (page 1 au recto, page 2 au verso) ; plusieurs visuels : une feuille chacun.' },
   sequence: { label: 'Séquence', aide: 'Les pages du fichier se suivent sur les poses, feuille après feuille.' },
   coupe_empile: { label: 'Coupe & empile', aide: 'Après la coupe, chaque pile est dans l’ordre : tickets numérotés, exemplaires différents.' },
 };

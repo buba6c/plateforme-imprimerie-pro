@@ -490,7 +490,7 @@ describe('imposition : formats et plans (sans serveur)', () => {
     expect(paramsSchema.safeParse({ ...dep, pliage: 'roule_3' }).success).toBe(true);
   });
 
-  it('trois flyers différents dans un fichier : séquence recto seul, feuilles à imprimer = exemplaires', () => {
+  it('trois flyers différents dans un fichier : séquence sur une feuille, ou répétition sur une feuille par visuel', () => {
     const p = { ...base, fini: { largeur: 150, hauteur: 200 }, methode_fonds_perdus: 'intelligent' as const, marge_mm: 5, mode: 'sequence' as const, recto_verso: false, quantite: 1000 };
     // 150 × 200 mm sur SRA3 : quatre poses avec 1 mm de fonds perdus et des repères lisibles (le plancher par défaut est 1 mm).
     const plan = calculerPlan(p, 3, undefined, { ...sourceMarge(0), fini: { largeur: 150, hauteur: 200 } });
@@ -502,6 +502,26 @@ describe('imposition : formats et plans (sans serveur)', () => {
     expect(plan.feuilles[0]!.verso).toBeNull();
     expect(plan.feuilles_a_imprimer).toBe(1000);
     if (plan.poses_par_face > 3) expect(plan.avertissements.some((m) => /pose.* vide/.test(m))).toBe(true);
+    // Répétition : chaque visuel est répété sur toutes les poses de sa propre feuille, 250 tirages chacune pour 1 000 ex.
+    const src = { ...sourceMarge(0), fini: { largeur: 150, hauteur: 200 } };
+    const rep = calculerPlan({ ...p, mode: 'repetition' }, 3, undefined, src);
+    expect(rep.nb_feuilles).toBe(3);
+    expect(rep.feuilles.map((f) => new Set(f.recto.poses.map((q) => q.page)).size)).toEqual([1, 1, 1]);
+    expect(rep.feuilles.map((f) => f.recto.poses[0]!.page)).toEqual([1, 2, 3]);
+    expect(rep.feuilles_a_imprimer).toBe(750);
+    expect(rep.avertissements).toEqual([]);
+    const premier = calculerPlan({ ...p, mode: 'repetition', repetition_visuels: 'premier' }, 3, undefined, src);
+    expect(premier.nb_feuilles).toBe(1);
+    expect(premier.feuilles_a_imprimer).toBe(250);
+    // Recto-verso : un visuel = une paire de pages, la deuxième feuille porte les pages 3 et 4.
+    const rv = calculerPlan({ ...p, mode: 'repetition', recto_verso: true }, 4, undefined, src);
+    expect(rv.nb_feuilles).toBe(2);
+    expect(rv.feuilles[1]!.recto.poses[0]!.page).toBe(3);
+    expect(rv.feuilles[1]!.verso!.poses[0]!.page).toBe(4);
+    const impair = calculerPlan({ ...p, mode: 'repetition', recto_verso: true }, 3, undefined, src);
+    expect(impair.nb_feuilles).toBe(2);
+    expect(impair.feuilles[1]!.verso!.poses[0]!.page).toBeNull();
+    expect(impair.avertissements.some((m) => /impair/.test(m))).toBe(true);
   });
 
   it('refuse une pose qui ne tient pas sur la feuille', () => {

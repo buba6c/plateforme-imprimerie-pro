@@ -86,7 +86,9 @@ export interface ParamsImposition {
   retournement: Retournement;
   rotation_verso?: RotationVerso;
   mode: ModePoses;
-  /** Nombre d'exemplaires à produire (répétition : information ; coupe & empile sans numérotation : nb de pages). */
+  /** Répétition avec plusieurs visuels dans le fichier : chacun répété sur sa propre feuille (défaut) ou seulement le premier. */
+  repetition_visuels?: 'chacun' | 'premier';
+  /** Nombre d'exemplaires à produire (répétition : exemplaires de chaque visuel ; coupe & empile sans numérotation : nb de pages). */
   quantite?: number;
   numerotation?: Numerotation | null;
   /** Si le visuel n'a pas la taille du format fini : auto (recommandé), centrer, adapter, remplir ou étirer (voir ajuster.ts). */
@@ -782,13 +784,18 @@ export function planPoses(p: ParamsImposition, nbPages: number, mt = ATELIER_DEF
   };
 
   if (p.mode === 'repetition') {
-    const premiere = paires ? paires[0]! : { recto: 1, verso: rv ? (nbPages >= 2 ? 2 : null) : null };
-    if (rv && premiere.verso === null) avertissements.push('Recto-verso demandé mais aucune page de verso : le verso sera vide.');
-    const recto = vides().map((q) => ({ ...q, page: premiere.recto }));
-    const verso = rv ? faceVerso(vides(), g.feuille, axe, p.rotation_verso).map((q) => ({ ...q, page: premiere.verso })) : null;
-    feuilles.push({ numero: 1, recto: { cote: 'recto', poses: recto, plis: [] }, verso: verso ? { cote: 'verso', poses: verso, plis: [] } : null });
-    const nbElements = paires ? paires.length : rv ? Math.ceil(nbPages / 2) : nbPages;
-    if (nbElements > 1) avertissements.push(`${nbElements} visuels différents sont disponibles : en répétition, seul le premier est utilisé. Choisissez « séquence » pour les imposer tous.`);
+    // Un visuel = un recto (et son verso). Plusieurs visuels dans le fichier : chacun est répété sur toutes les
+    // poses de sa propre feuille (un PDF de trois flyers donne trois feuilles), sauf si seul le premier est demandé.
+    const visuels: { recto: number; verso: number | null }[] = paires
+      ? paires
+      : Array.from({ length: Math.max(1, rv ? Math.ceil(nbPages / 2) : nbPages) }, (_, i) => (rv ? { recto: 1 + 2 * i, verso: 2 + 2 * i <= nbPages ? 2 + 2 * i : null } : { recto: i + 1, verso: null }));
+    const retenus = (p.repetition_visuels ?? 'chacun') === 'premier' ? visuels.slice(0, 1) : visuels;
+    retenus.forEach((e, i) => {
+      const recto = vides().map((q) => ({ ...q, page: e.recto }));
+      const verso = rv ? faceVerso(vides(), g.feuille, axe, p.rotation_verso).map((q) => ({ ...q, page: e.verso })) : null;
+      feuilles.push({ numero: i + 1, recto: { cote: 'recto', poses: recto, plis: [] }, verso: verso ? { cote: 'verso', poses: verso, plis: [] } : null });
+    });
+    if (rv && retenus.some((e) => e.verso === null)) avertissements.push(retenus.length === 1 ? 'Recto-verso demandé mais aucune page de verso : le verso sera vide.' : 'Recto-verso : le nombre de pages est impair, le dernier verso sera vide.');
   } else {
     // Éléments à placer : pages (séquence) ou exemplaires numérotés (coupe & empile avec numérotation).
     const num = p.mode === 'coupe_empile' ? (p.numerotation ?? null) : null;
@@ -843,8 +850,9 @@ export function planPoses(p: ParamsImposition, nbPages: number, mt = ATELIER_DEF
     poses_par_face: n,
     nb_feuilles: feuilles.length,
     nb_pages_sortie: feuilles.reduce((t, f) => t + 1 + (f.verso ? 1 : 0), 0),
-    // Séquence : chaque feuille porte une fois chaque visuel qu'elle contient ; Q exemplaires de chacun = Q tirages de chaque feuille.
-    feuilles_a_imprimer: quantite ? (p.mode === 'repetition' ? Math.ceil(quantite / n) : p.mode === 'sequence' || (p.mode === 'coupe_empile' && !p.numerotation) ? feuilles.length * quantite : feuilles.length) : null,
+    // Répétition : Q exemplaires de chaque visuel = Q / poses tirages de chaque feuille. Séquence : chaque feuille porte
+    // une fois chaque visuel qu'elle contient ; Q exemplaires de chacun = Q tirages de chaque feuille.
+    feuilles_a_imprimer: quantite ? (p.mode === 'repetition' ? feuilles.length * Math.ceil(quantite / n) : p.mode === 'sequence' || (p.mode === 'coupe_empile' && !p.numerotation) ? feuilles.length * quantite : feuilles.length) : null,
     pages_blanches: 0,
     feuilles,
     avertissements,
@@ -1031,7 +1039,8 @@ export function paramsParDefaut(analyse: { fini: Dimension; fonds_perdus: string
     recto_verso: analyse.nb_pages >= 2,
     retournement: 'auto',
     rotation_verso: 'auto',
-    mode: famille === 'ticket' ? 'coupe_empile' : analyse.nb_pages > 2 ? 'sequence' : 'repetition',
+    // Plusieurs visuels : répétition, chacun sur sa feuille (aucune pose vide) ; la séquence reste un choix explicite.
+    mode: famille === 'ticket' ? 'coupe_empile' : 'repetition',
     quantite: undefined,
     numerotation: null,
     ajustement: 'auto',

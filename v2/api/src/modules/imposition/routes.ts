@@ -72,6 +72,7 @@ export const paramsSchema = z.object({
   marge_pince_mm: z.number().min(0).max(50).optional(),
   fonds_partages: z.union([z.boolean(), z.literal('auto')]).default('auto'),
   mode: z.enum(['repetition', 'sequence', 'coupe_empile']).default('repetition'),
+  repetition_visuels: z.enum(['chacun', 'premier']).optional(),
   quantite: z.number().int().positive().max(100_000).optional(),
   numerotation: numerotationSchema.nullable().optional(),
   ajustement: z.enum(['auto', 'centrer', 'adapter', 'remplir', 'etirer']).default('auto'),
@@ -709,7 +710,7 @@ export function impositionRouter(config: Config) {
         content: [
           'Tu es le responsable prépresse d’une imprimerie numérique à Dakar (machines : Xerox feuille à feuille jusqu’au SRA3, Roland grand format).',
           'On te donne l’analyse d’un fichier PDF et les spécifications du dossier. Propose le plan d’imposition le plus économique et le plus sûr, en respectant ces règles :',
-          '- cartes de visite, flyers, tickets : opération « poses » sur SRA3 (320 × 450) ou A3, fonds perdus 3 mm, gouttière 0, marge 10 mm ; « repetition » pour un seul visuel, « sequence » quand les pages se suivent, « coupe_empile » pour des tickets numérotés ou des exemplaires différents à empiler ;',
+          '- cartes de visite, flyers, tickets : opération « poses » sur SRA3 (320 × 450) ou A3, fonds perdus 3 mm, gouttière 0, marge 10 mm ; « repetition » pour un visuel par feuille (plusieurs visuels : une feuille chacun), « sequence » quand les visuels se suivent sur la même feuille (petites quantités), « coupe_empile » pour des tickets numérotés ou des exemplaires différents à empiler ;',
           '- brochures, livrets, programmes : « livret » (piqûre à cheval), feuille égale à deux fois le format fini (A4 → A3 ou SRA3, A5 → A4 ou SRA4), recto_verso vrai ;',
           '- fichier à préparer seulement : « fonds_perdus » ;',
           '- fonds perdus : « source » s’ils sont déclarés ou présents dans le fichier, sinon « miroir » si le visuel va jusqu’au bord, « blanc » si le visuel a une marge blanche partout ;',
