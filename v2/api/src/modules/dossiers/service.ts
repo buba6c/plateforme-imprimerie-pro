@@ -863,7 +863,10 @@ export async function enregistrerPaiement(
   p: { montant: number; mode: string; reference: string | null; notes: string | null },
 ): Promise<number> {
   if (!['admin', 'preparateur', 'livreur'].includes(user.role)) throw forbidden();
-  if ((MODES_REFERENCE_OBLIGATOIRE as readonly string[]).includes(p.mode) && !p.reference) {
+  // Le livreur encaisse sur le terrain : aucune référence ne lui est demandée (chèque, Wave…), l'administrateur
+  // la complète s'il le faut en validant. Préparateur et administrateur restent tenus de la saisir pour Wave,
+  // Orange Money et virement.
+  if (user.role !== 'livreur' && (MODES_REFERENCE_OBLIGATOIRE as readonly string[]).includes(p.mode) && !p.reference) {
     throw badRequest('La référence de la transaction est obligatoire pour ce mode de paiement.');
   }
   if (d.montant !== null) {

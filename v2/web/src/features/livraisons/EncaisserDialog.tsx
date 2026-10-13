@@ -3,6 +3,7 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { Banknote } from 'lucide-react';
 import { formatFCFA, MODES_AVEC_REFERENCE, MODES_REFERENCE_OBLIGATOIRE, parseMontant, type ModePaiement } from '@evocom/shared';
 import { api, messageErreur } from '../../lib/api';
+import { useUser } from '../../auth/AuthContext';
 import type { DossierResume } from '../../lib/types';
 import { Alert, Button, Dialog, TextField, useToast } from '../../ui';
 import { ModeChoix } from '../paiements/ModePastille';
@@ -26,8 +27,10 @@ export function EncaisserDialog({
   const [mode, setMode] = useState<ModePaiement>(dossier.mode_paiement_prevu ?? 'especes');
   const [reference, setReference] = useState('');
   const m = parseMontant(montant);
-  const refProposee = MODES_AVEC_REFERENCE.includes(mode);
-  const refRequise = MODES_REFERENCE_OBLIGATOIRE.includes(mode);
+  // Le livreur ne saisit jamais de référence (numéro de chèque, Wave…) : il choisit le moyen de paiement et valide.
+  const livreur = useUser().role === 'livreur';
+  const refProposee = !livreur && MODES_AVEC_REFERENCE.includes(mode);
+  const refRequise = !livreur && MODES_REFERENCE_OBLIGATOIRE.includes(mode);
   const erreur =
     m === null || m <= 0
       ? 'Saisissez un montant entier, sans centimes.'

@@ -202,9 +202,8 @@ describe('dossiers et circuit', () => {
     expect(prog.body.statut).toBe('en_livraison');
     const trop = await liv.post(`/api/dossiers/${rolandId}/actions/confirmer_livraison`).send({ encaissement: { montant: 2_500_000, mode: 'especes' } });
     expect(trop.status).toBe(409);
-    const sansRef = await liv.post(`/api/dossiers/${rolandId}/actions/confirmer_livraison`).send({ encaissement: { montant: 20000, mode: 'wave' } });
-    expect(sansRef.status).toBe(400);
-    const ok = await liv.post(`/api/dossiers/${rolandId}/actions/confirmer_livraison`).send({ encaissement: { montant: 20000, mode: 'wave', reference: 'WV-123' } });
+    // Le livreur choisit le moyen de paiement et valide : aucune référence Wave ne lui est demandée.
+    const ok = await liv.post(`/api/dossiers/${rolandId}/actions/confirmer_livraison`).send({ encaissement: { montant: 20000, mode: 'wave' } });
     expect(ok.status).toBe(200);
     expect(ok.body.statut).toBe('livre');
     expect(ok.body.en_attente_validation).toBe(20000);

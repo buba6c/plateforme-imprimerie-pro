@@ -340,14 +340,21 @@ describe('livraisons : historique', () => {
 describe('livraisons : référence du paiement', () => {
   beforeAll(viderDonnees);
 
-  it('accepte un chèque sans numéro, mais exige la référence Wave, Orange Money et virement', async () => {
+  it('le livreur encaisse sans référence (chèque, Wave…) ; le préparateur doit la saisir pour Wave, Orange Money et virement', async () => {
     const cheque = await pretALivrer({ client_nom: 'Cabinet Ndiaye' });
     await livrer(A.livreur, cheque.id, { montant: 15000, mode: 'cheque' });
     const p = await getPool().query(`SELECT mode, reference FROM paiements WHERE dossier_id = $1`, [cheque.id]);
     expect(p.rows).toEqual([{ mode: 'cheque', reference: null }]);
 
     const wave = await pretALivrer({ client_nom: 'Boutique Fall' });
-    const r = await A.livreur.post(`/api/dossiers/${wave.id}/actions/confirmer_livraison`).send({ encaissement: { montant: 15000, mode: 'wave' } });
+    await livrer(A.livreur, wave.id, { montant: 15000, mode: 'wave' });
+    const pw = await getPool().query(`SELECT mode, reference, statut FROM paiements WHERE dossier_id = $1`, [wave.id]);
+    expect(pw.rows).toEqual([{ mode: 'wave', reference: null, statut: 'a_valider' }]);
+
+    // L'administrateur, lui, doit saisir la référence (le préparateur n'encaisse jamais).
+    const om = await pretALivrer({ client_nom: 'Pharmacie Diop' });
+    const r = await A.admin.post(`/api/dossiers/${om.id}/paiements`).send({ montant: 5000, mode: 'orange_money' });
     expect(r.status).toBe(400);
+    expect(r.body.error).toMatch(/référence/);
   });
 });

@@ -248,7 +248,8 @@ describe('paiements', () => {
 
     const trop = await A.livreur.post(`/api/dossiers/${dossierId}/paiements`).send({ montant: 30000, mode: 'especes' });
     expect(trop.status).toBe(409);
-    const sansRef = await A.livreur.post(`/api/dossiers/${dossierId}/paiements`).send({ montant: 1000, mode: 'wave' });
+    // Le livreur n'a pas à saisir de référence ; l'administrateur, si (Wave, Orange Money, virement).
+    const sansRef = await A.admin.post(`/api/dossiers/${dossierId}/paiements`).send({ montant: 1000, mode: 'wave' });
     expect(sansRef.status).toBe(400);
 
     expect((await A.prep.post(`/api/paiements/${p1.body.id}/valider`)).status).toBe(403);
