@@ -343,6 +343,81 @@ describe('imposition : formats et plans (sans serveur)', () => {
     if (r.success) for (const [k, v] of Object.entries(complet)) expect((r.data as Record<string, unknown>)[k], k).toEqual(v);
   });
 
+  it('livret étendu : 2 planches empilées, feuilles volantes, relié en haut, couverture avec dos, rognage, folios', () => {
+    const livret = { ...base, operation: 'livret' as const, feuille: 'sra3' as const, fini: { largeur: 148, hauteur: 210 }, fonds_perdus_mm: 3, mode: 'sequence' as const, methode_fonds_perdus: 'intelligent' as const, marge_mm: 5 };
+    // 16 pages A5, 2 planches par SRA3 empilées : 2 feuilles au lieu de 4 ; feuille 0 = planches 1 et 3.
+    const deux = calculerPlan({ ...livret, poses_livret: 2, mode_planches: 'empile' }, 16, undefined, sourceMarge(0));
+    expect(deux.nb_feuilles).toBe(2);
+    expect(deux.poses_par_face).toBe(4);
+    expect(deux.livret).toMatchObject({ planches: 2, mode: 'empile', reliure: 'piqure' });
+    const f0 = deux.feuilles[0]!.recto.poses.map((q) => q.page);
+    expect(f0).toEqual([16, 1, 12, 5]);
+    const ys = deux.feuilles[0]!.recto.poses.map((q) => q.y);
+    expect(ys[0]).toBeGreaterThan(ys[2]!);
+    expect(deux.feuilles[0]!.recto.plis).toHaveLength(2);
+    // Verso : la planche du haut reste en haut (axe vertical), pages verso [2 | 15] puis [6 | 11].
+    expect(deux.feuilles[0]!.verso!.poses.map((q) => q.page)).toEqual([2, 15, 6, 11]);
+    // Répétition : chaque feuille porte deux fois la même planche.
+    const rep = calculerPlan({ ...livret, poses_livret: 2, mode_planches: 'repetition', quantite: 100 }, 16, undefined, sourceMarge(0));
+    expect(rep.nb_feuilles).toBe(4);
+    expect(rep.feuilles[0]!.recto.poses.map((q) => q.page)).toEqual([16, 1, 16, 1]);
+    expect(rep.feuilles_a_imprimer).toBe(200);
+    // Feuilles volantes : 12 pages A4 sur SRA3 → 6 feuillets, 2 poses, 3 feuilles ; coupe & empile des feuillets.
+    const vol = calculerPlan({ ...livret, fini: { largeur: 210, hauteur: 297 }, reliure: 'feuilles_volantes' }, 12, undefined, { ...sourceMarge(0), fini: { largeur: 210, hauteur: 297 } });
+    expect(vol.livret?.reliure).toBe('feuilles_volantes');
+    expect(vol.nb_feuilles).toBe(3);
+    expect(vol.feuilles[0]!.recto.poses.map((q) => q.page)).toEqual([1, 7]);
+    expect(vol.feuilles[0]!.verso!.poses.map((q) => q.page)).toEqual([2, 8]);
+    expect(vol.feuilles[0]!.recto.plis).toEqual([]);
+    // Relié en haut : 8 pages A5 paysage (210 × 148) sur A4 portrait, pli horizontal, verso miroir haut-bas.
+    const haut = calculerPlan({ ...livret, feuille: 'a4', fini: { largeur: 210, hauteur: 148 }, fonds_perdus_mm: 0, reliure_bord: 'haut', chasse_auto: false }, 8, undefined, { ...sourceMarge(8), fini: { largeur: 210, hauteur: 148 } });
+    expect(haut.axe_verso).toBe('horizontal');
+    expect(haut.retournement_effectif).toBe('bord_court');
+    const r0 = haut.feuilles[0]!.recto.poses;
+    expect(r0.map((q) => q.page)).toEqual([8, 1]);
+    expect(r0[0]!.y).toBeGreaterThan(r0[1]!.y);
+    expect(r0[0]!.pli).toBe('bas');
+    expect(haut.feuilles[0]!.recto.plis_h).toHaveLength(1);
+    expect(haut.feuilles[0]!.verso!.poses.map((q) => q.page)).toEqual([2, 7]);
+    expect(haut.feuilles[0]!.verso!.poses[0]!.rotation).toBeUndefined();
+    // Couverture séparée avec dos calculé : 40 pages intérieures de 0,1 mm → dos 3 mm, rainages, pose de dos vide.
+    const dos = calculerPlan({ ...livret, reliure: 'dos_carre', couverture_separee: true, epaisseur_feuille_mm: 0.1, chasse_auto: false }, 44, undefined, sourceMarge(0));
+    expect(dos.livret?.dos_mm).toBe(3);
+    const couv = dos.feuilles[0]!;
+    expect(couv.libelle).toBe('Couverture');
+    expect(couv.recto.poses.map((q) => q.page)).toEqual([44, null, 1]);
+    expect(couv.recto.poses[1]!.largeur).toBe(3);
+    expect(couv.recto.poses[2]!.x - (couv.recto.poses[0]!.x + 148)).toBeCloseTo(3, 2);
+    expect(couv.recto.lignes?.filter((l) => l.genre === 'rainage').length).toBeGreaterThanOrEqual(4);
+    // Dos saisi à la main.
+    expect(calculerPlan({ ...livret, reliure: 'dos_carre', couverture_separee: true, dos_mm: 8 }, 44, undefined, sourceMarge(0)).livret?.dos_mm).toBe(8);
+    // Livret sans fonds perdus sur feuille exacte (A5 sur A4) : plié non rogné, aucun trait, pli gardé.
+    const exact = calculerPlan({ ...livret, feuille: 'a4', fonds_perdus_mm: 0 }, 8, undefined, sourceMarge(8));
+    expect(exact.livret?.rognage).toBe('aucun');
+    expect(exact.feuilles[0]!.recto.traits).toEqual([]);
+    expect(exact.feuilles[0]!.recto.lignes?.some((l) => l.genre === 'pli')).toBe(true);
+    // Rognage de face sur SRA4 : seules les lignes de coupe des tranches extérieures restent.
+    const face = calculerPlan({ ...livret, feuille: 'sra4', fonds_perdus_mm: 0, rognage: 'face' }, 8, undefined, sourceMarge(8));
+    expect(face.livret?.rognage).toBe('face');
+    const traits = face.feuilles[0]!.recto.traits!;
+    expect(traits.length).toBeGreaterThan(0);
+    expect(traits.every((t) => Math.abs(t.x1 - t.x2) < 0.01)).toBe(true);
+    const xs = new Set(traits.map((t) => t.x1));
+    expect(xs.size).toBe(2);
+    // Folios : pages 2 à 7 numérotées, couverture exclue, à l'extérieur de chaque page.
+    const fol = calculerPlan({ ...livret, folios: { actif: true } }, 8, undefined, sourceMarge(0));
+    const textes = fol.feuilles.flatMap((f) => [...(f.recto.textes ?? []), ...(f.verso?.textes ?? [])]);
+    expect(textes.map((t) => t.texte).sort()).toEqual(['1', '2', '3', '4', '5', '6']);
+    // Pages de garde : une feuille blanche en plus, en tête.
+    const gardes = calculerPlan({ ...livret, gardes: 4 }, 8, undefined, sourceMarge(0));
+    expect(gardes.feuilles[0]!.libelle).toBe('Gardes');
+    expect(gardes.nb_feuilles).toBe(3);
+    // Chasse calculée : 16 pages (4 feuilles) de 0,16 mm → 0,48 mm au total, dernière feuille intérieure décalée.
+    const chasse = calculerPlan({ ...livret, epaisseur_feuille_mm: 0.16 }, 16, undefined, sourceMarge(0));
+    expect(chasse.livret?.chasse_mm).toBeCloseTo(0.48, 2);
+    expect(chasse.feuilles[3]!.recto.poses[0]!.decalage_x).toBeCloseTo(0.48, 2);
+  });
+
   it('refuse une pose qui ne tient pas sur la feuille', () => {
     expect(() => calculerPlan({ ...base, feuille: 'a4', fini: { largeur: 300, hauteur: 300 } }, 1)).toThrow(/Aucune pose/);
   });

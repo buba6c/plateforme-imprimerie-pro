@@ -167,16 +167,23 @@ export function traitsFace(face: Face, feuille: { largeur: number; hauteur: numb
   return { traits, perdus };
 }
 
-/** Lignes de pli d'une face (pointillés en haut et en bas de la feuille, hors des poses). */
-export function lignesFace(face: Face, feuille: { largeur: number; hauteur: number }, mt: number): Ligne[] {
+/** Lignes de pli d'une face (pointillés aux deux bouts de la feuille, hors des poses). */
+export function lignesFace(face: Face, feuille: { largeur: number; hauteur: number }, mt: number, genre: Ligne['genre'] = 'pli'): Ligne[] {
   const lignes: Ligne[] = [];
+  const W = feuille.largeur;
   const H = feuille.hauteur;
   const long = 7.5;
   for (const x of face.plis) {
     const bas = { de: mt, a: Math.min(H - mt, long) };
     const haut = { de: Math.max(mt, H - long), a: H - mt };
-    if (bas.a - bas.de >= 1) lignes.push({ axe: 'x', pos: arr(x), de: arr(bas.de), a: arr(bas.a), genre: 'pli' });
-    if (haut.a - haut.de >= 1) lignes.push({ axe: 'x', pos: arr(x), de: arr(haut.de), a: arr(haut.a), genre: 'pli' });
+    if (bas.a - bas.de >= 1) lignes.push({ axe: 'x', pos: arr(x), de: arr(bas.de), a: arr(bas.a), genre });
+    if (haut.a - haut.de >= 1) lignes.push({ axe: 'x', pos: arr(x), de: arr(haut.de), a: arr(haut.a), genre });
+  }
+  for (const y of face.plis_h ?? []) {
+    const gauche = { de: mt, a: Math.min(W - mt, long) };
+    const droite = { de: Math.max(mt, W - long), a: W - mt };
+    if (gauche.a - gauche.de >= 1) lignes.push({ axe: 'y', pos: arr(y), de: arr(gauche.de), a: arr(gauche.a), genre });
+    if (droite.a - droite.de >= 1) lignes.push({ axe: 'y', pos: arr(y), de: arr(droite.de), a: arr(droite.a), genre });
   }
   return lignes;
 }
@@ -200,7 +207,7 @@ export function decorerPlan(plan: Plan, p: ParamsImposition, margeTechnique: num
       const r = traitsFace(face, plan.feuille, fp, gouttiere, style, margeTechnique);
       face.traits = r.traits;
       perdus += r.perdus;
-      face.lignes = style === 'aucun' ? [] : lignesFace(face, plan.feuille, margeTechnique);
+      face.lignes = style === 'aucun' && plan.livret?.rognage !== 'aucun' ? [] : [...lignesFace(face, plan.feuille, margeTechnique), ...(face.lignes ?? []).filter((l) => l.genre !== 'pli')];
       if (face.cote === 'recto') {
         for (const q of face.poses) {
           if (q.page === null && face.poses.length > 1) continue;

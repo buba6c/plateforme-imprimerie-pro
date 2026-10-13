@@ -129,7 +129,11 @@ export function resumeAuto(p: ParamsImposition, plan?: Plan | null): string {
   const fonds = plan && plan.coupe.systeme !== 'fonds_perdus'
     ? `sans fonds perdus (${libelleCoupe(plan.coupe, plan.fonds_perdus_mm).toLowerCase()})`
     : methodeEff === 'source' ? `fonds perdus du fichier (${fpEff} mm)` : methodeEff === 'intelligent' ? `fonds perdus générés bord par bord (${fpEff} mm)` : methodeEff === 'prolonger' ? `bords prolongés (${fpEff} mm)` : methodeEff === 'miroir' ? `fonds perdus en miroir (${fpEff} mm)` : methodeEff === 'etirer' ? 'fonds perdus par étirement' : 'sans fonds perdus';
-  if (p.operation === 'livret') return `Livret ${p.reliure === 'dos_carre' ? `dos carré collé (cahiers de ${p.cahier_feuilles ?? 4} feuilles)` : 'piqûre à cheval'} sur ${feuille}${p.couverture_separee ? ', couverture à part' : ''}${p.lecture === 'droite_gauche' ? ', lecture de droite à gauche' : ''}, ${fonds}.`;
+  if (p.operation === 'livret') {
+    const planches = plan?.livret && plan.livret.planches > 1 ? `, ${plan.livret.planches} planches par feuille (${plan.livret.mode === 'empile' ? 'empilées' : 'répétées'})` : '';
+    const reliure = p.reliure === 'dos_carre' ? `dos carré collé (cahiers de ${p.cahier_feuilles ?? 4} feuilles)` : p.reliure === 'feuilles_volantes' ? 'dos carré sur feuilles volantes' : 'piqûre à cheval';
+    return `Livret ${reliure}${p.reliure_bord === 'haut' ? ', relié en haut' : ''} sur ${feuille}${planches}${p.couverture_separee ? ', couverture à part' : ''}${plan?.livret?.dos_mm ? ` (dos ${plan.livret.dos_mm} mm)` : ''}${p.lecture === 'droite_gauche' ? ', lecture de droite à gauche' : ''}, ${fonds}${plan?.livret?.rognage ? `, ${plan.livret.rognage === 'aucun' ? 'plié non rogné' : plan.livret.rognage === 'face' ? 'rognage de face' : 'rogné sur trois côtés'}` : ''}.`;
+  }
   if (p.operation === 'fonds_perdus') return `Une page par page, ${fonds}, traits de coupe.`;
   if (p.operation === 'assembler') return 'Pièces réunies dans l’ordre, pages inchangées.';
   const mode = p.mode === 'repetition' ? 'même visuel sur toutes les poses' : p.mode === 'sequence' ? 'visuels à la suite' : 'coupe & empile';

@@ -21,6 +21,9 @@
 import { calculerAdaptation, calculerAdaptationCadre, type Adaptation, type MargesBlanches, type ModeAjustement } from './ajuster';
 import { FEUILLES, FONDS_PERDUS_STANDARD, type Dimension, type Feuille } from './formats';
 import { decorerPlan, type Ligne, type Segment, type Texte } from './reperes';
+import { completerBlanches, planLivret } from './livret';
+
+export { completerBlanches, planLivret };
 
 export type Operation = 'poses' | 'livret' | 'fonds_perdus' | 'assembler';
 export type ModePoses = 'repetition' | 'sequence' | 'coupe_empile';
@@ -125,13 +128,33 @@ export interface ParamsImposition {
   /** Appariement recto/verso des pages du document assemblé (posé par le serveur), sinon pages alternées. */
   paires?: { recto: number; verso: number | null }[] | null;
   /** Livret : piqûre à cheval (un seul cahier) ou dos carré collé (cahiers empilés). */
-  reliure?: 'piqure' | 'dos_carre';
+  reliure?: 'piqure' | 'dos_carre' | 'feuilles_volantes';
   /** Livret dos carré : feuilles par cahier (4 feuilles = 16 pages). */
   cahier_feuilles?: number;
   /** Livret : couverture (pages 1, 2, avant-dernière, dernière) sur une feuille à part (autre papier). */
   couverture_separee?: boolean;
   /** Livret : sens de lecture (droite à gauche pour l'arabe). */
   lecture?: 'gauche_droite' | 'droite_gauche';
+  /** Livret : planches (doubles pages) par feuille : 1, 2 ou 4. */
+  poses_livret?: 1 | 2 | 4;
+  /** Livret à plusieurs planches : la même planche partout (k livrets par jeu) ou les planches empilées (une pile par position, à empiler après la coupe). */
+  mode_planches?: 'repetition' | 'empile';
+  /** Livret : relié sur le bord gauche (pli vertical) ou en haut (pli horizontal : calendriers, blocs). */
+  reliure_bord?: 'gauche' | 'haut';
+  /** Dos carré : épaisseur du dos (mm), calculée d'après l'épaisseur d'une feuille si absente. */
+  dos_mm?: number | null;
+  /** Épaisseur d'une feuille (mm) : 80 g 0,10 ; 135 g 0,12 ; 170 g 0,16 ; 250 g 0,25 ; 300 g 0,30. */
+  epaisseur_feuille_mm?: number;
+  /** Couverture dos carré : rainages de mors à 7 mm de part et d'autre du dos. */
+  mors?: boolean;
+  /** Livret sans fonds perdus : rognage après pliage (auto : trois côtés si la feuille le permet, sinon aucun). */
+  rognage?: 'auto' | 'aucun' | 'face' | 'trois_cotes';
+  /** Folios (numéros de page) imprimés sur chaque page du livret. */
+  folios?: { actif: boolean; debut?: number; position?: 'bas_exterieur' | 'bas_centre' | 'haut_exterieur'; taille_pt?: number; exclure_couverture?: boolean } | null;
+  /** Pages de garde : une feuille blanche pliée en plus (0 ou 4 pages). */
+  gardes?: 0 | 4;
+  /** Chasse calculée d'après l'épaisseur des feuilles quand chasse_mm est absent (piqûre à cheval). */
+  chasse_auto?: boolean;
   /**
    * Planches : chaque page double est coupée en deux pages (« simple ») ; avec « couverture », la
    * première planche est la couverture à plat (4e à gauche, 1re à droite) : la 4e passe à la fin.
@@ -154,8 +177,10 @@ export interface Pose {
   rotation?: Rotation;
   /** Décalage de chasse appliqué (mm, positif vers la droite) : les pages intérieures vont vers le pli. */
   decalage_x?: number;
+  /** Chasse verticale (livret relié en haut), mm, positif vers le haut. */
+  decalage_y?: number;
   /** Livret : côté de la pose qui touche le pli ; aucun fond perdu ne déborde de ce côté sur la page voisine. */
-  pli?: 'gauche' | 'droite';
+  pli?: 'gauche' | 'droite' | 'haut' | 'bas';
   /** Côtés sans fonds perdus (pose jointive à une voisine) : fonds perdus partagés, coupe franche. */
   joints?: Cote[];
   /** Repère : rangée et colonne (0-based), et pour le livret, le côté. */
@@ -170,6 +195,8 @@ export interface Face {
   poses: Pose[];
   /** Traits de pli (livret), en x (mm). */
   plis: number[];
+  /** Plis horizontaux (livret relié en haut), en y (mm). */
+  plis_h?: number[];
   /** Repères de dos (dos carré) : petits rectangles pleins sur le pli, décalés d'un cahier à l'autre. */
   marques?: { x: number; y: number; largeur: number; hauteur: number }[];
   /** Traits de coupe (segments, mm) calculés par reperes.ts : le PDF et l'écran tracent exactement ceux-là. */
@@ -259,8 +286,23 @@ export interface Plan {
   cotes?: { x: number[]; y: number[] };
   /** Consignes pour l'imprimeur (pilote, massicot), à distinguer des avertissements. */
   consignes: string[];
+  /** Livret : ce qui a été retenu (planches, reliure, dos, rognage, chasse). */
+  livret?: InfoLivret;
   feuilles: FeuillePlan[];
   avertissements: string[];
+}
+
+export interface InfoLivret {
+  planches: number;
+  mode: 'repetition' | 'empile';
+  reliure: 'piqure' | 'dos_carre' | 'feuilles_volantes';
+  bord: 'gauche' | 'haut';
+  dos_mm: number | null;
+  /** Rognage retenu quand le livret est sans fonds perdus ; null avec fonds perdus. */
+  rognage: 'aucun' | 'face' | 'trois_cotes' | null;
+  chasse_mm: number;
+  /** Rognage « face » : positions (mm) des seules lignes de coupe gardées, sur l'axe indiqué. */
+  bords_face?: { axe: 'x' | 'y'; positions: number[] };
 }
 
 /** Ce que l'analyse sait du visuel reçu, pour décider la coupe et la mise au format. */
@@ -695,7 +737,8 @@ export function optimiser(p: ParamsImposition, source: SourcePlan | undefined, a
 // ---------------------------------------------------------------------------
 // Plans
 
-type PlanBrut = Omit<Plan, 'params_effectifs' | 'coupe' | 'calepinage' | 'retournement_effectif' | 'axe_verso' | 'consignes' | 'gouttiere_mm' | 'marge_mm'> & { retournement_effectif?: 'bord_long' | 'bord_court'; axe_verso?: 'vertical' | 'horizontal'; consignes?: string[] };
+export type PlanBrut = Omit<Plan, 'params_effectifs' | 'coupe' | 'calepinage' | 'retournement_effectif' | 'axe_verso' | 'consignes' | 'gouttiere_mm' | 'marge_mm'> & { retournement_effectif?: 'bord_long' | 'bord_court'; axe_verso?: 'vertical' | 'horizontal'; consignes?: string[] };
+export const arrondiMm = arr;
 
 /** Plan « poses ». `nbPages` : pages du PDF source. Les réglages sont ceux déjà résolus (coupe, calepinage). */
 export function planPoses(p: ParamsImposition, nbPages: number, mt = ATELIER_DEFAUT.marge_technique_mm): PlanBrut {
@@ -793,181 +836,6 @@ export function planPoses(p: ParamsImposition, nbPages: number, mt = ATELIER_DEF
 }
 
 /**
- * Plan « livret » : piqûre à cheval, 2 pages par face.
- *  - piqûre : un seul cahier, feuille s : recto [N−2s | 2s+1], verso [2s+2 | N−2s−1] ;
- *  - dos carré collé : cahiers de N feuilles empilés, chacun imposé comme un petit livret, repères de dos
- *    décalés pour vérifier l'ordre des cahiers ;
- *  - couverture séparée : pages 1, 2, avant-dernière et dernière sur une feuille à part (papier plus épais) ;
- *  - lecture de droite à gauche : pages miroir sur chaque face (livres en arabe).
- * Pages blanches ajoutées pour atteindre un multiple de 4. Le pli est vertical : l'axe de retournement est
- * toujours vertical (consigne pilote : bord long en portrait, bord court en paysage).
- */
-export function planLivret(p: ParamsImposition, nbPagesTotal: number): PlanBrut {
-  const avertissements: string[] = [];
-  // Avec des pièces recto/verso appariées, le livret suit l'ordre recto1, verso1, recto2, verso2…
-  const ordrePages = p.paires && p.paires.length ? p.paires.flatMap((x) => (x.verso !== null ? [x.recto, x.verso] : [x.recto])) : null;
-  const nbPages = ordrePages ? ordrePages.length : nbPagesTotal;
-  const base = dimensionFeuille(p);
-  const fini = p.fini;
-  const tient = (f: Dimension) => f.largeur + 0.5 >= 2 * fini.largeur && f.hauteur + 0.5 >= fini.hauteur;
-  const portrait = base;
-  const paysage = { largeur: base.hauteur, hauteur: base.largeur };
-  let feuille: Dimension;
-  let estPaysage: boolean;
-  if (p.orientation === 'portrait') [feuille, estPaysage] = [portrait, false];
-  else if (p.orientation === 'paysage') [feuille, estPaysage] = [paysage, true];
-  else if (tient(paysage)) [feuille, estPaysage] = [paysage, true];
-  else [feuille, estPaysage] = [portrait, false];
-  if (!tient(feuille)) throw new Error(`Deux pages ${fini.largeur} × ${fini.hauteur} mm côte à côte ne tiennent pas sur cette feuille : choisissez une feuille plus grande ou un format fini plus petit.`);
-  const fpVoulu = Math.max(0, p.fonds_perdus_mm);
-  const fpMax = Math.max(0, Math.min((feuille.largeur - 2 * fini.largeur) / 2, (feuille.hauteur - fini.hauteur) / 2));
-  const fp = arr(Math.min(fpVoulu, fpMax));
-  if (fp < fpVoulu) {
-    avertissements.push(fp > 0
-      ? `La feuille est juste : les fonds perdus sont réduits à ${fp} mm (${fpVoulu} mm demandés). Pour garder ${fpVoulu} mm, prenez une feuille plus grande (SRA4 pour un A5, SRA3 pour un A4).`
-      : `La feuille a exactement la taille de deux pages : aucun fond perdu ni trait de coupe possible. Pour en avoir, prenez une feuille plus grande (SRA4 pour un A5, SRA3 pour un A4).`);
-  }
-
-  let pages: (number | null)[] = ordrePages ? [...ordrePages] : Array.from({ length: nbPages }, (_, i) => i + 1);
-  const dosCarre = p.reliure === 'dos_carre';
-  const feuillesParCahier = dosCarre ? Math.min(16, Math.max(1, Math.round(p.cahier_feuilles ?? 4))) : Infinity;
-  // Blanches placées à la main : insérées d'abord, à leur place dans le document.
-  let placees = 0;
-  if (p.blanches === 'positions' && p.blanches_apres?.length) {
-    const apres = p.blanches_apres.filter((k) => Number.isInteger(k) && k >= 0 && k <= pages.length).sort((a, b) => b - a).slice(0, 64);
-    // -1 marque une blanche placée à la main (remplacée par null une fois l'ordre établi).
-    for (const k of apres) pages = [...pages.slice(0, k), -1, ...pages.slice(k)];
-    placees = apres.length;
-  }
-  const couvSeparee = !!p.couverture_separee && pages.length >= 4;
-
-  let couverture: (number | null)[] | null = null;
-  let interieur = pages;
-  if (couvSeparee) {
-    couverture = [pages[0]!, pages[1]!, pages[pages.length - 2]!, pages[pages.length - 1]!];
-    interieur = pages.slice(2, pages.length - 2);
-  }
-  const reste = interieur.length % 4;
-  const completees = reste === 0 ? 0 : 4 - reste;
-  if (completees) interieur = completerBlanches(interieur, completees, p.blanches, !couvSeparee);
-  const blanches = placees + completees;
-  if (completees) {
-    const total = interieur.length + (couverture ? 4 : 0);
-    const ou = { fin: 'à la fin', avant_derniere: couvSeparee ? 'à la fin de l’intérieur' : 'avant la 4e de couverture', apres_couverture: couvSeparee ? 'au début de l’intérieur' : 'après la 1re de couverture', reparties: couvSeparee ? 'au début et à la fin de l’intérieur' : 'en 2e et 3e de couverture', positions: couvSeparee ? 'à la fin de l’intérieur' : 'avant la 4e de couverture' }[p.blanches];
-    const impair = nbPages % 2 === 1 ? `Le document a un nombre impair de pages (${nbPages}). ` : '';
-    avertissements.push(`${impair}${completees} page${completees > 1 ? 's' : ''} blanche${completees > 1 ? 's' : ''} ajoutée${completees > 1 ? 's' : ''} ${ou} pour obtenir un multiple de 4 (${total} pages).${placees ? ` ${placees} autre${placees > 1 ? 's' : ''} placée${placees > 1 ? 's' : ''} à la main.` : ''}`);
-  } else if (placees) {
-    avertissements.push(`${placees} page${placees > 1 ? 's' : ''} blanche${placees > 1 ? 's' : ''} placée${placees > 1 ? 's' : ''} à la main.`);
-  }
-  const ordreBrut: (number | null)[] = couverture ? [couverture[0]!, couverture[1]!, ...interieur, couverture[2]!, couverture[3]!] : [...interieur];
-  const blanchesManuelles = ordreBrut.flatMap((v, i) => (v === -1 ? [i] : []));
-  const sansMarque = (l: (number | null)[]) => l.map((v) => (v === -1 ? null : v));
-  const ordre = sansMarque(ordreBrut);
-  interieur = sansMarque(interieur);
-  if (couverture) couverture = sansMarque(couverture);
-
-  const cahiers: (number | null)[][] = [];
-  const pagesParCahier = Number.isFinite(feuillesParCahier) ? feuillesParCahier * 4 : Math.max(4, interieur.length);
-  for (let i = 0; i < interieur.length; i += pagesParCahier) cahiers.push(interieur.slice(i, i + pagesParCahier));
-
-  const x0 = arr((feuille.largeur - 2 * fini.largeur) / 2);
-  const y0 = arr((feuille.hauteur - fini.hauteur) / 2);
-  const chasseTotale = Math.max(0, p.chasse_mm ?? 0);
-  const droiteGauche = p.lecture === 'droite_gauche';
-  const pli = arr(feuille.largeur / 2);
-  const feuilles: FeuillePlan[] = [];
-
-  const face = (cote: 'recto' | 'verso', gauche: number | null, droite: number | null, dec: number, marques?: Face['marques']): Face => {
-    const [g, d] = droiteGauche ? [droite, gauche] : [gauche, droite];
-    const pose = (page: number | null, aGauche: boolean): Pose => ({
-      page,
-      numero: null,
-      // Chasse : les pages des feuilles intérieures dépassent à la coupe une fois pliées ; leur visuel
-      // est rapproché du pli d'autant, pour garder les mêmes marges extérieures d'une page à l'autre.
-      x: arr(aGauche ? x0 + dec : x0 + fini.largeur - dec),
-      y: y0,
-      largeur: fini.largeur,
-      hauteur: fini.hauteur,
-      decalage_x: aGauche ? dec : -dec,
-      pli: aGauche ? 'droite' : 'gauche',
-      joints: [aGauche ? 'droite' : 'gauche'],
-      rang: 0,
-      colonne: aGauche ? 0 : 1,
-    });
-    return { cote, poses: [pose(g, true), pose(d, false)], plis: [pli], ...(marques ? { marques } : {}) };
-  };
-
-  if (couverture) {
-    feuilles.push({ numero: 1, libelle: 'Couverture', recto: face('recto', couverture[3]!, couverture[0]!, 0), verso: face('verso', couverture[1]!, couverture[2]!, 0) });
-  }
-  cahiers.forEach((c, ci) => {
-    const n = c.length;
-    const nbF = n / 4;
-    for (let s2 = 0; s2 < nbF; s2++) {
-      const dec = nbF > 1 ? arr((chasseTotale * s2) / (nbF - 1)) : 0;
-      const crans = Math.max(1, Math.floor((fini.hauteur - 16) / 5));
-      const marques = dosCarre && s2 === 0 ? [{ x: arr(pli - 1.5), y: arr(feuille.hauteur - y0 - 8 - (ci % crans) * 5 - 5), largeur: 3, hauteur: 5 }] : undefined;
-      feuilles.push({
-        numero: feuilles.length + 1,
-        libelle: cahiers.length > 1 || couverture ? `Cahier ${ci + 1} · feuille ${s2 + 1}/${nbF}` : `Feuille ${s2 + 1}/${nbF}`,
-        recto: face('recto', c[n - 1 - 2 * s2] ?? null, c[2 * s2] ?? null, dec, marques),
-        verso: face('verso', c[2 * s2 + 1] ?? null, c[n - 2 - 2 * s2] ?? null, dec),
-      });
-    }
-  });
-  if (dosCarre && cahiers.length > 1) avertissements.push(`Dos carré collé : ${cahiers.length} cahiers de ${feuillesParCahier} feuille${feuillesParCahier > 1 ? 's' : ''} (le dernier peut être plus court). Les repères noirs sur le dos doivent former un escalier une fois les cahiers empilés.`);
-  if (p.recto_verso === false) avertissements.push('Un livret est toujours recto-verso : les deux faces de chaque feuille sont générées.');
-  const nbFeuilles = feuilles.length;
-  // Le pli est vertical : le verso est le miroir gauche-droite, quel que soit le réglage demandé.
-  const retournement: 'bord_long' | 'bord_court' = estPaysage ? 'bord_court' : 'bord_long';
-  const consignes = [`Pilote Xerox : recto-verso, retourner sur le ${retournement === 'bord_long' ? 'bord long' : 'bord court'} (feuille ${estPaysage ? 'paysage' : 'portrait'}).`];
-  return {
-    operation: 'livret',
-    feuille,
-    paysage: estPaysage,
-    fini,
-    fonds_perdus_mm: fp,
-    colonnes: 2,
-    rangs: 1,
-    poses_par_face: 2,
-    nb_feuilles: nbFeuilles,
-    nb_pages_sortie: nbFeuilles * 2,
-    feuilles_a_imprimer: p.quantite && p.quantite > 0 ? nbFeuilles * p.quantite : nbFeuilles,
-    pages_blanches: blanches,
-    ordre,
-    blanches_manuelles: blanchesManuelles,
-    feuilles,
-    avertissements,
-    retournement_effectif: retournement,
-    axe_verso: 'vertical',
-    consignes,
-  };
-}
-
-/**
- * Complète une suite de pages avec `n` blanches selon le mode. `couvertures` : la première et la
- * dernière page de la suite sont les couvertures (on ne les déplace pas à l'intérieur).
- */
-export function completerBlanches(pages: (number | null)[], n: number, mode: ModeBlanches, couvertures: boolean): (number | null)[] {
-  if (n <= 0) return pages;
-  const b = (k: number) => Array<null>(k).fill(null);
-  const debut = (k: number) => (couvertures && pages.length >= 1 ? [pages[0]!, ...b(k), ...pages.slice(1)] : [...b(k), ...pages]);
-  const avantFin = (liste: (number | null)[], k: number) => (couvertures && liste.length >= 2 ? [...liste.slice(0, -1), ...b(k), liste[liste.length - 1]!] : [...liste, ...b(k)]);
-  switch (mode) {
-    case 'fin':
-      return [...pages, ...b(n)];
-    case 'apres_couverture':
-      return debut(n);
-    case 'reparties':
-      return avantFin(debut(1), n - 1);
-    case 'avant_derniere':
-    case 'positions':
-    default:
-      return avantFin(pages, n);
-  }
-}
-
-/**
  * Plan « fonds perdus » : une page de sortie par page source, format fini + fonds perdus (+ traits).
  * `sansMarge` (coupe « aucune ») : la feuille est exactement le format fini, sans trait.
  */
@@ -1061,6 +929,15 @@ export function calculerPlan(p0: ParamsImposition, nbPages: number, pages?: { la
       consignes: brut.consignes ?? [],
     };
     decorerPlan(plan, pEff, mt);
+    // Livret sans fonds perdus : rognage « aucun » (plié seulement) ou « face » (seule la tranche opposée au pli est coupée).
+    const rognage = plan.livret?.rognage;
+    if (rognage === 'aucun' || rognage === 'face') {
+      const bords = plan.livret?.bords_face;
+      for (const f of plan.feuilles) for (const face of [f.recto, f.verso]) {
+        if (!face?.traits) continue;
+        face.traits = rognage === 'aucun' || !bords ? [] : face.traits.filter((t) => (bords.axe === 'x' ? Math.abs(t.x1 - t.x2) < 0.01 && bords.positions.some((x) => Math.abs(x - t.x1) < 0.01) : Math.abs(t.y1 - t.y2) < 0.01 && bords.positions.some((y) => Math.abs(y - t.y1) < 0.01)));
+      }
+    }
     return plan;
   };
   if (p.operation === 'assembler') {
@@ -1092,7 +969,7 @@ export function calculerPlan(p0: ParamsImposition, nbPages: number, pages?: { la
   const brut = coupe.systeme === 'aucune' && pEff.operation !== 'livret'
     ? planFondsPerdus(pEff, nbPages, true)
     : pEff.operation === 'livret'
-      ? planLivret(pEff, nbPages)
+      ? planLivret(pEff, nbPages, coupe.systeme !== 'fonds_perdus')
       : pEff.operation === 'fonds_perdus'
         ? planFondsPerdus(pEff, nbPages)
         : planPoses(pEff, nbPages, mt);

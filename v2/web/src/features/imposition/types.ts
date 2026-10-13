@@ -66,7 +66,17 @@ export interface ParamsImposition {
   blanches: ModeBlanches;
   blanches_apres?: number[];
   planches?: ModePlanches;
-  reliure?: 'piqure' | 'dos_carre';
+  reliure?: 'piqure' | 'dos_carre' | 'feuilles_volantes';
+  poses_livret?: 1 | 2 | 4;
+  mode_planches?: 'repetition' | 'empile';
+  reliure_bord?: 'gauche' | 'haut';
+  dos_mm?: number | null;
+  epaisseur_feuille_mm?: number;
+  mors?: boolean;
+  rognage?: 'auto' | 'aucun' | 'face' | 'trois_cotes';
+  folios?: { actif: boolean; debut?: number; position?: 'bas_exterieur' | 'bas_centre' | 'haut_exterieur'; taille_pt?: number; exclure_couverture?: boolean } | null;
+  gardes?: 0 | 4;
+  chasse_auto?: boolean;
   cahier_feuilles?: number;
   couverture_separee?: boolean;
   lecture?: 'gauche_droite' | 'droite_gauche';
@@ -81,7 +91,8 @@ export interface Pose {
   hauteur: number;
   rotation?: Rotation;
   decalage_x?: number;
-  pli?: 'gauche' | 'droite';
+  decalage_y?: number;
+  pli?: 'gauche' | 'droite' | 'haut' | 'bas';
   joints?: Cote[];
   rang: number;
   colonne: number;
@@ -114,6 +125,7 @@ export interface Face {
   cote: 'recto' | 'verso';
   poses: Pose[];
   plis: number[];
+  plis_h?: number[];
   marques?: { x: number; y: number; largeur: number; hauteur: number }[];
   traits?: Segment[];
   lignes?: Ligne[];
@@ -181,6 +193,7 @@ export interface Plan {
   axe_verso: 'vertical' | 'horizontal';
   cotes?: { x: number[]; y: number[] };
   consignes: string[];
+  livret?: { planches: number; mode: 'repetition' | 'empile'; reliure: 'piqure' | 'dos_carre' | 'feuilles_volantes'; bord: 'gauche' | 'haut'; dos_mm: number | null; rognage: 'aucun' | 'face' | 'trois_cotes' | null; chasse_mm: number };
   feuilles: FeuillePlan[];
   avertissements: string[];
 }
@@ -456,4 +469,16 @@ export const RETOURNEMENT_LABELS: Record<Retournement, { label: string; aide: st
   auto: { label: 'Auto', aide: 'Le bord qui évite de tourner le verso ; la consigne pilote est donnée dans le rapport.' },
   bord_long: { label: 'Bord long', aide: 'La Xerox retourne la feuille sur son bord long.' },
   bord_court: { label: 'Bord court', aide: 'La Xerox retourne la feuille sur son bord court.' },
+};
+
+export const RELIURE_LABELS: Record<'piqure' | 'dos_carre' | 'feuilles_volantes', { label: string; aide: string }> = {
+  piqure: { label: 'Piqûre à cheval', aide: 'Agrafée au pli, jusqu’à 64 pages.' },
+  dos_carre: { label: 'Dos carré collé', aide: 'Cahiers empilés puis collés, pour les gros volumes.' },
+  feuilles_volantes: { label: 'Dos carré feuilles volantes', aide: 'Chaque feuillet est une pose ; les piles empilées forment le bloc, fraisé puis collé (mémoires, rapports).' },
+};
+export const ROGNAGE_LABELS: Record<'auto' | 'aucun' | 'face' | 'trois_cotes', { label: string; aide: string }> = {
+  auto: { label: 'Auto', aide: 'Trois côtés si la feuille laisse de la marge, sinon plié non rogné.' },
+  aucun: { label: 'Plié, non rogné', aide: 'Feuille exacte : agrafer et plier, sans massicot (la tranche montre l’escalier des feuilles).' },
+  face: { label: 'Face seulement', aide: 'Une coupe sur la tranche opposée au pli, tête et pied gardés.' },
+  trois_cotes: { label: 'Trois côtés', aide: 'Tête, pied et face coupés : livret net, il faut une feuille plus grande.' },
 };

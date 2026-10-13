@@ -246,17 +246,22 @@ async function dessinerPose(page: PDFPage, src: Source, pose: Pose, params: Para
   const r = RECOUVREMENT / 2;
   let x1 = x - fp - 2, x2 = x + w + fp + 2, y1 = y - fp - 2, y2 = y + h + fp + 2;
   let restreint = false;
-  if (local.pli) {
+  if (local.pli === 'droite' || local.pli === 'gauche') {
     const pli = (local.pli === 'droite' ? x + w : x) - pt(local.decalage_x ?? 0);
     if (local.pli === 'droite') x2 = pli;
     else x1 = pli;
     restreint = true;
+  } else if (local.pli === 'haut' || local.pli === 'bas') {
+    const pli = (local.pli === 'haut' ? y + h : y) - pt(local.decalage_y ?? 0);
+    if (local.pli === 'haut') y2 = pli;
+    else y1 = pli;
+    restreint = true;
   }
   for (const cote of local.joints ?? []) {
-    if (cote === 'gauche' && !local.pli) x1 = x;
-    if (cote === 'droite' && !local.pli) x2 = x + w + r;
-    if (cote === 'bas') y1 = y - r;
-    if (cote === 'haut') y2 = y + h;
+    if (cote === 'gauche' && local.pli !== 'gauche') x1 = x;
+    if (cote === 'droite' && local.pli !== 'droite') x2 = x + w + r;
+    if (cote === 'bas' && local.pli !== 'bas') y1 = y - r;
+    if (cote === 'haut' && local.pli !== 'haut') y2 = y + h;
     restreint = true;
   }
   if (restreint) page.pushOperators(pushGraphicsState(), rectangle(x1, y1, x2 - x1, y2 - y1), clip(), endPath());

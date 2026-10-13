@@ -23,7 +23,7 @@ import { SchemaFeuille, type AffichageSchema } from '../../features/imposition/S
 import { ListeFeuilles, PagesDocument } from '../../features/imposition/VuePages';
 import { libelleCoupe, reglagesPour, resumeAuto, rolesAuto, texteAdaptation } from '../../features/imposition/auto';
 import { useApercuPage } from '../../features/imposition/rendu';
-import { AJUSTEMENT_LABELS, BLANCHES_LABELS, CALAGE_LABELS, COUPE_LABELS, FOURNISSEUR_LABELS_IA, METHODE_LABELS, MODE_LABELS, OPERATION_LABELS, PLANCHES_LABELS, RETOURNEMENT_LABELS, ROTATION_POSES_LABELS, SYSTEME_COUPE_LABELS, SYSTEME_LABELS, TETE_BECHE_LABELS, TRAITS_LABELS, type Calage, type Coupe, type Dimension, type Feuille, type ModeAjustement, type ModeBlanches, type ModeleImposition, type ModePlanches, type Operation, type ParamsImposition, type Piece, type PieceAnalysee, type Plan, type PropositionImposition, type ReponseAnalyse, type ResultatGeneration, type Retournement, type RolePiece, type RotationPoses, type StyleTraits, type TeteBeche } from '../../features/imposition/types';
+import { AJUSTEMENT_LABELS, BLANCHES_LABELS, CALAGE_LABELS, COUPE_LABELS, FOURNISSEUR_LABELS_IA, METHODE_LABELS, MODE_LABELS, OPERATION_LABELS, PLANCHES_LABELS, RELIURE_LABELS, RETOURNEMENT_LABELS, ROGNAGE_LABELS, ROTATION_POSES_LABELS, SYSTEME_COUPE_LABELS, SYSTEME_LABELS, TETE_BECHE_LABELS, TRAITS_LABELS, type Calage, type Coupe, type Dimension, type Feuille, type ModeAjustement, type ModeBlanches, type ModeleImposition, type ModePlanches, type Operation, type ParamsImposition, type Piece, type PieceAnalysee, type Plan, type PropositionImposition, type ReponseAnalyse, type ResultatGeneration, type Retournement, type RolePiece, type RotationPoses, type StyleTraits, type TeteBeche } from '../../features/imposition/types';
 import '../../features/imposition/imposition.css';
 import { apercuUrl, fichierUrl, messageErreur } from '../../lib/api';
 import { Alert, Button, Checkbox, ConfirmDialog, Dialog, MachineChip, PageHeader, Ref, SelectField, Skeleton, TextField, TextareaField, useToast } from '../../ui';
@@ -283,15 +283,48 @@ function Reglages({ p, onChange, nbPages, analyse, plan }: { p: ParamsImposition
       {p.operation === 'livret' && (
         <div className="ws__section">
           <p className="ws__section-titre">Brochure</p>
-          <OptionCartes name="imp-reliure" label="Reliure" tone="violet" compact value={p.reliure ?? 'piqure'} onChange={(reliure) => maj({ reliure, chasse_mm: reliure === 'dos_carre' ? 0 : p.chasse_mm })}
+          <OptionCartes<'piqure' | 'dos_carre' | 'feuilles_volantes'> name="imp-reliure" label="Reliure" tone="violet" compact value={p.reliure ?? 'piqure'} onChange={(reliure) => maj({ reliure, chasse_mm: reliure === 'dos_carre' ? 0 : p.chasse_mm })}
             options={[
-              { value: 'piqure' as const, label: 'Piqûre à cheval', aide: 'Agrafée au pli, jusqu’à 64 pages', picto: <PictoOperation op="livret" /> },
-              { value: 'dos_carre' as const, label: 'Dos carré collé', aide: 'Cahiers empilés puis collés, pour les gros volumes', picto: <svg viewBox="0 0 48 36" width="48" height="36" fill="none" stroke="currentColor" strokeWidth="1.6" aria-hidden="true"><rect x="8" y="5" width="32" height="26" rx="1" fill="currentColor" fillOpacity="0.15" /><path d="M8 5v26M11 5v26M14 5v26" /><rect x="5" y="5" width="3" height="26" fill="currentColor" fillOpacity="0.5" /></svg> },
+              { value: 'piqure' as const, label: RELIURE_LABELS.piqure.label, aide: RELIURE_LABELS.piqure.aide, picto: <PictoOperation op="livret" /> },
+              { value: 'dos_carre' as const, label: RELIURE_LABELS.dos_carre.label, aide: RELIURE_LABELS.dos_carre.aide, picto: <svg viewBox="0 0 48 36" width="48" height="36" fill="none" stroke="currentColor" strokeWidth="1.6" aria-hidden="true"><rect x="8" y="5" width="32" height="26" rx="1" fill="currentColor" fillOpacity="0.15" /><path d="M8 5v26M11 5v26M14 5v26" /><rect x="5" y="5" width="3" height="26" fill="currentColor" fillOpacity="0.5" /></svg> },
+              { value: 'feuilles_volantes' as const, label: RELIURE_LABELS.feuilles_volantes.label, aide: RELIURE_LABELS.feuilles_volantes.aide, picto: <svg viewBox="0 0 48 36" width="48" height="36" fill="none" stroke="currentColor" strokeWidth="1.6" aria-hidden="true"><rect x="10" y="4" width="26" height="28" rx="1" fill="currentColor" fillOpacity="0.15" /><path d="M10 9h26M10 14h26M10 19h26M10 24h26M10 29h26" strokeWidth="0.8" /><rect x="7" y="4" width="3" height="28" fill="currentColor" fillOpacity="0.5" /></svg> },
             ]}
           />
           {p.reliure === 'dos_carre' && (
             <Nombre label="Feuilles par cahier" value={p.cahier_feuilles ?? 4} onChange={(v) => maj({ cahier_feuilles: Math.round(v) })} min={1} max={16} step={1} addon="" help={`${(p.cahier_feuilles ?? 4) * 4} pages par cahier. 4 feuilles (16 pages) est le plus courant.`} />
           )}
+          {p.reliure !== 'feuilles_volantes' && (
+            <OptionCartes<'1' | '2' | '4'> name="imp-planches" label="Planches par feuille" tone="violet" compact value={String(p.poses_livret ?? 1) as '1' | '2' | '4'} onChange={(v) => maj({ poses_livret: Number(v) as 1 | 2 | 4 })}
+              options={[
+                { value: '1', label: '1 planche', aide: 'Une double page par feuille.', picto: <svg viewBox="0 0 48 36" width="48" height="36" fill="none" stroke="currentColor" strokeWidth="1.6" aria-hidden="true"><rect x="6" y="6" width="36" height="24" rx="1" fill="currentColor" fillOpacity="0.2" /><path d="M24 6v24" strokeDasharray="3 2" /></svg> },
+                { value: '2', label: '2 planches', aide: 'Deux doubles pages par feuille (A5 sur SRA3) : moitié moins de feuilles.', picto: <svg viewBox="0 0 48 36" width="48" height="36" fill="none" stroke="currentColor" strokeWidth="1.6" aria-hidden="true"><rect x="6" y="3" width="36" height="14" rx="1" fill="currentColor" fillOpacity="0.2" /><rect x="6" y="19" width="36" height="14" rx="1" fill="currentColor" fillOpacity="0.2" /><path d="M24 3v14M24 19v14" strokeDasharray="3 2" /></svg> },
+                { value: '4', label: '4 planches', aide: 'Quatre doubles pages par feuille (A6 sur SRA3).', picto: <svg viewBox="0 0 48 36" width="48" height="36" fill="none" stroke="currentColor" strokeWidth="1.6" aria-hidden="true">{[0, 1].flatMap((r) => [0, 1].map((c) => <rect key={`${r}${c}`} x={5 + c * 20} y={3 + r * 16} width="18" height="14" rx="1" fill="currentColor" fillOpacity="0.2" />))}<path d="M14 3v14M34 3v14M14 19v14M34 19v14" strokeDasharray="2 2" /></svg> },
+              ]}
+            />
+          )}
+          {(p.poses_livret ?? 1) > 1 && (
+            <OptionCartes<'empile' | 'repetition'> name="imp-mode-planches" label="Plusieurs planches par feuille" tone="violet" compact value={p.mode_planches ?? 'empile'} onChange={(mode_planches) => maj({ mode_planches })}
+              options={[
+                { value: 'empile', label: 'Empiler', aide: 'Les planches se suivent d’une position à l’autre : une pile par position, empilées = un livret.', picto: <PictoMode mode="coupe_empile" /> },
+                { value: 'repetition', label: 'Répéter', aide: 'La même planche partout : chaque jeu de feuilles donne plusieurs livrets.', picto: <PictoMode mode="repetition" /> },
+              ]}
+            />
+          )}
+          {p.reliure !== 'feuilles_volantes' && (
+            <OptionCartes<'gauche' | 'haut'> name="imp-bord" label="Reliure sur le bord" tone="teal" compact value={p.reliure_bord ?? 'gauche'} onChange={(reliure_bord) => maj({ reliure_bord })}
+              options={[
+                { value: 'gauche', label: 'Gauche', aide: 'Livre, brochure : pli vertical.', picto: <PictoOperation op="livret" /> },
+                { value: 'haut', label: 'Haut', aide: 'Calendrier, bloc : pli horizontal, on feuillette par le haut.', picto: <svg viewBox="0 0 48 36" width="48" height="36" fill="none" stroke="currentColor" strokeWidth="1.6" aria-hidden="true"><rect x="10" y="3" width="28" height="30" rx="1" fill="currentColor" fillOpacity="0.15" /><path d="M10 18h28" strokeDasharray="3 2" /><path d="M15 9h18M15 25h18" strokeWidth="1" /></svg> },
+              ]}
+            />
+          )}
+          {p.reliure === 'dos_carre' && p.couverture_separee && (
+            <div className="imp-ligne">
+              <Nombre label="Épaisseur d’une feuille" value={p.epaisseur_feuille_mm ?? 0.1} onChange={(v) => maj({ epaisseur_feuille_mm: v })} min={0.05} max={0.5} step={0.01} help="80 g : 0,10 · 135 g : 0,12 · 170 g : 0,16 · 250 g : 0,25 · 300 g : 0,30." />
+              <Nombre label={`Dos${plan?.livret?.dos_mm != null && (p.dos_mm == null) ? ` (calculé : ${plan.livret.dos_mm} mm)` : ''}`} value={p.dos_mm ?? plan?.livret?.dos_mm ?? 0} onChange={(v) => maj({ dos_mm: v > 0 ? v : null })} max={60} step={0.5} help="0 pour reprendre le dos calculé d’après l’épaisseur." />
+            </div>
+          )}
+          {p.reliure === 'dos_carre' && p.couverture_separee && <Checkbox label="Rainages de mors (7 mm de part et d’autre du dos)" checked={!!p.mors} onChange={(mors) => maj({ mors })} />}
           <OptionCartes name="imp-lecture" label="Sens de lecture" tone="teal" compact value={p.lecture ?? 'gauche_droite'} onChange={(lecture) => maj({ lecture })}
             options={[
               { value: 'gauche_droite' as const, label: 'Gauche → droite', aide: 'Français, anglais', picto: <svg viewBox="0 0 48 36" width="48" height="36" fill="none" stroke="currentColor" strokeWidth="1.6" aria-hidden="true"><path d="M10 18h26" /><path d="M31 13l5 5-5 5" /></svg> },
@@ -299,7 +332,16 @@ function Reglages({ p, onChange, nbPages, analyse, plan }: { p: ParamsImposition
             ]}
           />
           <Checkbox label="Couverture à part (pages 1, 2, avant-dernière et dernière sur une feuille séparée, papier plus épais)" checked={!!p.couverture_separee} onChange={(couverture_separee) => maj({ couverture_separee })} />
-          {p.reliure !== 'dos_carre' && <Nombre label="Chasse (décalage des feuilles intérieures)" value={p.chasse_mm ?? 0} onChange={(v) => maj({ chasse_mm: v })} max={10} step={0.1} help="0 pour une brochure fine ; environ 0,1 mm par feuille au-delà de 40 pages." />}
+          {p.reliure === 'piqure' || !p.reliure ? (
+            <Nombre label={`Chasse (décalage des feuilles intérieures)${plan?.livret && !(p.chasse_mm && p.chasse_mm > 0) ? ` · calculée : ${plan.livret.chasse_mm} mm` : ''}`} value={p.chasse_mm ?? 0} onChange={(v) => maj({ chasse_mm: v, chasse_auto: v > 0 ? false : p.chasse_auto })} max={10} step={0.1} help="0 = calculée d’après l’épaisseur des feuilles (environ 0,1 mm par feuille)." />
+          ) : null}
+          {plan?.livret?.rognage && (
+            <OptionCartes<'auto' | 'aucun' | 'face' | 'trois_cotes'> name="imp-rognage" label="Rognage (livret sans fonds perdus)" tone="orange" compact value={p.rognage ?? 'auto'} onChange={(rognage) => maj({ rognage })}
+              options={(Object.keys(ROGNAGE_LABELS) as ('auto' | 'aucun' | 'face' | 'trois_cotes')[]).map((m) => ({ value: m, label: ROGNAGE_LABELS[m].label, aide: ROGNAGE_LABELS[m].aide, picto: <PictoTraitsStyle style={m === 'aucun' ? 'aucun' : m === 'face' ? 'bord_feuille' : 'bloc'} /> }))}
+            />
+          )}
+          <Checkbox label="Numéroter les pages (folios en bas, à l’extérieur ; couverture sans numéro)" checked={!!p.folios?.actif} onChange={(on) => maj({ folios: on ? { actif: true, debut: 1, position: 'bas_exterieur', taille_pt: 9, exclure_couverture: true } : null })} />
+          <Checkbox label="Pages de garde : une feuille blanche pliée en plus" checked={p.gardes === 4} onChange={(on) => maj({ gardes: on ? 4 : 0 })} />
           <SelectField label={`Pages blanches${plan?.pages_blanches ? ` (${plan.pages_blanches} ajoutée${plan.pages_blanches > 1 ? 's' : ''} pour un multiple de 4)` : ''}`} value={p.blanches} onChange={(e) => maj({ blanches: e.target.value as ModeBlanches })} options={(Object.keys(BLANCHES_LABELS) as ModeBlanches[]).map((m) => ({ value: m, label: BLANCHES_LABELS[m].label }))} help={BLANCHES_LABELS[p.blanches]?.aide} />
           {p.blanches === 'positions' && (p.blanches_apres?.length ?? 0) > 0 && (
             <p className="ev-help" style={{ margin: 0 }}>{p.blanches_apres!.length} blanche{p.blanches_apres!.length > 1 ? 's' : ''} placée{p.blanches_apres!.length > 1 ? 's' : ''} à la main (vue « Pages »). <button type="button" className="ev-btn ev-btn--ghost ev-btn--sm" onClick={() => maj({ blanches: 'avant_derniere', blanches_apres: [] })}>Tout retirer</button></p>

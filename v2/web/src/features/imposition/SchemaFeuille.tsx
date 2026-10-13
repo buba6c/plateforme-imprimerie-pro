@@ -202,20 +202,25 @@ export function SchemaFeuille({
           const pg = pageDe(q.page);
           const fontSize = Math.max(8, Math.min(16, Math.min(w, h) / 3));
           // Côtés sans fonds perdus : pli d'un livret (coupé au pli, chasse comprise) ou côtés joints à une voisine.
-          const pli = q.pli ? ((q.pli === 'droite' ? x + w : x) - (q.decalage_x ?? 0) * k) : null;
           let cx1 = x - fp - 4, cx2 = x + w + fp + 4, cy1 = y - fp - 4, cy2 = y + h + fp + 4;
           let restreint = false;
-          if (pli !== null) {
+          if (q.pli === 'droite' || q.pli === 'gauche') {
+            const pli = (q.pli === 'droite' ? x + w : x) - (q.decalage_x ?? 0) * k;
             if (q.pli === 'droite') cx2 = pli;
             else cx1 = pli;
             restreint = true;
+          } else if (q.pli === 'bas' || q.pli === 'haut') {
+            // Pli horizontal (relié en haut) ; en SVG, y descend : le pli « bas » d'une pose est sous elle.
+            if (q.pli === 'bas') cy2 = y + h + (q.decalage_y ?? 0) * k;
+            else cy1 = y + (q.decalage_y ?? 0) * k;
+            restreint = true;
           }
           for (const c of q.joints ?? []) {
-            if (c === 'gauche' && !q.pli) cx1 = x;
-            if (c === 'droite' && !q.pli) cx2 = x + w;
+            if (c === 'gauche' && q.pli !== 'gauche') cx1 = x;
+            if (c === 'droite' && q.pli !== 'droite') cx2 = x + w;
             // En SVG, y descend : « haut » de la pose = petit y.
-            if (c === 'haut') cy1 = y;
-            if (c === 'bas') cy2 = y + h;
+            if (c === 'haut' && q.pli !== 'haut') cy1 = y;
+            if (c === 'bas' && q.pli !== 'bas') cy2 = y + h;
             restreint = true;
           }
           const clipJoints = restreint ? `${uid}-joints-${i}` : undefined;

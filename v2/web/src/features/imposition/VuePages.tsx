@@ -93,7 +93,7 @@ interface Emplacement {
   feuille: number;
   index: number;
   cote: 'recto' | 'verso';
-  position: 'gauche' | 'droite' | number;
+  position: 'gauche' | 'droite' | 'haut' | 'bas' | number;
 }
 
 /** Où chaque page du document est imposée (première pose trouvée). */
@@ -104,7 +104,7 @@ function emplacements(plan: Plan): Map<number, Emplacement> {
       if (!face) continue;
       face.poses.forEach((q, k) => {
         if (q.page === null || m.has(q.page)) return;
-        m.set(q.page, { feuille: f.numero, index, cote: face.cote, position: plan.operation === 'livret' ? (q.colonne === 0 ? 'gauche' : 'droite') : k + 1 });
+        m.set(q.page, { feuille: f.numero, index, cote: face.cote, position: plan.operation === 'livret' ? (q.pli === 'bas' ? 'haut' : q.pli === 'haut' ? 'bas' : plan.livret?.reliure === 'feuilles_volantes' ? k + 1 : q.colonne === 0 ? 'gauche' : 'droite') : k + 1 });
       });
     }
   });
