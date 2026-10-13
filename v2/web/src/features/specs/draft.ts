@@ -41,6 +41,8 @@ export interface LigneRolandDraft {
   finitions: ChoixDraft[];
   options: string[];
   description: string;
+  /** Prix convenu par exemplaire (FCFA), remplace la grille pour cette ligne ; '' = calcul normal. */
+  prix_convenu: string;
   /** '' : non précisé (anciennes lignes). */
   bords: BordsRoland | '';
   oeillets_position: PositionOeillets;
@@ -58,6 +60,8 @@ export interface LigneXeroxDraft {
   finitions: ChoixDraft[];
   options: string[];
   description: string;
+  /** Prix convenu par exemplaire (FCFA), remplace la grille pour cette ligne ; '' = calcul normal. */
+  prix_convenu: string;
   type_document: TypeDocument | '';
   partie: PartieLigne | '';
   /** '' : support choisi directement dans la grille (anciennes lignes). */
@@ -109,6 +113,7 @@ export function ligneRolandVide(): LigneRolandDraft {
     finitions: [],
     options: [],
     description: '',
+    prix_convenu: '',
     bords: 'aucun',
     oeillets_position: 'tous_cotes',
     oeillets_espacement: String(ESPACEMENT_OEILLETS_DEFAUT_CM),
@@ -126,6 +131,7 @@ export function ligneXeroxVide(): LigneXeroxDraft {
     finitions: [],
     options: [],
     description: '',
+    prix_convenu: '',
     type_document: '',
     partie: '',
     format: '',
@@ -179,6 +185,7 @@ export function specsVersDraft(machine: Machine, specs: Partial<Specs> | null | 
       finitions: choix(l.finitions),
       options: [...(l.options ?? [])],
       description: l.description ?? '',
+      prix_convenu: txt(l.prix_convenu),
       bords: l.bords ?? '',
       oeillets_position: l.oeillets?.position ?? 'tous_cotes',
       oeillets_espacement: txt(l.oeillets?.espacement_cm ?? ESPACEMENT_OEILLETS_DEFAUT_CM),
@@ -194,6 +201,7 @@ export function specsVersDraft(machine: Machine, specs: Partial<Specs> | null | 
       finitions: choix(l.finitions),
       options: [...(l.options ?? [])],
       description: l.description ?? '',
+      prix_convenu: txt(l.prix_convenu),
       type_document: l.type_document ?? '',
       partie: l.partie ?? '',
       format: l.format ?? '',
@@ -234,6 +242,8 @@ function choixVersApi(c: ChoixDraft[]) {
 
 function ligneVersApi(machine: Machine, l: LigneRolandDraft | LigneXeroxDraft) {
   const description = l.description.trim() || null;
+  // Prix convenu : envoyé seulement s'il est saisi (null efface un prix convenu antérieur).
+  const prix_convenu = l.prix_convenu.trim() === '' ? null : lireEntier(l.prix_convenu);
   // Les champs facultatifs ne sont envoyés que s'ils sont renseignés : une ancienne ligne relue puis
   // renvoyée sans changement reste identique.
   if (machine === 'roland') {
@@ -248,6 +258,7 @@ function ligneVersApi(machine: Machine, l: LigneRolandDraft | LigneXeroxDraft) {
       finitions: choixVersApi(r.finitions),
       options: r.options,
       description,
+      prix_convenu,
     };
     if (r.bords) out.bords = r.bords;
     if (r.bords === 'oeillets') {
@@ -265,6 +276,7 @@ function ligneVersApi(machine: Machine, l: LigneRolandDraft | LigneXeroxDraft) {
     finitions: choixVersApi(x.finitions),
     options: x.options,
     description,
+    prix_convenu,
   };
   if (x.type_document) out.type_document = x.type_document;
   if (x.partie) out.partie = x.partie;

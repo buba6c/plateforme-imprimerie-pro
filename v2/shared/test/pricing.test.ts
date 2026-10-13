@@ -200,3 +200,22 @@ describe('situation de paiement', () => {
     expect(situationPaiement(null, 0)).toBe('sans_montant');
   });
 });
+
+describe('prix convenu', () => {
+  it('remplace la grille pour la ligne, même avec un support hors grille', () => {
+    const specs = {
+      lignes: [
+        { support: 'autre', support_autre: 'Roue tournante 90 × 90 cm', largeur: 90, hauteur: 90, unite: 'cm', quantite: 1, finitions: [], options: [], prix_convenu: 150000 },
+        { support: 'bache_m2', largeur: 300, hauteur: 300, unite: 'cm', quantite: 1, finitions: [{ code: 'oeillets' }], options: [], prix_convenu: 90000 },
+      ],
+      forfaits: [],
+    };
+    const r = calculerPrix('roland', specs as never, TARIFS_DEFAUT, { ...PARAMS_PRIX_DEFAUT, arrondi_pas: 0 });
+    if (!r.ok) throw new Error(r.erreurs.join(' / '));
+    expect(r.lignes.map((l) => [l.code, l.groupe, l.total])).toEqual([
+      ['prix_convenu', 0, 150000],
+      ['prix_convenu', 1, 90000],
+    ]);
+    expect(r.total_ttc).toBe(240000);
+  });
+});

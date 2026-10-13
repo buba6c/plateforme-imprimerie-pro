@@ -145,3 +145,6 @@
 .sp-totaux .sp-totaux__dont dt, .sp-totaux .sp-totaux__dont dd { font-size: 12px; color: var(--text-muted); }
 
 .sp-faces { width: 40px; height: 28px; flex: none; }
+
+/* Prix convenu : sur sa propre ligne, largeur d'un montant. */
+.sp-grid--prix { grid-template-columns: minmax(0, 300px); }

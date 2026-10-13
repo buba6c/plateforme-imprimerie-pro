@@ -76,6 +76,8 @@ export const ligneRolandSchema = z.object({
   bords: z.enum(BORDS_ROLAND).nullable().optional(),
   /** Pose des œillets quand bords = « oeillets » : le nombre est calculé par le moteur de prix. */
   oeillets: oeilletsSchema.nullable().optional(),
+  /** Prix convenu par exemplaire (FCFA) : remplace le prix calculé par la grille pour cette ligne. */
+  prix_convenu: z.number({ invalid_type_error: 'Prix convenu : montant entier attendu' }).int('Prix convenu : montant entier, sans centimes').nonnegative('Prix convenu : 0 au minimum').max(100_000_000, 'Prix convenu trop élevé').nullable().optional(),
 });
 export type LigneRoland = z.infer<typeof ligneRolandSchema>;
 
@@ -106,6 +108,8 @@ export const ligneXeroxSchema = z.object({
     .nullable()
     .optional(),
   conditionnement: z.array(z.enum(CONDITIONNEMENTS)).max(CONDITIONNEMENTS.length).optional(),
+  /** Prix convenu par exemplaire (FCFA) : remplace le prix calculé par la grille pour cette ligne. */
+  prix_convenu: z.number({ invalid_type_error: 'Prix convenu : montant entier attendu' }).int('Prix convenu : montant entier, sans centimes').nonnegative('Prix convenu : 0 au minimum').max(100_000_000, 'Prix convenu trop élevé').nullable().optional(),
 });
 export type LigneXerox = z.infer<typeof ligneXeroxSchema>;
 

@@ -452,12 +452,34 @@ export function nombreOeillets(
 /** Support « autre » (hors grille) : pas de calcul possible, le prix du dossier est saisi à la main. */
 function supportHorsGrille(ctx: Ctx, l: { support: string; support_autre?: string | null }, n: number): boolean {
   if (l.support !== 'autre') return false;
-  ctx.erreurs.push(`Ligne ${n} : support « ${l.support_autre?.trim() || 'Autre'} » hors grille : saisissez le prix du dossier à la main.`);
+  ctx.erreurs.push(`Ligne ${n} : support « ${l.support_autre?.trim() || 'Autre'} » hors grille : indiquez un prix convenu sur la ligne.`);
   return true;
+}
+
+/**
+ * Prix convenu avec le client pour la ligne : la grille n'est pas consultée (le support peut même
+ * être hors grille), une seule ligne de prix remplace le support, les finitions et les options.
+ */
+function ligneConvenue(l: LigneRoland | LigneXerox, i: number): LignePrix {
+  const pu = l.prix_convenu as number;
+  return {
+    code: 'prix_convenu',
+    libelle: 'Prix convenu',
+    quantite: l.quantite,
+    unite: 'exemplaire',
+    prix_unitaire: pu,
+    total: pu * l.quantite,
+    groupe: i,
+    explication: `${nf(pu)} FCFA par exemplaire, fixé à la main (grille non appliquée)`,
+  };
 }
 
 function lignesRoland(ctx: Ctx, l: LigneRoland, i: number, params: ParamsPrix, out: LignePrix[]) {
   const n = i + 1;
+  if (l.prix_convenu !== null && l.prix_convenu !== undefined) {
+    out.push(ligneConvenue(l, i));
+    return;
+  }
   const support = supportHorsGrille(ctx, l, n) ? null : chercher(ctx, l.support, ['support'], `Ligne ${n}`);
   const largeur = toMm(l.largeur, l.unite);
   const hauteur = toMm(l.hauteur, l.unite);
@@ -508,6 +530,10 @@ function lignesRoland(ctx: Ctx, l: LigneRoland, i: number, params: ParamsPrix, o
 
 function lignesXerox(ctx: Ctx, l: LigneXerox, i: number, out: LignePrix[]) {
   const n = i + 1;
+  if (l.prix_convenu !== null && l.prix_convenu !== undefined) {
+    out.push(ligneConvenue(l, i));
+    return;
+  }
   const support = supportHorsGrille(ctx, l, n) ? null : chercher(ctx, l.support, ['support'], `Ligne ${n}`);
   const faces = l.pages * l.quantite;
   const feuillesParEx = Math.ceil(l.pages / (l.recto_verso ? 2 : 1));

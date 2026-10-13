@@ -120,6 +120,14 @@ export function descriptionLigne(machine: Machine, spec: LigneRoland | LigneXero
     if (finitions.length) out.push(`Finitions : ${finitions.join(', ')}`);
   } else {
     const x = spec as LigneXerox;
+    if (x.support === 'autre') {
+      // Article hors grille (casquettes, stylos…) : le titre porte déjà son nom ; seules les faces comptent.
+      if (x.pages > 1 || x.recto_verso) out.push(`Impression : ${x.recto_verso ? 'R° Quadri V° Quadri' : 'R° Quadri'}, ${formatEntier(x.pages)} page${x.pages > 1 ? 's' : ''}`);
+      const faconnage = [...libelles(x.finitions ?? []), ...libelles(x.options ?? [])];
+      if (faconnage.length) out.push(`Façonnage : ${faconnage.join(', ')}`);
+      if (spec.description) out.push(spec.description);
+      return out;
+    }
     const format =
       x.format === 'perso'
         ? x.format_largeur && x.format_hauteur

@@ -422,6 +422,9 @@ function LigneRoland({ l, i, supports, tarif, maj, err, params }: {
         />
         <ChampTexte label="Quantité" required value={l.quantite} onChange={(quantite) => maj({ quantite })} inputMode="numeric" mono addon="ex." erreur={err('quantite')} />
       </div>
+      <div className="sp-grid sp-grid--prix">
+        <ChampTexte label="Prix convenu" value={l.prix_convenu} onChange={(prix_convenu) => maj({ prix_convenu })} inputMode="numeric" mono addon="FCFA / ex." erreur={err('prix_convenu')} aide="Facultatif : remplace le prix calculé par la grille pour cette ligne (support, finitions et options compris)." />
+      </div>
       <p className="sp-calcul ev-mono" aria-live="polite" id={`surface-${i}`}>
         {s ? (
           <>
@@ -606,6 +609,9 @@ function LigneXerox({ l, supports, finitions, tarif, maj, err }: {
             ]}
           />
         </div>
+      </div>
+      <div className="sp-grid sp-grid--prix">
+        <ChampTexte label="Prix convenu" value={l.prix_convenu} onChange={(prix_convenu) => maj({ prix_convenu })} inputMode="numeric" mono addon="FCFA / ex." erreur={err('prix_convenu')} aide="Facultatif : remplace le prix calculé par la grille pour cette ligne (support, finitions et options compris)." />
       </div>
       <p className="sp-calcul ev-mono" aria-live="polite">
         {ok
