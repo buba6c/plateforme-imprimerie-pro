@@ -112,3 +112,9 @@
 .fi-trait[data-etat="alerte"] { background: var(--danger-soft); color: var(--danger-ink); }
 .fi-imposer { gap: 4px; padding: 0 10px; color: var(--accent-ink); border-color: color-mix(in srgb, var(--accent) 40%, var(--line)); }
 .fi-imposer svg { width: 14px; height: 14px; }
+
+/* Gros lots : résumé global et liste limitée en hauteur. */
+.fi-envois-resume { display: grid; gap: var(--space-2); padding: var(--space-3); border: 1px solid var(--line); border-radius: var(--radius-md); background: var(--surface-sunken); font-size: 13px; }
+.fi-envois-resume__actions { display: flex; flex-wrap: wrap; gap: var(--space-2); }
+.fi-envois { max-height: min(60vh, 520px); overflow-y: auto; }
+.fi-envoi-item[data-etat="attente"] { opacity: 0.7; }

@@ -1,5 +1,9 @@
 // Envoi reprenable des fichiers d'impression (protocole tus) : glisser-déposer ou sélection,
-// plusieurs fichiers, progression par fichier, pause, reprise et annulation.
+// plusieurs fichiers (cinquante, cent…), progression par fichier, pause, reprise et annulation.
+//
+// File d'attente : SIMULTANES envois à la fois, les autres attendent leur tour. Tout lancer d'un coup
+// partageait la connexion entre des dizaines de flux : chaque morceau dépassait le délai du serveur
+// (408), la reprise tombait sur un décalage (409), et presque rien n'arrivait (journal du 13/10/2026).
 
 import { useCallback, useEffect, useRef, useState, type DragEvent } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
@@ -12,7 +16,7 @@ import { extension } from './ListeFichiers';
 import { prendreEnAttente } from './enAttente';
 import './fichiers.css';
 
-type Etat = 'envoi' | 'pause' | 'termine' | 'erreur';
+type Etat = 'attente' | 'envoi' | 'pause' | 'termine' | 'erreur';
 
 interface Envoi {
   id: string;
@@ -23,8 +27,12 @@ interface Envoi {
   erreur?: string;
 }
 
-const CHUNK = 8 * 1024 * 1024;
-const RETRY = [0, 1000, 3000, 5000, 10000];
+/** Morceaux de 2 Mo : chacun passe en quelques secondes même sur une liaison lente. */
+const CHUNK = 2 * 1024 * 1024;
+/** Reprises automatiques, de plus en plus espacées (coupure de quelques minutes comprise). */
+const RETRY = [0, 1000, 3000, 5000, 10000, 20000, 30000, 60000, 60000, 60000];
+/** Envois menés en même temps ; les suivants attendent leur tour. */
+const SIMULTANES = 2;
 
 /** Message clair à partir d'une erreur tus (le serveur répond en texte brut). */
 export function messageEnvoi(err: Error | DetailedError): string {
@@ -56,6 +64,12 @@ export function Televersement({ dossierId }: { dossierId: number }) {
   const [survol, setSurvol] = useState(false);
   const uploads = useRef(new Map<string, Upload>());
   const input = useRef<HTMLInputElement>(null);
+  // File d'attente : ordre d'arrivée, et envois actuellement lancés.
+  const fileAttente = useRef<string[]>([]);
+  const actifs = useRef(new Set<string>());
+  // Lot en cours : un seul message à la fin plutôt qu'un par fichier.
+  const lot = useRef({ ok: 0, echecs: 0 });
+  const rafraichir = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const maj = useCallback((id: string, patch: Partial<Envoi>) => setEnvois((l) => l.map((e) => (e.id === id ? { ...e, ...patch } : e))), []);
   const retirer = useCallback((id: string) => {
@@ -63,8 +77,43 @@ export function Televersement({ dossierId }: { dossierId: number }) {
     setEnvois((l) => l.filter((e) => e.id !== id));
   }, []);
 
+  /** Recharge la fiche au plus toutes les 2 s pendant un gros lot. */
+  const rafraichirFiche = useCallback(() => {
+    if (rafraichir.current) return;
+    rafraichir.current = setTimeout(() => {
+      rafraichir.current = null;
+      void qc.invalidateQueries({ queryKey: ['dossier', dossierId] });
+      void qc.invalidateQueries({ queryKey: ['dossiers'] });
+    }, 2000);
+  }, [qc, dossierId]);
+
+  /** Lance les envois en attente tant qu'il reste une place ; annonce la fin du lot. */
+  const lancerSuivants = useCallback(() => {
+    while (actifs.current.size < SIMULTANES && fileAttente.current.length) {
+      const id = fileAttente.current.shift()!;
+      const u = uploads.current.get(id);
+      if (!u) continue;
+      actifs.current.add(id);
+      maj(id, { etat: 'envoi', erreur: undefined });
+      u.start();
+    }
+    if (!actifs.current.size && !fileAttente.current.length && lot.current.ok + lot.current.echecs > 0) {
+      const { ok, echecs } = lot.current;
+      lot.current = { ok: 0, echecs: 0 };
+      if (ok) toast.success(ok > 1 ? `${ok} fichiers ajoutés` : 'Fichier ajouté', echecs ? `${echecs} envoi${echecs > 1 ? 's' : ''} à reprendre dans la liste.` : undefined);
+    }
+  }, [maj, toast]);
+
+  const terminer = useCallback(
+    (id: string) => {
+      actifs.current.delete(id);
+      lancerSuivants();
+    },
+    [lancerSuivants],
+  );
+
   // Prévenir avant de quitter la page pendant un envoi.
-  const enCours = envois.some((e) => e.etat === 'envoi');
+  const enCours = envois.some((e) => e.etat === 'envoi' || e.etat === 'attente');
   useEffect(() => {
     if (!enCours) return;
     const avant = (e: BeforeUnloadEvent) => {
@@ -109,18 +158,22 @@ export function Televersement({ dossierId }: { dossierId: number }) {
         removeFingerprintOnSuccess: true,
         metadata: { dossierId: String(dossierId), filename: file.name, filetype: file.type || 'application/octet-stream' },
         onProgress: (octets, total) => maj(id, { octets, taille: total }),
-        onError: (err) => maj(id, { etat: 'erreur', erreur: messageEnvoi(err) }),
+        onError: (err) => {
+          maj(id, { etat: 'erreur', erreur: messageEnvoi(err) });
+          lot.current.echecs++;
+          terminer(id);
+        },
         onSuccess: () => {
           maj(id, { etat: 'termine', octets: file.size });
-          toast.success('Fichier ajouté', file.name);
-          void qc.invalidateQueries({ queryKey: ['dossier', dossierId] });
-          void qc.invalidateQueries({ queryKey: ['dossiers'] });
+          lot.current.ok++;
+          rafraichirFiche();
           setTimeout(() => retirer(id), 2500);
+          terminer(id);
         },
       });
       uploads.current.set(id, upload);
-      setEnvois((l) => [...l, { id, nom: file.name, taille: file.size, octets: 0, etat: 'envoi' }]);
-      // Reprendre un envoi interrompu du même fichier, pour ce même dossier.
+      setEnvois((l) => [...l, { id, nom: file.name, taille: file.size, octets: 0, etat: 'attente' }]);
+      // Reprendre un envoi interrompu du même fichier, pour ce même dossier ; puis prendre son tour.
       upload
         .findPreviousUploads()
         .then((precedents) => {
@@ -128,7 +181,11 @@ export function Televersement({ dossierId }: { dossierId: number }) {
           if (p) upload.resumeFromPreviousUpload(p);
         })
         .catch(() => {})
-        .finally(() => upload.start());
+        .finally(() => {
+          if (!uploads.current.has(id)) return; // annulé entre-temps
+          fileAttente.current.push(id);
+          lancerSuivants();
+        });
     }
   };
 
@@ -144,17 +201,37 @@ export function Televersement({ dossierId }: { dossierId: number }) {
 
   const pause = (id: string) => {
     void uploads.current.get(id)?.abort();
+    fileAttente.current = fileAttente.current.filter((x) => x !== id);
     maj(id, { etat: 'pause' });
+    terminer(id);
   };
+  /** Reprise (pause ou échec) : l'envoi reprend sa place dans la file, en tête. */
   const reprendre = (id: string) => {
-    uploads.current.get(id)?.start();
-    maj(id, { etat: 'envoi', erreur: undefined });
+    if (!uploads.current.has(id) || actifs.current.has(id)) return;
+    fileAttente.current = [id, ...fileAttente.current.filter((x) => x !== id)];
+    maj(id, { etat: 'attente', erreur: undefined });
+    lancerSuivants();
   };
   const annuler = (id: string) => {
     const u = uploads.current.get(id);
     if (u) void u.abort(true).catch(() => {});
+    fileAttente.current = fileAttente.current.filter((x) => x !== id);
     retirer(id);
+    terminer(id);
   };
+  const toutReprendre = () => envois.filter((e) => e.etat === 'erreur' || e.etat === 'pause').forEach((e) => reprendre(e.id));
+  const toutAnnuler = () => envois.filter((e) => e.etat !== 'termine').forEach((e) => annuler(e.id));
+
+  const compte = {
+    total: envois.length,
+    termines: envois.filter((e) => e.etat === 'termine').length,
+    enCours: envois.filter((e) => e.etat === 'envoi').length,
+    attente: envois.filter((e) => e.etat === 'attente').length,
+    echecs: envois.filter((e) => e.etat === 'erreur').length,
+    pause: envois.filter((e) => e.etat === 'pause').length,
+  };
+  const octetsTotal = envois.reduce((t, e) => t + e.taille, 0);
+  const octetsFaits = envois.reduce((t, e) => t + (e.etat === 'termine' ? e.taille : e.octets), 0);
 
   const onDrop = (e: DragEvent) => {
     e.preventDefault();
@@ -187,7 +264,7 @@ export function Televersement({ dossierId }: { dossierId: number }) {
         <span className="fi-dropzone__aide">
           {extensions.length ? `Extensions acceptées : ${extensions.map((e) => `.${e}`).join(', ')}.` : 'PDF, images, fichiers de mise en page.'}
           {regles ? ` ${regles.taille_max_mo >= 1024 ? `${String(Math.round((regles.taille_max_mo / 1024) * 10) / 10).replace('.', ',')} Go` : `${regles.taille_max_mo} Mo`} au plus par fichier.` : ''}
-          {' '}Plusieurs fichiers à la fois ; un envoi coupé reprend où il s’est arrêté.
+          {' '}Autant de fichiers que nécessaire (cinquante, cent…) : ils partent {SIMULTANES} par {SIMULTANES}, un envoi coupé reprend où il s’est arrêté.
         </span>
         <input
           ref={input}
@@ -201,6 +278,43 @@ export function Televersement({ dossierId }: { dossierId: number }) {
           }}
         />
       </div>
+
+      {envois.length > 1 && (
+        <div className="fi-envois-resume" role="status" aria-live="polite">
+          <span className="ev-mono">
+            {compte.termines} / {compte.total} envoyé{compte.termines > 1 ? 's' : ''}
+            {compte.enCours ? ` · ${compte.enCours} en cours` : ''}
+            {compte.attente ? ` · ${compte.attente} en attente` : ''}
+            {compte.pause ? ` · ${compte.pause} en pause` : ''}
+            {compte.echecs ? ` · ${compte.echecs} en échec` : ''}
+            {' · '}
+            {formatTaille(octetsFaits)} sur {formatTaille(octetsTotal)}
+          </span>
+          <div
+            className="ev-progress"
+            role="progressbar"
+            aria-label="Progression de l’ensemble des envois"
+            aria-valuemin={0}
+            aria-valuemax={100}
+            aria-valuenow={octetsTotal ? Math.round((octetsFaits / octetsTotal) * 100) : 0}
+            style={{ ['--value' as string]: `${octetsTotal ? Math.round((octetsFaits / octetsTotal) * 100) : 0}%` }}
+          >
+            <span />
+          </div>
+          <div className="fi-envois-resume__actions">
+            {(compte.echecs > 0 || compte.pause > 0) && (
+              <Button size="sm" icon={<RotateCw />} onClick={toutReprendre}>
+                Tout reprendre
+              </Button>
+            )}
+            {compte.termines < compte.total && (
+              <Button size="sm" icon={<X />} onClick={toutAnnuler}>
+                Tout annuler
+              </Button>
+            )}
+          </div>
+        </div>
+      )}
 
       {envois.length > 0 && (
         <ul className="fi-envois" aria-label="Envois en cours">
@@ -223,6 +337,8 @@ export function Televersement({ dossierId }: { dossierId: number }) {
                         </>
                       ) : e.etat === 'pause' ? (
                         `En pause · ${pct} %`
+                      ) : e.etat === 'attente' ? (
+                        'En attente'
                       ) : (
                         `${pct} %`
                       )}

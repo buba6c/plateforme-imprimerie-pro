@@ -632,6 +632,14 @@ function DepotFichiers({ fichiers, onChange, xerox, imposes, onImposes }: { fich
           }}
         />
       </div>
+      {fichiers.length > 1 && (
+        <p className="nd-depot__compte">
+          {fichiers.length} fichiers · {formatTaille(fichiers.reduce((t, x) => t + x.size, 0))}{' '}
+          <button type="button" className="ev-link" onClick={() => onChange([])}>
+            Tout retirer
+          </button>
+        </p>
+      )}
       {fichiers.length > 0 && (
         <ul className="nd-depot__liste" aria-label="Fichiers à envoyer">
           {fichiers.map((x) => (
