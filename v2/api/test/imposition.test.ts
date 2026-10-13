@@ -259,7 +259,17 @@ describe('imposition : formats et plans (sans serveur)', () => {
 
   it('rotation automatique des poses : tickets 70 × 150 → 9 poses dont une bande tournée ; tête-bêche', () => {
     const p = { ...base, fini: { largeur: 70, hauteur: 150 }, fonds_perdus_mm: 3, methode_fonds_perdus: 'intelligent' as const, marge_mm: 5, rotation_poses: 'auto' as const, recto_verso: false, calepinage: 'manuel' as const };
-    const plan = calculerPlan(p, 1, undefined, sourceMarge(0));
+    // Automatique : jamais de bande tournée (deux sens de coupe sur la feuille) ; elle reste proposée en alternative.
+    const auto = calculerPlan(p, 1, undefined, sourceMarge(0));
+    expect(auto.poses_par_face).toBe(8);
+    expect(auto.calepinage!.rotation).not.toBe('mixte');
+    // Calepinage automatique : la bande tournée est signalée en alternative, pas choisie.
+    // (plancher de 3 mm pour que la réduction des fonds perdus ne change pas la donne : 8 poses droites, 9 avec la bande)
+    const autoCalepine = calculerPlan({ ...p, calepinage: 'auto' as const }, 1, undefined, sourceMarge(0), { marge_technique_mm: 5, fonds_perdus_min_mm: 3, reperes_obligatoires: true });
+    expect(autoCalepine.poses_par_face).toBe(8);
+    expect(autoCalepine.calepinage!.rotation).not.toBe('mixte');
+    expect(autoCalepine.calepinage!.alternatives.some((a) => a.rotation === 'mixte' && a.poses === 9)).toBe(true);
+    const plan = calculerPlan({ ...p, rotation_poses: 'mixte' as const }, 1, undefined, sourceMarge(0));
     expect(plan.poses_par_face).toBe(9);
     const poses = plan.feuilles[0]!.recto.poses;
     // Portrait (8 droites + 1 tournée) ou paysage (5 + 4) : les deux logent 9 ; le plan garde celle dont les repères restent lisibles.
@@ -277,8 +287,9 @@ describe('imposition : formats et plans (sans serveur)', () => {
     expect(opt.calepinage).toMatchObject({ fonds_perdus_mm: 1, reperes_ok: true });
     expect(opt.calepinage!.raison).toMatch(/12 poses au lieu de 8/);
     const prudent = calculerPlan({ ...p, calepinage: 'auto' }, 1, undefined, sourceMarge(0), { marge_technique_mm: 5, fonds_perdus_min_mm: 1.5, reperes_obligatoires: true });
-    expect(prudent.poses_par_face).toBe(9);
+    expect(prudent.poses_par_face).toBe(8);
     expect(prudent.calepinage!.raison).toMatch(/12 poses seraient possibles/);
+    expect(prudent.calepinage!.alternatives.some((a) => a.rotation === 'mixte' && a.poses === 9)).toBe(true);
     const max = calculerPlan({ ...p, calepinage: 'auto' }, 1, undefined, sourceMarge(0), { marge_technique_mm: 5, fonds_perdus_min_mm: 1.5, reperes_obligatoires: false });
     expect(max.calepinage).toMatchObject({ fonds_perdus_mm: 1.5, poses: 12, reperes_ok: false });
     // Tête-bêche par colonne : une colonne sur deux tournée de 180°.

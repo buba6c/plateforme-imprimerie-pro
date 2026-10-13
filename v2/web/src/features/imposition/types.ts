@@ -7,7 +7,7 @@ export type ModeAjustement = 'auto' | 'centrer' | 'adapter' | 'remplir' | 'etire
 export type Coupe = 'auto' | 'fonds_perdus' | 'sans_auto' | 'franche' | 'double' | 'cadre' | 'aucune';
 export type SystemeCoupe = 'fonds_perdus' | 'franche' | 'double' | 'cadre' | 'aucune';
 export type StyleTraits = 'auto' | 'angles' | 'bloc' | 'bord_feuille' | 'traversants' | 'aucun';
-export type RotationPoses = 'aucune' | '90' | 'auto';
+export type RotationPoses = 'aucune' | '90' | 'auto' | 'mixte';
 export type TeteBeche = 'aucune' | 'colonnes' | 'rangs' | 'damier';
 export type Calage = 'centre' | 'coin';
 export type Retournement = 'auto' | 'bord_long' | 'bord_court';
@@ -473,9 +473,10 @@ export const TRAITS_LABELS: Record<StyleTraits, { label: string; aide: string }>
 };
 
 export const ROTATION_POSES_LABELS: Record<RotationPoses, { label: string; aide: string }> = {
-  auto: { label: 'Auto', aide: 'Droites, tournées ou une bande tournée dans l’espace restant : le plus de poses.' },
+  auto: { label: 'Auto', aide: 'Droites ou toutes tournées, un seul sens de coupe : le plus de poses.' },
   aucune: { label: 'Droites', aide: 'Toutes les poses dans le sens du fichier.' },
   '90': { label: 'Tournées', aide: 'Toutes les poses d’un quart de tour.' },
+  mixte: { label: 'Bande tournée', aide: 'Une bande de poses tournées dans l’espace restant : plus de poses, mais deux sens de coupe.' },
 };
 
 export const TETE_BECHE_LABELS: Record<TeteBeche, { label: string; aide: string }> = {

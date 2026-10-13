@@ -66,7 +66,7 @@ export const paramsSchema = z.object({
   cadre_blanc_mm: z.number().min(0).max(10).default(0),
   cadre_methode: z.enum(['reduire', 'rogner']).default('reduire'),
   calepinage: z.enum(['auto', 'manuel']).default('auto'),
-  rotation_poses: z.enum(['aucune', '90', 'auto']).default('aucune'),
+  rotation_poses: z.enum(['aucune', '90', 'auto', 'mixte']).default('aucune'),
   tete_beche: z.enum(['aucune', 'colonnes', 'rangs', 'damier']).default('aucune'),
   calage: z.enum(['centre', 'coin']).default('centre'),
   marge_pince_mm: z.number().min(0).max(50).optional(),

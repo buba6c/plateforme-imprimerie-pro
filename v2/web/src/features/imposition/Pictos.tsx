@@ -99,7 +99,9 @@ export function PictoTraitsStyle({ style }: { style: 'auto' | 'angles' | 'bloc' 
 }
 
 /** Rotation des poses : droites, tournées, auto (bande tournée). */
-export function PictoRotationPoses({ mode }: { mode: 'aucune' | '90' | 'auto' }) {
+export function PictoRotationPoses({ mode }: { mode: 'aucune' | '90' | 'auto' | 'mixte' }) {
+  // Auto : droites ou toutes tournées, un seul sens (deux poses droites, une tournée à part).
+  if (mode === 'auto') return <svg {...base}>{[0, 1].map((i) => <rect key={i} x={6 + i * 12} y="6" width="10" height="24" rx="1" fill="currentColor" fillOpacity="0.3" stroke="none" />)}<rect x="31" y="12" width="13" height="10" rx="1" fill="currentColor" fillOpacity="0.3" stroke="none" /></svg>;
   if (mode === 'aucune') return <svg {...base}>{[0, 1, 2].map((i) => <rect key={i} x={7 + i * 12} y="6" width="10" height="24" rx="1" fill="currentColor" fillOpacity="0.3" stroke="none" />)}</svg>;
   if (mode === '90') return <svg {...base}>{[0, 1].map((i) => <rect key={i} x="7" y={6 + i * 13} width="34" height="11" rx="1" fill="currentColor" fillOpacity="0.3" stroke="none" />)}</svg>;
   return <svg {...base}>{[0, 1, 2].map((i) => <rect key={i} x={5 + i * 11} y="4" width="9" height="16" rx="1" fill="currentColor" fillOpacity="0.3" stroke="none" />)}<rect x="5" y="22" width="31" height="9" rx="1" fill="currentColor" fillOpacity="0.5" stroke="none" /><path d="M42 3l1.2 2.6L46 6.8l-2.8 1.2L42 11l-1.2-3L38 6.8l2.8-1.2z" fill="currentColor" stroke="none" /></svg>;

@@ -509,7 +509,7 @@ function lignesRapport(r: ReponseAnalyse, p: ParamsImposition, plan: Plan | unde
   if (plan?.calepinage) {
     const k = plan.calepinage;
     const mm = (v: number) => (Math.round(v * 10) / 10).toLocaleString('fr-FR');
-    const choix = k.alternatives.map((alt) => ({ label: `${alt.partages ? 'Partagés ' : ''}${mm(alt.fonds_perdus_mm)} mm${alt.rotation === 'mixte' ? ', bande tournée' : alt.rotation === '90' ? ', tournées' : ''} → ${alt.poses} poses${alt.reperes_ok ? '' : ' (sans repères)'}`, patch: { fonds_perdus_mm: alt.fonds_perdus_mm, fonds_partages: alt.partages ? true : false, rotation_poses: alt.rotation === 'mixte' ? 'auto' : alt.rotation === '90' ? '90' : 'aucune', calepinage: 'manuel' } as Partial<ParamsImposition> }));
+    const choix = k.alternatives.map((alt) => ({ label: `${alt.partages ? 'Partagés ' : ''}${mm(alt.fonds_perdus_mm)} mm${alt.rotation === 'mixte' ? ', bande tournée' : alt.rotation === '90' ? ', tournées' : ''} → ${alt.poses} poses${alt.reperes_ok ? '' : ' (sans repères)'}`, patch: { fonds_perdus_mm: alt.fonds_perdus_mm, fonds_partages: alt.partages ? true : false, rotation_poses: alt.rotation === 'mixte' ? 'mixte' : alt.rotation === '90' ? '90' : 'aucune', calepinage: 'manuel' } as Partial<ParamsImposition> }));
     if (!k.auto) choix.unshift({ label: 'Remettre le calepinage automatique', patch: { calepinage: 'auto', fonds_partages: 'auto', rotation_poses: 'auto' } });
     l.push({ ton: k.auto ? 'auto' : 'info', texte: `Calepinage : ${k.raison}`, choix: choix.slice(0, 5) });
   }
