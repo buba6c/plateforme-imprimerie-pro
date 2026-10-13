@@ -519,7 +519,7 @@ function lignesRapport(r: ReponseAnalyse, p: ParamsImposition, plan: Plan | unde
     l.push({ ton: manque ? 'attention' : 'auto', texte: `${PLIAGE_LABELS[d.pliage].label} : ${d.entree === 'developpe' ? `fichier développé ${d.developpe.largeur} × ${d.developpe.hauteur} mm` : `${d.pages_attendues} volets attendus, ${a.nb_pages} page${a.nb_pages > 1 ? 's' : ''} reçue${a.nb_pages > 1 ? 's' : ''}`}${d.volets.recto.length ? ` · volets extérieur ${d.volets.recto.map((v) => v.largeur).join(' | ')} mm, intérieur ${d.volets.verso.map((v) => v.largeur).join(' | ')} mm` : ''} · format fermé ${d.ferme.largeur} × ${d.ferme.hauteur} mm · ${d.pieces_par_feuille} pièce${d.pieces_par_feuille > 1 ? 's' : ''} par feuille.` });
   }
   for (const c of plan?.consignes ?? []) l.push({ ton: 'info', texte: c });
-  for (const piece of r.pieces) for (const m of piece.avertissements) if (/résolution|dpi|flou/i.test(m)) l.push({ ton: 'attention', texte: `${piece.nom} : ${m}` });
+  for (const piece of r.pieces) for (const m of piece.avertissements) if (/résolution|dpi|flou|trait de coupe/i.test(m)) l.push({ ton: 'attention', texte: `${piece.nom} : ${m}` });
   if (plan) {
     if (plan.operation === 'poses') l.push({ ton: 'auto', texte: `${plan.poses_par_face} poses par face sur ${plan.feuille.largeur} × ${plan.feuille.hauteur} mm (${plan.paysage ? 'paysage' : 'portrait'})${plan.feuilles_a_imprimer ? `, ${plan.feuilles_a_imprimer} feuilles à imprimer` : ''}.` });
     if (plan.operation === 'poses' && a.nb_pages > 1 && (p.mode === 'sequence' || p.mode === 'repetition')) {

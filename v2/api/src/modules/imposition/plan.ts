@@ -511,7 +511,10 @@ function reperesTiennent(g: Grille, fp: number, mt: number): boolean {
 export function meilleureGrille(p: ParamsImposition, fp = p.fonds_perdus_mm, partage = p.fonds_partages === true, mt = ATELIER_DEFAUT.marge_technique_mm): Grille {
   const orientations: ('portrait' | 'paysage')[] = p.orientation === 'portrait' ? ['portrait'] : p.orientation === 'paysage' ? ['paysage'] : ['portrait', 'paysage'];
   // En automatique, jamais de bande tournée : des poses de deux sens sur la même feuille compliquent la coupe.
-  const rotations: OptionsGrille['rotation'][] = p.rotation_poses === '90' ? ['90'] : p.rotation_poses === 'mixte' ? ['aucune', '90', 'mixte'] : p.rotation_poses === 'auto' ? ['aucune', '90'] : ['aucune'];
+  // Orientation de feuille imposée + rotation « auto » : poses droites (le sens du fichier est respecté) ;
+  // tourner toutes les poses reste proposé en alternative quand cela en loge plus.
+  const orientationForcee = p.orientation === 'portrait' || p.orientation === 'paysage';
+  const rotations: OptionsGrille['rotation'][] = p.rotation_poses === '90' ? ['90'] : p.rotation_poses === 'mixte' ? ['aucune', '90', 'mixte'] : p.rotation_poses === 'auto' && !orientationForcee ? ['aucune', '90'] : ['aucune'];
   let meilleure: Grille | null = null;
   const rang = (r: Grille['rotation']) => (r === 'aucune' ? 0 : r === '90' ? 1 : 2);
   for (const orientation of orientations) {
@@ -700,13 +703,40 @@ const VALEURS_FP = (voulu: number, min: number): number[] => {
  * le plus de poses, puis des repères visibles, puis les fonds perdus les plus larges, puis la grille
  * la plus simple. Le plan en garde la raison et les alternatives chiffrées.
  */
+type PropositionRotation = { texte: string; alternative: InfoCalepinage['alternatives'][number] };
+
+/**
+ * Avec « Rotation des poses : auto », l'automatique ne tourne les poses que si la feuille est en orientation
+ * automatique, et ne mélange jamais deux sens. Les autres dispositions (toutes tournées sur une feuille
+ * imposée, bande tournée) sont calculées et proposées quand elles logent plus de poses.
+ */
+function propositionsRotation(p: ParamsImposition, fp: number, partage: boolean, nActuel: number, mt: number): PropositionRotation[] {
+  if (p.rotation_poses !== 'auto') return [];
+  const out: PropositionRotation[] = [];
+  const orientationForcee = p.orientation === 'portrait' || p.orientation === 'paysage';
+  if (orientationForcee) {
+    const g = meilleureGrille({ ...p, rotation_poses: '90' }, fp, partage, mt);
+    if (g.rotation === '90' && g.poses.length > nActuel) {
+      out.push({ texte: `${g.poses.length} poses en tournant toutes les poses d’un quart de tour : à choisir dans « Rotation des poses » (Tournées) si besoin`, alternative: { fonds_perdus_mm: fp, poses: g.poses.length, partages: partage, rotation: '90', reperes_ok: reperesTiennent(g, fp, mt) } });
+    }
+  }
+  const gm = meilleureGrille({ ...p, rotation_poses: 'mixte' }, fp, partage, mt);
+  const nRef = Math.max(nActuel, ...out.map((x) => x.alternative.poses));
+  if (gm.rotation === 'mixte' && gm.poses.length > nRef) {
+    out.push({ texte: `${gm.poses.length} poses avec une bande tournée sur le côté (deux sens de coupe) : à choisir dans « Rotation des poses » (Bande tournée) si besoin`, alternative: { fonds_perdus_mm: fp, poses: gm.poses.length, partages: partage, rotation: 'mixte', reperes_ok: reperesTiennent(gm, fp, mt) } });
+  }
+  return out;
+}
+
 export function optimiser(p: ParamsImposition, source: SourcePlan | undefined, atelier: AtelierImposition, coupe: InfoCoupe): { params: ParamsImposition; info: InfoCalepinage | null } {
   if (p.operation !== 'poses' || coupe.systeme === 'aucune') return { params: p, info: null };
   const mt = atelier.marge_technique_mm;
   const auto = (p.calepinage ?? 'auto') === 'auto';
   if (!auto) {
     const g = meilleureGrille(p, p.fonds_perdus_mm, p.fonds_partages === true, mt);
-    return { params: { ...p, orientation: g.paysage ? 'paysage' : 'portrait' }, info: { auto: false, fonds_perdus_mm: p.fonds_perdus_mm, demande_mm: p.fonds_perdus_mm, poses: g.poses.length, orientation: g.paysage ? 'paysage' : 'portrait', partages: g.partages, rotation: g.rotation, reperes_ok: reperesTiennent(g, p.fonds_perdus_mm, mt), raison: 'Réglages manuels gardés.', alternatives: [] } };
+    const propositions = propositionsRotation(p, p.fonds_perdus_mm, p.fonds_partages === true, g.poses.length, mt);
+    const raison = ['Réglages manuels gardés', ...propositions.map((x) => x.texte)].join(' ; ') + '.';
+    return { params: { ...p, orientation: g.paysage ? 'paysage' : 'portrait' }, info: { auto: false, fonds_perdus_mm: p.fonds_perdus_mm, demande_mm: p.fonds_perdus_mm, poses: g.poses.length, orientation: g.paysage ? 'paysage' : 'portrait', partages: g.partages, rotation: g.rotation, reperes_ok: reperesTiennent(g, p.fonds_perdus_mm, mt), raison, alternatives: propositions.map((x) => x.alternative) } };
   }
   const fpVoulu = coupe.systeme === 'fonds_perdus' ? Math.max(0, p.fonds_perdus_mm) : 0;
   const fps = fpVoulu > 0 ? VALEURS_FP(fpVoulu, Math.max(0.5, atelier.fonds_perdus_min_mm)) : [0];
@@ -734,17 +764,16 @@ export function optimiser(p: ParamsImposition, source: SourcePlan | undefined, a
   else if (fpVoulu > 0 && best.fp < fpVoulu) parties.push(`fonds perdus réduits à ${mm(best.fp)} mm pour garder des repères de coupe lisibles (${best.n} poses, autant qu’avec ${mm(fpVoulu)} mm)`);
   else if (fpVoulu > 0) parties.push(`${mm(best.fp)} mm de fonds perdus ${p.methode_fonds_perdus === 'source' ? 'du fichier conservés' : 'gardés'}, ${best.n} poses`);
   if (best.g.rotation === 'mixte') parties.push(`une bande de poses tournées complète la feuille (${best.n} poses, ${reference.n} sans rotation)`);
-  // Bande tournée : jamais choisie seule, mais proposée quand elle logerait plus de poses.
-  const gMixte = p.rotation_poses === 'auto' ? meilleureGrille({ ...p, rotation_poses: 'mixte' }, best.fp, best.partage, mt) : null;
-  const mixte = gMixte && gMixte.rotation === 'mixte' && gMixte.poses.length > best.n ? { fp: best.fp, partage: best.partage, g: gMixte, n: gMixte.poses.length, ok: reperesTiennent(gMixte, best.fp, mt) } : null;
-  if (mixte) parties.push(`${mixte.n} poses avec une bande tournée sur le côté (deux sens de coupe) : à choisir dans « Rotation des poses » si besoin`);
   else if (best.g.rotation === '90') parties.push(`poses tournées d’un quart de tour (${best.n} au lieu de ${reference.n})`);
+  // Poses tournées ou bande tournée : jamais choisies seules, mais proposées quand elles logeraient plus de poses.
+  const propositions = propositionsRotation(p, best.fp, best.partage, best.n, mt);
+  for (const x of propositions) parties.push(x.texte);
   if (!best.ok) parties.push('repères de coupe raccourcis ou omis : il manque de marge sur la feuille');
   const plusGrand = candidats.find((c) => c.n > best.n);
   if (reperesDAbord && plusGrand) parties.push(`${plusGrand.n} poses seraient possibles avec ${mm(plusGrand.fp)} mm de fonds perdus, mais sans repères de coupe lisibles (Paramètres > Imposition)`);
   const raison = parties.length ? `${parties[0]!.charAt(0).toUpperCase()}${parties[0]!.slice(1)}${parties.slice(1).map((x) => ` ; ${x}`).join('')}.` : `${best.n} poses par feuille.`;
   const vus = new Set<string>();
-  const alternatives = [...(mixte ? [mixte] : []), ...candidats]
+  const alternatives = [...propositions.map((x) => ({ fp: x.alternative.fonds_perdus_mm, partage: x.alternative.partages, g: { rotation: x.alternative.rotation } as Grille, n: x.alternative.poses, ok: x.alternative.reperes_ok })), ...candidats]
     .filter((c) => c !== best)
     .map((c) => ({ fonds_perdus_mm: c.fp, poses: c.n, partages: c.partage, rotation: c.g.rotation, reperes_ok: c.ok }))
     .filter((c) => {

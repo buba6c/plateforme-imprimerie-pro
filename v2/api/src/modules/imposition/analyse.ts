@@ -47,6 +47,61 @@ export interface PageAnalysee {
   jusqu_au_bord: boolean | null;
   /** Fond clair non blanc (crème, gris pâle…) sur au moins un bord : une coupe franche y laisserait un filet visible. null sans rendu. */
   bord_clair: boolean | null;
+  /** Bords où du contenu détaillé (texte, logo…) est à moins de SECURITE_MM du trait de coupe. null sans rendu. */
+  pres_coupe: (keyof Bords)[] | null;
+}
+
+/** Zone de sécurité : distance minimale entre le trait de coupe et tout texte ou élément important (mm). */
+export const SECURITE_MM = 3;
+const LIBELLE_BORD: Record<keyof Bords, string> = { haut: 'bord haut', bas: 'bord bas', gauche: 'bord gauche', droite: 'bord droit' };
+
+/**
+ * Contenu détaillé dans la zone de sécurité (bande de SECURITE_MM à l'intérieur du trait de coupe) :
+ * rendu à 6 px/mm, part des pixels qui marquent un contraste fort avec leur voisin. Un aplat ou un
+ * dégradé donne ~0, du texte ou un logo bien plus. `insets` : distance de chaque bord de page au trait de coupe.
+ */
+async function mesurerZoneSecurite(abs: string, numero: number, largeurMm: number, insets: Bords): Promise<(keyof Bords)[] | null> {
+  const px = Math.max(200, Math.min(2600, Math.round(largeurMm * 6)));
+  const temp = path.join(os.tmpdir(), `evocom-securite-${process.pid}-${Date.now()}-${numero}`);
+  try {
+    await exec('pdftoppm', ['-f', String(numero), '-l', String(numero), '-scale-to-x', String(px), '-scale-to-y', '-1', '-png', '-singlefile', abs, temp], { timeout: 60000, maxBuffer: 1024 * 1024 });
+    const sharp = (await import('sharp')).default;
+    const { data, info } = await sharp(`${temp}.png`).flatten({ background: '#ffffff' }).grayscale().raw().toBuffer({ resolveWithObject: true });
+    const w = info.width;
+    const h = info.height;
+    const k = w / largeurMm;
+    const r = (v: number) => Math.round(v * k);
+    const densite = (x0: number, y0: number, x1: number, y1: number) => {
+      let n = 0;
+      let t = 0;
+      for (let y = Math.max(0, y0); y < Math.min(h, y1); y++) {
+        for (let x = Math.max(0, x0); x < Math.min(w, x1); x++) {
+          n++;
+          const v = data[y * w + x]!;
+          if (x + 1 < x1 && Math.abs(v - data[y * w + x + 1]!) > 80) t++;
+          if (y + 1 < y1 && Math.abs(v - data[(y + 1) * w + x]!) > 80) t++;
+        }
+      }
+      return n ? t / n : 0;
+    };
+    const x0 = r(insets.gauche);
+    const x1 = w - r(insets.droite);
+    const y0 = r(insets.haut);
+    const y1 = h - r(insets.bas);
+    const sz = r(SECURITE_MM);
+    if (x1 - x0 < 4 * sz || y1 - y0 < 4 * sz) return [];
+    const bandes: Bords = {
+      haut: densite(x0 + sz, y0, x1 - sz, y0 + sz),
+      bas: densite(x0 + sz, y1 - sz, x1 - sz, y1),
+      gauche: densite(x0, y0 + sz, x0 + sz, y1 - sz),
+      droite: densite(x1 - sz, y0 + sz, x1, y1 - sz),
+    };
+    return (Object.keys(bandes) as (keyof Bords)[]).filter((c) => bandes[c] > 0.05);
+  } catch {
+    return null;
+  } finally {
+    await fs.promises.rm(`${temp}.png`, { force: true }).catch(() => {});
+  }
 }
 
 export interface AnalysePdf {
@@ -184,8 +239,10 @@ async function analyserDocument(abs: string, doc: PDFDocument): Promise<AnalyseP
     const hauteur = arrondi(mm(tourne ? media.width : media.height), 2);
     let fondsDeclares = 0;
     let trimMm: PageAnalysee['trim'] = null;
+    let insets: Bords | null = null;
     if (trim && (trim.width < media.width - 0.5 || trim.height < media.height - 0.5)) {
       const marges = [trim.x - media.x, trim.y - media.y, media.x + media.width - (trim.x + trim.width), media.y + media.height - (trim.y + trim.height)].map(mm);
+      insets = { gauche: Math.max(0, marges[0]!), bas: Math.max(0, marges[1]!), droite: Math.max(0, marges[2]!), haut: Math.max(0, marges[3]!) };
       fondsDeclares = arrondi(Math.max(0, Math.min(...marges)), 2);
       trimMm = { x: arrondi(mm(trim.x - media.x), 2), y: arrondi(mm(trim.y - media.y), 2), largeur: arrondi(mm(trim.width), 2), hauteur: arrondi(mm(trim.height), 2) };
     }
@@ -208,7 +265,15 @@ async function analyserDocument(abs: string, doc: PDFDocument): Promise<AnalyseP
       }
     }
     const jusquAuBord = bords ? Object.values(bords).some((v) => v > 0.04) : null;
-    analysees.push({ numero: i + 1, largeur, hauteur, rotation, trim: trimMm, fonds_perdus_declares: fondsDeclares, format, bords, marge_blanche: marge, bords_unis: unis, jusqu_au_bord: jusquAuBord, bord_clair: clair });
+    // Zone de sécurité : trait de coupe déclaré (TrimBox), sinon déduit du format reconnu (fonds perdus
+    // présents) ; une page tournée n'est pas contrôlée.
+    let presCoupe: PageAnalysee['pres_coupe'] = null;
+    if (rendu && aRendre.has(i) && !tourne) {
+      const fp = insets ? null : format?.avec_fonds_perdus ? format.fonds_perdus_mm : 0;
+      const bordsCoupe = insets ?? { haut: fp!, bas: fp!, gauche: fp!, droite: fp! };
+      presCoupe = await mesurerZoneSecurite(abs, i + 1, largeur, bordsCoupe);
+    }
+    analysees.push({ numero: i + 1, largeur, hauteur, rotation, trim: trimMm, fonds_perdus_declares: fondsDeclares, format, bords, marge_blanche: marge, bords_unis: unis, jusqu_au_bord: jusquAuBord, pres_coupe: presCoupe, bord_clair: clair });
   }
 
   const p0 = analysees[0]!;
@@ -223,6 +288,12 @@ async function analyserDocument(abs: string, doc: PDFDocument): Promise<AnalyseP
   }
   if (fondsPerdus === 'incertains') {
     avertissements.push(`La page mesure le format fini plus ${fondsMm} mm de chaque côté : les fonds perdus semblent présents mais ne sont pas déclarés (TrimBox) ; ils seront pris comme tels.`);
+  }
+  const pagesPres = analysees.filter((p) => p.pres_coupe && p.pres_coupe.length);
+  if (pagesPres.length) {
+    avertissements.push(
+      `Du contenu détaillé (texte, logo…) est à moins de ${SECURITE_MM} mm du trait de coupe : ${pagesPres.map((p) => `page ${p.numero} (${p.pres_coupe!.map((c) => LIBELLE_BORD[c]).join(', ')})`).join(' ; ')}. Il risque d’être rogné à la coupe : à vérifier avec le client.`,
+    );
   }
   if (!p0.format) avertissements.push('Format non reconnu : vérifiez la taille finie proposée avant de générer.');
   if (analysees.some((p) => p.rotation !== 0)) avertissements.push('Certaines pages portent une rotation : elles sont remises droites dans l’imposition.');
