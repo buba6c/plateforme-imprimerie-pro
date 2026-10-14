@@ -132,3 +132,7 @@
 }
 .lv-paiement__meta { display: flex; flex-wrap: wrap; gap: 4px var(--space-3); font-size: 14px; color: var(--text-muted); }
 .lv-paiement__meta .ev-ref { color: var(--text); }
+
+/* Dossier que le client vient chercher : le livreur le remet au comptoir. */
+.lv-sur-place { background: var(--accent-soft); color: var(--accent-ink, var(--ink)); }
+.lv-card[data-sur-place] .lv-card__bande { background: var(--accent-soft); }

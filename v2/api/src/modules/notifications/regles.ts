@@ -113,9 +113,10 @@ export async function notifierTransitionDossier(
       break;
     case 'marquer_imprime':
       if (enRetrait(d)) {
+        // Le livreur réceptionne aussi les dossiers que le client vient chercher.
         await envoyer(
           db,
-          { userIds: ids(d.preparateur_id), roles: ['admin'], exclure: auteur.id },
+          { roles: ['livreur', 'admin'], userIds: ids(d.preparateur_id), exclure: auteur.id },
           { type: 'pret_livraison', titre: `Prêt, le client vient le chercher : ${d.numero}`, message: d.client_nom, dossier_id: d.id },
         );
       } else {
@@ -254,8 +255,9 @@ export async function notifierStatutForce(auteur: Auteur, avant: DossierNotif, a
       await envoyer(db, { machine: apres.machine, exclure: auteur.id }, { type: 'nouveau_travail', titre: `Dossier à imprimer : ${apres.numero}`, message: commentaire ?? ref(apres), dossier_id: apres.id }),
     );
   }
-  if (vers === 'pret_livraison' && !enRetrait(apres) && !STATUTS_LIVRAISON.includes(avant.statut)) {
-    noter(await envoyer(db, { roles: ['livreur'], exclure: auteur.id }, { type: 'pret_livraison', titre: 'Dossier prêt à livrer', message: ref(apres), dossier_id: apres.id }));
+  if (vers === 'pret_livraison' && !STATUTS_LIVRAISON.includes(avant.statut)) {
+    const titre = enRetrait(apres) ? `Prêt, le client vient le chercher : ${apres.numero}` : 'Dossier prêt à livrer';
+    noter(await envoyer(db, { roles: ['livreur'], exclure: auteur.id }, { type: 'pret_livraison', titre, message: ref(apres), dossier_id: apres.id }));
   }
   if (vers === 'en_livraison' && avant.statut !== 'en_livraison') {
     const quand = await dateLivraisonLisible(apres.livraison_prevue_at, db);
@@ -361,7 +363,7 @@ export async function notifierUrgence(auteur: Auteur, d: DossierNotif, urgent: b
   if (!urgent) return;
   if (STATUTS_IMPRESSION.includes(d.statut)) {
     await envoyer(db, { machine: d.machine, exclure: auteur.id }, { type: 'urgent', titre: 'Dossier passé en urgent', message: ref(d), dossier_id: d.id });
-  } else if (STATUTS_LIVRAISON.includes(d.statut) && !enRetrait(d)) {
+  } else if (STATUTS_LIVRAISON.includes(d.statut)) {
     await envoyer(
       db,
       d.livreur_id ? { userIds: [d.livreur_id], exclure: auteur.id } : { roles: ['livreur'], exclure: auteur.id },

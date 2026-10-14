@@ -662,11 +662,14 @@ export async function executerAction(user: AuthUser, id: number, actionId: strin
         if (input.livraison.adresse) set('adresse_livraison = ?', input.livraison.adresse);
         if (input.livraison.notes !== undefined) set('notes_livraison = ?', input.livraison.notes);
         if (user.role === 'livreur') set('livreur_id = ?', user.id);
+        // Un dossier « à venir chercher » que l'on programme devient un dossier à livrer.
+        set('mode_remise = ?', 'livraison');
         break;
       }
       case 'remettre_client':
         set('livre_at = now()');
         set('urgent = false');
+        if (user.role === 'livreur') set('livreur_id = ?', user.id);
         break;
       case 'confirmer_livraison':
         set('livre_at = now()');

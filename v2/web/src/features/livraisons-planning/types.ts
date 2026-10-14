@@ -18,6 +18,8 @@ export interface LivraisonPlanning {
   livreur_nom: string | null;
   montant: number | null;
   mode_paiement_prevu: ModePaiement | null;
+  /** « retrait » : le client vient le chercher ; le livreur le lui remet au comptoir. */
+  mode_remise?: 'livraison' | 'retrait';
   deja_paye: number;
   en_attente_validation: number;
   solde: number | null;

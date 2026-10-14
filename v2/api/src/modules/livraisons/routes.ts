@@ -71,7 +71,7 @@ function selectPlanning(tz: string): string {
   SELECT d.id, d.numero, d.statut, d.machine, d.preparateur_id, d.urgent,
          d.client_nom, d.client_telephone, d.adresse_livraison, d.notes_livraison,
          d.date_promise, d.livraison_prevue_at, d.livre_at, d.livreur_id, liv.nom AS livreur_nom,
-         d.montant, d.mode_paiement_prevu,
+         d.montant, d.mode_paiement_prevu, d.mode_remise,
          coalesce(pa.deja_paye, 0)::int AS deja_paye,
          coalesce(pa.en_attente, 0)::int AS en_attente_validation,
          (SELECT count(*)::int FROM fichiers f WHERE f.dossier_id = d.id AND f.deleted_at IS NULL) AS nb_fichiers,
@@ -105,6 +105,7 @@ interface LignePlanning {
   livreur_nom: string | null;
   montant: number | null;
   mode_paiement_prevu: ModePaiement | null;
+  mode_remise: 'livraison' | 'retrait';
   deja_paye: number;
   en_attente_validation: number;
   nb_fichiers: number;

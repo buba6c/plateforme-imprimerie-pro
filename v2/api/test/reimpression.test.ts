@@ -79,11 +79,13 @@ describe('réimpression et duplication', () => {
 });
 
 describe('retrait sur place', () => {
-  it('ne passe pas par le livreur ; le préparateur le remet au client', async () => {
+  it('le livreur le reçoit (il réceptionne les dossiers terminés) ; le préparateur peut aussi le remettre au client', async () => {
     const o = await dossier({ mode_remise: 'retrait' });
     await jusquImprime(o.id);
-    expect((await A.livreur.get(`/api/dossiers/${o.id}`)).status).toBe(404);
-    expect((await A.admin.post(`/api/dossiers/${o.id}/actions/programmer_livraison`).send({ livraison: { date_prevue: '2030-01-01T10:00' } })).status).toBe(409);
+    const vu = await A.livreur.get(`/api/dossiers/${o.id}`);
+    expect(vu.status).toBe(200);
+    expect(vu.body.actions).toContain('remettre_client');
+    expect(vu.body.actions).not.toContain('confirmer_livraison');
     const d = (await A.prep.get(`/api/dossiers/${o.id}`)).body;
     expect(d.actions).toContain('remettre_client');
     expect(d.actions).not.toContain('confirmer_livraison');
@@ -99,6 +101,22 @@ describe('retrait sur place', () => {
     const apres = (await A.admin.get(`/api/dossiers/${o.id}`)).body;
     expect(apres.livre_at).toBeTruthy();
     expect(apres.paiements).toHaveLength(1);
+  });
+
+  it('le livreur remet au client et encaisse ; ou programme la livraison, et le dossier passe « à livrer »', async () => {
+    const a = await dossier({ mode_remise: 'retrait' });
+    await jusquImprime(a.id);
+    const r = await A.livreur.post(`/api/dossiers/${a.id}/actions/remettre_client`).send({ encaissement: { montant: a.montant, mode: 'especes' } });
+    expect(r.status, JSON.stringify(r.body)).toBe(200);
+    expect(r.body.statut).toBe('livre');
+    const pa = await getPool().query(`SELECT statut, notes FROM paiements WHERE dossier_id = $1`, [a.id]);
+    expect(pa.rows).toEqual([{ statut: 'a_valider', notes: 'Encaissé au retrait sur place' }]);
+
+    const b = await dossier({ mode_remise: 'retrait' });
+    await jusquImprime(b.id);
+    const p = await A.livreur.post(`/api/dossiers/${b.id}/actions/programmer_livraison`).send({ livraison: { date_prevue: '2030-01-01T10:00' } });
+    expect(p.status, JSON.stringify(p.body)).toBe(200);
+    expect(p.body).toMatchObject({ statut: 'en_livraison', mode_remise: 'livraison' });
   });
 
   it('un dossier à livrer ne propose pas « Remis au client »', async () => {

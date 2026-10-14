@@ -29,7 +29,9 @@ export function AProgrammer({ items, montrerLivreur, taille = 'sm' }: {
         <Card flush>
           <ul className="lv-liste lp-prog">
             {items.map((d) => {
-              const programmer = { ...d, actions: d.actions.filter((a) => a === 'programmer_livraison') };
+              const surPlace = d.mode_remise === 'retrait';
+              // Sur place : remettre au client ; sinon programmer la livraison.
+              const programmer = { ...d, actions: d.actions.filter((a) => a === (surPlace ? 'remettre_client' : 'programmer_livraison')) };
               return (
                 <li key={d.id} className="lv-ligne">
                   <div className="lv-ligne__lien">
@@ -39,9 +41,10 @@ export function AProgrammer({ items, montrerLivreur, taille = 'sm' }: {
                       </Link>
                       <Ref>{d.numero}</Ref>
                       {d.urgent && <UrgentTag />}
+                      {surPlace && <span className="ev-badge lv-sur-place">Le client passe le chercher</span>}
                     </span>
                     <span className="lv-ligne__sous">
-                      {d.adresse_livraison?.trim() || 'Adresse à confirmer'}
+                      {surPlace ? 'À remettre au comptoir' : d.adresse_livraison?.trim() || 'Adresse à confirmer'}
                       {d.date_promise ? ` · promis pour le ${formatDate(d.date_promise)}` : ''}
                       {montrerLivreur && d.livreur_nom ? ` · attribué à ${d.livreur_nom}` : ''}
                     </span>

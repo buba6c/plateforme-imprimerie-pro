@@ -118,7 +118,8 @@ export const ACTIONS: readonly ActionDef[] = [
     to: 'en_livraison',
     roles: ['livreur', 'admin'],
     form: 'livraison',
-    remise: 'livraison',
+    // Possible aussi pour un dossier « à venir chercher » : le client demande finalement la livraison
+    // (le dossier passe alors en « à livrer »).
     tone: 'primary',
   },
   {
@@ -148,7 +149,8 @@ export const ACTIONS: readonly ActionDef[] = [
     journal: 'Retiré par le client sur place',
     from: ['pret_livraison'],
     to: 'livre',
-    roles: ['preparateur', 'admin'],
+    // Le livreur réceptionne les dossiers terminés et les remet au client au comptoir.
+    roles: ['livreur', 'preparateur', 'admin'],
     remise: 'retrait',
     form: 'confirmation_livraison',
     tone: 'primary',

@@ -30,6 +30,19 @@ function etatDe(d: DossierResume): Etat {
 }
 
 function Bandeau({ d, etat }: { d: DossierResume; etat: Etat }) {
+  if (etat === 'a_programmer' && d.mode_remise === 'retrait') {
+    return (
+      <>
+        <PackageCheck aria-hidden="true" />
+        <span>Le client passe le chercher</span>
+        {d.date_promise && (
+          <span className="lv-card__bande-meta" data-tone={ecartJours(d.date_promise) < 0 ? 'retard' : undefined}>
+            promis le {formatDate(d.date_promise)}
+          </span>
+        )}
+      </>
+    );
+  }
   if (etat === 'a_programmer') {
     return (
       <>
@@ -135,10 +148,12 @@ export function CarteLivraison({ d, montrerLivreur }: { d: DossierResume; montre
   const enTournee = d.statut === 'en_livraison';
   const adresse = d.adresse_livraison?.trim() || null;
   const tel = d.client_telephone?.trim() || null;
+  const surPlace = d.mode_remise === 'retrait' && d.statut === 'pret_livraison';
   const peutLivrer = d.actions.includes('confirmer_livraison');
+  const peutRemettre = surPlace && d.actions.includes('remettre_client');
 
   return (
-    <article className="ev-job lv-card" data-etat={etat} data-urgent={d.urgent || undefined} aria-label={`${d.client_nom}, dossier ${d.numero}`}>
+    <article className="ev-job lv-card" data-etat={etat} data-sur-place={surPlace || undefined} data-urgent={d.urgent || undefined} aria-label={`${d.client_nom}, dossier ${d.numero}`}>
       <div className="lv-card__bande">
         <Bandeau d={d} etat={etat} />
         {d.urgent && <UrgentTag />}
@@ -154,9 +169,9 @@ export function CarteLivraison({ d, montrerLivreur }: { d: DossierResume; montre
           </Link>
         </div>
         {montrerLivreur && enTournee && <span className="lv-card__livreur">{d.livreur_nom ?? 'Sans livreur désigné'}</span>}
-        <p className="lv-card__adresse" data-vide={!adresse}>
+        <p className="lv-card__adresse" data-vide={!adresse && !surPlace}>
           <MapPin aria-hidden="true" />
-          <span>{adresse ?? 'Adresse à confirmer avec le client'}</span>
+          <span>{surPlace ? 'À remettre au comptoir : le client vient le chercher' : (adresse ?? 'Adresse à confirmer avec le client')}</span>
         </p>
         {d.notes_livraison && <p className="lv-card__notes">{d.notes_livraison}</p>}
         <MiniaturesDossier dossierId={d.id} fichiers={d.fichiers_apercu ?? []} total={d.nb_fichiers} resume={d.resume_specs} />
@@ -175,7 +190,7 @@ export function CarteLivraison({ d, montrerLivreur }: { d: DossierResume; montre
           ) : (
             <span className="lv-card__sans-tel">Numéro non renseigné</span>
           )}
-          {adresse && (
+          {adresse && !surPlace && (
             <a className="ev-btn ev-btn--lg lv-card__bouton" href={lienItineraire(adresse)} target="_blank" rel="noopener noreferrer" aria-label={`Itinéraire vers ${adresse} (ouvre Google Maps)`}>
               <Navigation aria-hidden="true" />
               Itinéraire
@@ -183,7 +198,17 @@ export function CarteLivraison({ d, montrerLivreur }: { d: DossierResume; montre
           )}
         </div>
 
-        {peutLivrer && (
+        {peutRemettre && (
+          <div className="lv-card__actions">
+            <DossierActions dossier={avec(d, ['remettre_client'])} size="lg" block />
+            {d.actions.includes('programmer_livraison') && (
+              <div className="lv-secondaire">
+                <DossierActions dossier={avec(d, ['programmer_livraison'])} block />
+              </div>
+            )}
+          </div>
+        )}
+        {peutLivrer && !surPlace && (
           <div className="lv-card__actions">
             {enTournee ? (
               <>
