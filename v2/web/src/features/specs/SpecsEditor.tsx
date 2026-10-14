@@ -226,6 +226,16 @@ export function SpecsEditor({ machine, value, onChange, tarifs, params, erreurs 
               onChange={(finitions) => majLigne(i, { finitions })}
               erreur={err(i, 'finitions')}
             />
+            {machine === 'xerox' && (
+              <ChampTexte
+                label="Autre façonnage (à préciser)"
+                value={(l as LigneXeroxDraft).faconnage_autre}
+                onChange={(faconnage_autre) => majLigne(i, { faconnage_autre } as Partial<LigneXeroxDraft>)}
+                placeholder="Ex. Encochage, rabat, coins arrondis…"
+                erreur={err(i, 'faconnage_autre')}
+                aide="Ce qui n’est pas dans la liste ci-dessus : noté sur le bon de travail, le devis et la facture."
+              />
+            )}
             <Choix
               titre="Options"
               tarifs={generiques(parCat.option, l.options)}
@@ -299,7 +309,7 @@ export function SpecsEditor({ machine, value, onChange, tarifs, params, erreurs 
 function titreLigne(machine: Machine, l: LigneRolandDraft | LigneXeroxDraft, i: number): string {
   if (machine === 'xerox') {
     const x = l as LigneXeroxDraft;
-    const type = x.type_document ? TYPE_DOCUMENT_LABELS[x.type_document] : null;
+    const type = x.type_document ? (x.type_document === 'autre' && x.type_document_autre.trim() ? x.type_document_autre.trim() : TYPE_DOCUMENT_LABELS[x.type_document]) : null;
     const partie = x.partie && x.partie !== 'unique' ? PARTIE_LABELS[x.partie].toLowerCase() : null;
     if (type) return partie ? `${type} · ${partie}` : type;
   }
@@ -326,7 +336,7 @@ function ChampSupportAutre({ valeur, onChange, erreur }: { valeur: string; onCha
       onChange={onChange}
       placeholder="Ex. Plaque PVC 5 mm, Drapeau, Tampon…"
       erreur={erreur}
-      aide="Hors grille : le prix du dossier est à saisir à la main en bas de page."
+      aide="Hors grille : indiquez son prix dans « Prix convenu » sous la ligne (ou le prix du dossier en bas de page)."
     />
   );
 }
@@ -520,6 +530,15 @@ function LigneXerox({ l, supports, finitions, tarif, maj, err }: {
           options={TYPES_DOCUMENT.map((t) => ({ value: t, label: TYPE_DOCUMENT_LABELS[t] }))}
           placeholder="Choisir (pré-remplit la ligne)"
         />
+        {l.type_document === 'autre' && (
+          <ChampTexte
+            label="Précisez le document"
+            value={l.type_document_autre}
+            onChange={(type_document_autre) => maj({ type_document_autre })}
+            placeholder="Ex. Chemise à rabat, menu, bon de commande…"
+            erreur={err('type_document_autre')}
+          />
+        )}
         {(TYPES_EN_PARTIES.includes(l.type_document as TypeDocument) || (l.partie && l.partie !== 'unique')) && (
           <ChampSelect
             label="Partie du document"
@@ -589,6 +608,7 @@ function LigneXerox({ l, supports, finitions, tarif, maj, err }: {
           onChange={(v) => maj({ papier: v as LigneXeroxDraft['papier'] })}
           options={PAPIERS_XEROX.map((p) => {
             const code = TARIF_PAPIER[p];
+            if (p === 'autre') return { value: p, label: 'Autre papier (à préciser)' };
             return { value: p, label: code ? avecPrix(PAPIER_LABELS[p], prixTexte(tarif(code)), '+') : `${PAPIER_LABELS[p]} · compris` };
           })}
         />
@@ -609,6 +629,17 @@ function LigneXerox({ l, supports, finitions, tarif, maj, err }: {
             ]}
           />
         </div>
+        {l.papier === 'autre' && (
+          <ChampTexte
+            className="sp-col-ligne"
+            label="Précisez le papier"
+            value={l.papier_autre}
+            onChange={(papier_autre) => maj({ papier_autre })}
+            placeholder="Ex. Kraft 300 g, calque, papier nacré…"
+            erreur={err('papier_autre')}
+            aide="Sans supplément automatique : indiquez un prix convenu si besoin."
+          />
+        )}
       </div>
       <div className="sp-grid sp-grid--prix">
         <ChampTexte label="Prix convenu" value={l.prix_convenu} onChange={(prix_convenu) => maj({ prix_convenu })} inputMode="numeric" mono addon="FCFA / ex." erreur={err('prix_convenu')} aide="Facultatif : remplace le prix calculé par la grille pour cette ligne (support, finitions et options compris)." />

@@ -189,7 +189,7 @@ export function PrixPanel({
   const titreGroupe = (g: number) => {
     if (g === -1) return 'Services du dossier';
     const l = conversion.apercu.lignes[g] as (typeof conversion.apercu.lignes)[number] & { type_document?: keyof typeof TYPE_DOCUMENT_LABELS | null };
-    const type = l?.type_document ? `${TYPE_DOCUMENT_LABELS[l.type_document]} · ` : '';
+    const type = l?.type_document ? `${l.type_document === 'autre' && (l as { type_document_autre?: string | null }).type_document_autre ? (l as { type_document_autre?: string | null }).type_document_autre : TYPE_DOCUMENT_LABELS[l.type_document]} · ` : '';
     return `Ligne ${indexOrigine(conversion, g) + 1} · ${type}${l ? libelle(machine, l.support) : ''}`;
   };
   const manuel = montantRetenu !== undefined && montantRetenu !== null;

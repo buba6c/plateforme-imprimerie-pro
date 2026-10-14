@@ -22,7 +22,9 @@
 
 .sp-grid { display: grid; gap: var(--space-3) var(--space-3); align-items: start; }
 .sp-grid--roland { grid-template-columns: minmax(0, 2.6fr) repeat(2, minmax(0, .9fr)) 72px minmax(0, 1fr); }
-.sp-grid--xerox { grid-template-columns: minmax(0, 2.4fr) repeat(2, minmax(0, 1fr)) auto; }
+/* Papier, pages, exemplaires sur une rangée ; le choix des faces sur la suivante (il est large). */
+.sp-grid--xerox { grid-template-columns: minmax(0, 2.4fr) repeat(2, minmax(0, 1fr)); }
+.sp-grid--xerox .sp-rv { grid-column: 1 / -1; padding-top: 0; }
 .sp-rv { padding-top: 24px; white-space: nowrap; }
 .sp-rv .ev-segmented { width: 100%; }
 @container (max-width: 620px) {
@@ -148,3 +150,6 @@
 
 /* Prix convenu : sur sa propre ligne, largeur d'un montant. */
 .sp-grid--prix { grid-template-columns: minmax(0, 300px); }
+
+/* Champ « Précisez… » d'un choix « Autre » : sur sa propre ligne. */
+.sp-grid .sp-col-ligne { grid-column: 1 / -1; }

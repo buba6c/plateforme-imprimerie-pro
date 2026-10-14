@@ -219,3 +219,22 @@ describe('prix convenu', () => {
     expect(r.total_ttc).toBe(240000);
   });
 });
+
+describe('choix « Autre » précisés', () => {
+  it('type de document, papier et façonnage hors liste apparaissent en clair, sans supplément de papier', async () => {
+    const { detailsLigne, libelleTypeDocument, libellePapier } = await import('../src/pricing');
+    const l = {
+      support: 'papier_a4_couleur', pages: 2, recto_verso: true, quantite: 200, finitions: [], options: [],
+      type_document: 'autre' as const, type_document_autre: 'Chemise à rabat', format: 'a4' as const, couleur: 'couleur' as const,
+      papier: 'autre' as const, papier_autre: 'Kraft 300 g', faconnage_autre: 'Encochage',
+    };
+    expect(libelleTypeDocument(l)).toBe('Chemise à rabat');
+    expect(libellePapier(l)).toBe('Kraft 300 g');
+    expect(detailsLigne('xerox', l as never)).toEqual(expect.arrayContaining(['Chemise à rabat', 'Kraft 300 g', 'Façonnage : Encochage']));
+    const r = calculerPrix('xerox', { lignes: [l], forfaits: [] } as never, TARIFS_DEFAUT, { ...PARAMS_PRIX_DEFAUT, arrondi_pas: 0 });
+    if (!r.ok) throw new Error(r.erreurs.join(' / '));
+    const { TARIF_PAPIER } = await import('../src/pricing');
+    const supplements = new Set(Object.values(TARIF_PAPIER).filter(Boolean));
+    expect(r.lignes.some((x) => supplements.has(x.code))).toBe(false);
+  });
+});

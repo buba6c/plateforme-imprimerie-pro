@@ -63,6 +63,8 @@ export interface LigneXeroxDraft {
   /** Prix convenu par exemplaire (FCFA), remplace la grille pour cette ligne ; '' = calcul normal. */
   prix_convenu: string;
   type_document: TypeDocument | '';
+  /** Type « autre » : ce que c'est, en clair. */
+  type_document_autre: string;
   partie: PartieLigne | '';
   /** '' : support choisi directement dans la grille (anciennes lignes). */
   format: FormatXerox | '';
@@ -70,6 +72,10 @@ export interface LigneXeroxDraft {
   format_hauteur: string;
   couleur: CouleurImpression | '';
   papier: PapierXerox | '';
+  /** Papier « autre » : lequel. */
+  papier_autre: string;
+  /** Façonnage hors liste, en clair. */
+  faconnage_autre: string;
   pelliculage: '' | 'mat' | 'brillant';
   pelliculage_faces: 'recto' | 'recto_verso';
   numerotation: boolean;
@@ -133,12 +139,15 @@ export function ligneXeroxVide(): LigneXeroxDraft {
     description: '',
     prix_convenu: '',
     type_document: '',
+    type_document_autre: '',
     partie: '',
     format: '',
     format_largeur: '',
     format_hauteur: '',
     couleur: 'couleur',
     papier: '',
+    papier_autre: '',
+    faconnage_autre: '',
     pelliculage: '',
     pelliculage_faces: 'recto',
     numerotation: false,
@@ -203,12 +212,15 @@ export function specsVersDraft(machine: Machine, specs: Partial<Specs> | null | 
       description: l.description ?? '',
       prix_convenu: txt(l.prix_convenu),
       type_document: l.type_document ?? '',
+      type_document_autre: l.type_document_autre ?? '',
       partie: l.partie ?? '',
       format: l.format ?? '',
       format_largeur: txt(l.format_largeur),
       format_hauteur: txt(l.format_hauteur),
       couleur: l.couleur ?? '',
       papier: l.papier ?? '',
+      papier_autre: l.papier_autre ?? '',
+      faconnage_autre: l.faconnage_autre ?? '',
       pelliculage: l.pelliculage?.type ?? '',
       pelliculage_faces: l.pelliculage?.faces ?? 'recto',
       numerotation: !!l.numerotation,
@@ -279,6 +291,8 @@ function ligneVersApi(machine: Machine, l: LigneRolandDraft | LigneXeroxDraft) {
     prix_convenu,
   };
   if (x.type_document) out.type_document = x.type_document;
+  if (x.type_document === 'autre' && x.type_document_autre.trim()) out.type_document_autre = x.type_document_autre.trim();
+  if (x.faconnage_autre.trim()) out.faconnage_autre = x.faconnage_autre.trim();
   if (x.partie) out.partie = x.partie;
   if (x.format) {
     out.format = x.format;
@@ -289,6 +303,7 @@ function ligneVersApi(machine: Machine, l: LigneRolandDraft | LigneXeroxDraft) {
     out.format_hauteur = x.format_hauteur.trim() ? lireDecimal(x.format_hauteur) : null;
   }
   if (x.papier) out.papier = x.papier;
+  if (x.papier === 'autre' && x.papier_autre.trim()) out.papier_autre = x.papier_autre.trim();
   if (x.pelliculage) out.pelliculage = { type: x.pelliculage, faces: x.pelliculage_faces };
   if (x.numerotation) out.numerotation = { depart: lireEntier(x.numerotation_depart), chiffres: lireEntier(x.numerotation_chiffres) };
   if (x.conditionnement.length) out.conditionnement = x.conditionnement;

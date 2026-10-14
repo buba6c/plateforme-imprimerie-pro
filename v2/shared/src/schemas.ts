@@ -38,7 +38,7 @@ export type FormatXerox = (typeof FORMATS_XEROX)[number];
 export const COULEURS_IMPRESSION = ['couleur', 'nb'] as const;
 export type CouleurImpression = (typeof COULEURS_IMPRESSION)[number];
 /** Papier : l'ordinaire 80 g est compris dans le prix du format, les autres ajoutent un supplément par feuille. */
-export const PAPIERS_XEROX = ['ordinaire_80', 'couche_135', 'couche_170', 'couche_250', 'couche_300', 'couche_350', 'autocollant', 'offset', 'grimat'] as const;
+export const PAPIERS_XEROX = ['ordinaire_80', 'couche_135', 'couche_170', 'couche_250', 'couche_300', 'couche_350', 'autocollant', 'offset', 'grimat', 'autre'] as const;
 export type PapierXerox = (typeof PAPIERS_XEROX)[number];
 export const PELLICULAGES = ['mat', 'brillant'] as const;
 export const FACES_PELLICULAGE = ['recto', 'recto_verso'] as const;
@@ -92,6 +92,8 @@ export const ligneXeroxSchema = z.object({
   options: z.array(z.string().trim().min(1).max(64)).max(20).default([]),
   description: texteOpt(500),
   type_document: z.enum(TYPES_DOCUMENT).nullable().optional(),
+  /** Type de document « autre » : ce que c'est, en clair (chemise à rabat, menu, bon de commande…). */
+  type_document_autre: texteOpt(120),
   partie: z.enum(PARTIES_LIGNE).nullable().optional(),
   format: z.enum(FORMATS_XEROX).nullable().optional(),
   /** Format personnalisé, en mm (informatif : le prix suit le support choisi). */
@@ -99,6 +101,10 @@ export const ligneXeroxSchema = z.object({
   format_hauteur: z.number({ invalid_type_error: 'Hauteur invalide' }).positive('Hauteur invalide').max(2000, 'Hauteur : 2 000 mm au maximum').nullable().optional(),
   couleur: z.enum(COULEURS_IMPRESSION).nullable().optional(),
   papier: z.enum(PAPIERS_XEROX).nullable().optional(),
+  /** Papier « autre » : lequel (kraft 300 g, calque…), sans supplément de grille. */
+  papier_autre: texteOpt(120),
+  /** Façonnage hors liste, en clair (encochage, rabat, coins arrondis…). */
+  faconnage_autre: texteOpt(200),
   pelliculage: z.object({ type: z.enum(PELLICULAGES), faces: z.enum(FACES_PELLICULAGE).default('recto') }).nullable().optional(),
   numerotation: z
     .object({

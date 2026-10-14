@@ -150,6 +150,8 @@ export const TARIF_PAPIER: Record<PapierXerox, string | null> = {
   autocollant: 'autocollant',
   offset: 'papier_offset',
   grimat: 'papier_grimat',
+  // Papier hors liste : pas de supplément automatique (prix convenu sur la ligne si besoin).
+  autre: null,
 };
 
 export const TARIF_PELLICULAGE: Record<'mat' | 'brillant', string> = {
@@ -238,7 +240,22 @@ export const PAPIER_LABELS: Record<PapierXerox, string> = {
   autocollant: 'Autocollant',
   offset: 'Offset',
   grimat: 'Grimat',
+  autre: 'Autre papier',
 };
+
+/** Type de document lisible : le texte saisi pour « Autre », sinon le libellé. */
+export function libelleTypeDocument(l: Pick<LigneXerox, 'type_document' | 'type_document_autre'>): string | null {
+  if (!l.type_document) return null;
+  if (l.type_document === 'autre') return l.type_document_autre?.trim() || TYPE_DOCUMENT_LABELS.autre;
+  return TYPE_DOCUMENT_LABELS[l.type_document];
+}
+
+/** Papier lisible : le texte saisi pour « Autre papier », sinon le libellé. */
+export function libellePapier(l: Pick<LigneXerox, 'papier' | 'papier_autre'>): string | null {
+  if (!l.papier) return null;
+  if (l.papier === 'autre') return l.papier_autre?.trim() || PAPIER_LABELS.autre;
+  return PAPIER_LABELS[l.papier];
+}
 
 export const CONDITIONNEMENT_LABELS: Record<Conditionnement, string> = {
   liasse_50: 'En liasses de 50',
@@ -715,7 +732,7 @@ export function resumeLigne(machine: Machine, l: LigneRoland | LigneXerox, libel
     return `${support} · ${r.largeur} × ${r.hauteur} ${r.unite} · ${r.quantite} ex.${bords}`;
   }
   const x = l as LigneXerox;
-  const papier = x.papier && x.papier !== 'ordinaire_80' ? ` · ${PAPIER_LABELS[x.papier]}` : '';
+  const papier = x.papier && x.papier !== 'ordinaire_80' ? ` · ${libellePapier(x)}` : '';
   return `${support}${papier} · ${x.pages} p.${x.recto_verso ? ' recto-verso' : ''} · ${x.quantite} ex.`;
 }
 
@@ -739,7 +756,7 @@ export function detailsLigne(machine: Machine, l: LigneRoland | LigneXerox): str
     return out;
   }
   const x = l as LigneXerox;
-  if (x.type_document) out.push(TYPE_DOCUMENT_LABELS[x.type_document]);
+  if (x.type_document) out.push(libelleTypeDocument(x)!);
   if (x.partie && x.partie !== 'unique') out.push(PARTIE_LABELS[x.partie]);
   if (x.format === 'perso') {
     out.push(x.format_largeur && x.format_hauteur ? `Format ${nf(x.format_largeur)} × ${nf(x.format_hauteur)} mm` : 'Format personnalisé');
@@ -747,11 +764,12 @@ export function detailsLigne(machine: Machine, l: LigneRoland | LigneXerox): str
     out.push(FORMAT_XEROX_LABELS[x.format]);
   }
   if (x.couleur) out.push(COULEUR_LABELS[x.couleur]);
-  if (x.papier) out.push(PAPIER_LABELS[x.papier]);
+  if (x.papier) out.push(libellePapier(x)!);
   if (x.pelliculage) out.push(`Pelliculage ${x.pelliculage.type} ${x.pelliculage.faces === 'recto_verso' ? 'recto-verso' : 'recto'}`);
   if (x.numerotation) {
     out.push(`Numérotation à partir du n° ${String(x.numerotation.depart).padStart(x.numerotation.chiffres, '0')} (${x.numerotation.chiffres} chiffres)`);
   }
+  if (x.faconnage_autre?.trim()) out.push(`Façonnage : ${x.faconnage_autre.trim()}`);
   if (x.conditionnement?.length) out.push(x.conditionnement.map((c) => CONDITIONNEMENT_LABELS[c]).join(', '));
   return out;
 }

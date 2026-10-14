@@ -13,6 +13,8 @@ import {
   formatFCFA,
   MACHINE_LABELS,
   nombreOeillets,
+  libellePapier,
+  libelleTypeDocument,
   PAPIER_LABELS,
   PARTIE_LABELS,
   POSITION_OEILLETS_LABELS,
@@ -99,7 +101,7 @@ export function SpecsLecture({ machine, specs, libelle, voirRemise, importe }: {
 }
 
 function titreXerox(l: LigneXerox, libelle: Libelle): string {
-  const type = l.type_document ? TYPE_DOCUMENT_LABELS[l.type_document] : libelleSupportLigne(l, libelle('xerox', l.support));
+  const type = l.type_document ? libelleTypeDocument(l)! : libelleSupportLigne(l, libelle('xerox', l.support));
   const partie = l.partie && l.partie !== 'unique' ? ` · ${PARTIE_LABELS[l.partie].toLowerCase()}` : '';
   return `${type}${partie}`;
 }
@@ -164,7 +166,7 @@ function LigneXeroxLue({ l, libelle }: { l: LigneXerox; libelle: Libelle }) {
     <>
       <Section tone="violet" titre="Document" icone={FileText}>
         <div className="sa-tuiles">
-          {l.type_document && <Tuile libelle="Type" valeur={TYPE_DOCUMENT_LABELS[l.type_document]} />}
+          {l.type_document && <Tuile libelle="Type" valeur={libelleTypeDocument(l)!} />}
           {l.partie && l.partie !== 'unique' && <Tuile libelle="Partie" valeur={PARTIE_LABELS[l.partie]} />}
           <Tuile libelle="Format" valeur={`${format}${dims ? ` · ${formatDecimal(dims[0])} × ${formatDecimal(dims[1])} mm` : ''}`} />
           {l.format && l.format !== 'perso' && l.support && <Tuile libelle="Tarif appliqué" valeur={libelleSupportLigne(l, libelle('xerox', l.support))} />}
@@ -186,7 +188,7 @@ function LigneXeroxLue({ l, libelle }: { l: LigneXerox; libelle: Libelle }) {
           </span>
           <div>
             <p className="sa-tuile__libelle">Papier</p>
-            <p className="sa-tuile__valeur sa-tuile__valeur--grande">{l.papier ? PAPIER_LABELS[l.papier] : 'Ordinaire 80 g (compris)'}</p>
+            <p className="sa-tuile__valeur sa-tuile__valeur--grande">{l.papier ? libellePapier(l) : 'Ordinaire 80 g (compris)'}</p>
           </div>
         </div>
       </Section>

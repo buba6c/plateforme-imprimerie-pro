@@ -8,9 +8,9 @@ import {
   formatDecimal,
   formatDimensions,
   formatEntier,
-  PAPIER_LABELS,
+  libellePapier,
+  libelleTypeDocument,
   PARTIE_LABELS,
-  TYPE_DOCUMENT_LABELS,
   type LignePrix,
   type LigneRoland,
   type LigneXerox,
@@ -99,7 +99,7 @@ export function titreLigne(machine: Machine, spec: LigneRoland | LigneXerox, tar
     return `Impression ${support}`;
   }
   const x = spec as LigneXerox;
-  const type = x.type_document && x.type_document !== 'autre' ? TYPE_DOCUMENT_LABELS[x.type_document] : null;
+  const type = x.type_document && (x.type_document !== 'autre' || x.type_document_autre?.trim()) ? libelleTypeDocument(x) : null;
   const support = x.support === 'autre' ? x.support_autre || 'sur mesure' : libelleCode(tarifs, 'xerox', x.support);
   return `Impression ${type ?? support}`;
 }
@@ -138,7 +138,7 @@ export function descriptionLigne(machine: Machine, spec: LigneRoland | LigneXero
           : libelleCode(tarifs, 'xerox', x.support);
     const partie = x.partie && x.partie !== 'unique' ? ` (${PARTIE_LABELS[x.partie].toLowerCase()})` : '';
     out.push(`Descriptif : ${format}, ${formatEntier(x.pages)} page${x.pages > 1 ? 's' : ''}${partie}`);
-    if (x.papier) out.push(`Papier : ${PAPIER_LABELS[x.papier]}`);
+    if (x.papier) out.push(`Papier : ${libellePapier(x)}`);
     const couleur = x.couleur === 'nb' ? 'Noir et blanc' : 'Quadri';
     out.push(`Impression : ${x.recto_verso ? `R° ${couleur} V° ${couleur}` : `R° ${couleur}`}`);
     const faconnage = [
@@ -146,6 +146,7 @@ export function descriptionLigne(machine: Machine, spec: LigneRoland | LigneXero
       ...libelles(x.finitions ?? []),
       ...libelles(x.options ?? []),
       x.numerotation ? `Numérotation à partir du n° ${String(x.numerotation.depart).padStart(x.numerotation.chiffres, '0')}` : null,
+      x.faconnage_autre?.trim() || null,
     ].filter(Boolean);
     if (faconnage.length) out.push(`Façonnage : ${faconnage.join(', ')}`);
     if (x.conditionnement?.length) out.push(`Conditionnement : ${x.conditionnement.map((c) => CONDITIONNEMENT_LABELS[c]).join(', ')}`);
