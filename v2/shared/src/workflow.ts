@@ -91,7 +91,8 @@ export const ACTIONS: readonly ActionDef[] = [
   },
   {
     id: 'marquer_imprime',
-    label: 'Marquer comme imprimé',
+    // « Démarrer » ne prévient personne : c'est ce bouton qui envoie le dossier au livreur.
+    label: 'Imprimé : envoyer au livreur',
     journal: 'Impression terminée, prêt à livrer',
     from: ['en_impression'],
     to: 'pret_livraison',

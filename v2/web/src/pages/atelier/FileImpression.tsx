@@ -34,7 +34,7 @@ const COLONNES: { id: Colonne; titre: string; court: string; vide: string; aide:
     titre: 'En impression',
     court: 'En cours',
     vide: 'Rien en cours d’impression',
-    aide: 'Démarrez un dossier prêt à imprimer : il reste ici jusqu’à ce que vous le marquiez comme imprimé.',
+    aide: 'Le livreur ne voit pas encore ces dossiers. Quand l’impression est finie, cliquez sur « Imprimé : envoyer au livreur ».',
     icone: <Printer aria-hidden="true" />,
   },
   {
@@ -42,7 +42,7 @@ const COLONNES: { id: Colonne; titre: string; court: string; vide: string; aide:
     titre: 'Imprimé (48 h)',
     court: 'Imprimés',
     vide: 'Aucun dossier imprimé ces dernières 48 h',
-    aide: 'Les dossiers marqués comme imprimés restent visibles 48 h, le temps que le livreur les prenne en charge.',
+    aide: 'Envoyés au livreur (il est prévenu). Ils restent visibles ici 48 h.',
     icone: <CheckCircle2 aria-hidden="true" />,
   },
 ];
