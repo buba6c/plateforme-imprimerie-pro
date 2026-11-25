@@ -266,7 +266,8 @@ export async function predefinisDossiers(user: AuthUser, machine?: Machine, limi
   const libelles = await libellesTarifs();
   return [...groupes.entries()]
     .filter(([, g]) => g.nb >= 2)
-    .sort((a, b) => b[1].nb - a[1].nb || b[1].dernier_at.localeCompare(a[1].dernier_at))
+    // created_at arrive en Date (pg) : comparer les instants, pas des chaînes (« localeCompare is not a function », 23/11/2026).
+    .sort((a, b) => b[1].nb - a[1].nb || new Date(b[1].dernier_at).getTime() - new Date(a[1].dernier_at).getTime())
     .slice(0, limit)
     .map(([cle, g], i) => ({
       cle: `${i}-${cle.length}-${g.nb}`,

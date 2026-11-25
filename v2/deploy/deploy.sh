@@ -39,7 +39,9 @@ echo "Migrations de la base"
 (cd "$V2/api" && node --env-file=.env dist/migrate.js)
 
 echo "Redémarrage"
-pm2 reload evocom-v2 --update-env
+# Recharger depuis le fichier ecosystem : ses réglages (plafond mémoire…) sont appliqués à chaque mise à jour.
+pm2 startOrReload "$V2/deploy/ecosystem.config.cjs" --only evocom-v2 --update-env
+pm2 save >/dev/null 2>&1 || true
 sleep 3
 PORT_API="$(grep -E '^PORT=' "$V2/api/.env" | cut -d= -f2)"
 if curl -fsS "http://127.0.0.1:${PORT_API:-4000}/api/health" >/dev/null; then

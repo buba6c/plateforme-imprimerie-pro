@@ -231,7 +231,7 @@ function Traitement({ f }: { f: Fichier }) {
   const t = f.traitement;
   const pdf = (f.mime ?? '').toLowerCase() === 'application/pdf' || /\.pdf$/i.test(f.nom_original);
   if (!pdf) return null;
-  if (!t) return <span className="fi-trait" data-etat="attente" title="Contrôle et optimisation pour l’impression en cours">Traitement…</span>;
+  if (!t || t.statut === 'en_cours') return <span className="fi-trait" data-etat="attente" title="Contrôle et optimisation pour l’impression en cours">Traitement…</span>;
   const alertes = [...(t.avertissements ?? [])];
   const titre = alertes.length ? alertes.join('\n') : undefined;
   if (t.statut === 'optimise' && t.taille_avant && t.taille_apres) {
@@ -241,5 +241,6 @@ function Traitement({ f }: { f: Fichier }) {
   if (t.statut === 'repare') return <span className="fi-trait" data-etat="attention" title={titre ?? 'Le PDF était abîmé : la version réparée est servie (l’original est conservé).'}>Réparé</span>;
   if (t.statut === 'illisible') return <span className="fi-trait" data-etat="alerte" title={titre}>PDF illisible</span>;
   if (t.statut === 'inchange') return <span className="fi-trait" data-etat={alertes.length ? 'attention' : 'ok'} title={titre ?? 'Contrôlé : déjà optimal.'}>{alertes.length ? 'À vérifier' : 'Contrôlé'}</span>;
+  if (t.statut === 'erreur') return <span className="fi-trait" data-etat="attention" title={titre ?? 'Optimisation impossible : l’original est servi tel quel.'}>Non optimisé</span>;
   return null;
 }

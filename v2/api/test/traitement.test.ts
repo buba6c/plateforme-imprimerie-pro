@@ -6,6 +6,7 @@ import { describe, expect, it } from 'vitest';
 import { PDFDocument, rgb } from 'pdf-lib';
 import { gsPresent, qpdfPresent } from '../src/modules/traitement/outils';
 import { lisible, traiterPdf } from '../src/modules/traitement/pdf';
+import { nettoyerTemporaires } from '../src/modules/traitement/file';
 
 const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'evocom-test-traitement-'));
 
@@ -42,5 +43,26 @@ describe('traitement des PDF', () => {
     fs.writeFileSync(casse, octets, 'latin1');
     const { rapport } = await traiterPdf(casse, path.join(dir, 'repare.pdf'));
     expect(['repare', 'optimise', 'inchange']).toContain(rapport.statut);
+  });
+});
+
+describe('fichiers de travail abandonnés', () => {
+  it('supprime au démarrage les dossiers evocom-traitement-* anciens, garde les récents et les autres', async () => {
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'essai-nettoyage-'));
+    const vieux = path.join(tmp, 'evocom-traitement-123-abcd');
+    const recent = path.join(tmp, 'evocom-traitement-456-ef01');
+    const autre = path.join(tmp, 'autre-dossier');
+    for (const d of [vieux, recent, autre]) {
+      fs.mkdirSync(d);
+      fs.writeFileSync(path.join(d, 'optimise.pdf'), 'x');
+    }
+    const ilYaUneHeure = new Date(Date.now() - 3600 * 1000);
+    fs.utimesSync(vieux, ilYaUneHeure, ilYaUneHeure);
+    fs.utimesSync(autre, ilYaUneHeure, ilYaUneHeure);
+    expect(await nettoyerTemporaires(tmp)).toBe(1);
+    expect(fs.existsSync(vieux)).toBe(false);
+    expect(fs.existsSync(recent)).toBe(true);
+    expect(fs.existsSync(autre)).toBe(true);
+    fs.rmSync(tmp, { recursive: true, force: true });
   });
 });

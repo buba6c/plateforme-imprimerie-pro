@@ -29,9 +29,17 @@ export interface RapportTraitement {
   fait_le: string;
 }
 
+/**
+ * Au-delà, un PDF n'est jamais chargé en mémoire par pdf-lib pour être contrôlé : le 13/11/2026, une sortie
+ * Ghostscript de 1 Go chargée ici faisait dépasser la limite mémoire de PM2, qui tuait l'API en boucle.
+ */
+export const LISIBLE_MAX = 300 * 1024 * 1024;
+
 /** Le PDF s'ouvre-t-il avec pdf-lib (utilisé par l'imposition) ? */
 export async function lisible(abs: string): Promise<{ ok: boolean; pages: number | null; erreur?: string }> {
   try {
+    const taille = (await fs.promises.stat(abs)).size;
+    if (taille > LISIBLE_MAX) return { ok: false, pages: null, erreur: `fichier de ${Math.round(taille / 1048576)} Mo, trop lourd pour être contrôlé en mémoire` };
     const doc = await PDFDocument.load(await fs.promises.readFile(abs), { ignoreEncryption: true, updateMetadata: false });
     return { ok: true, pages: doc.getPageCount() };
   } catch (e) {
@@ -130,10 +138,12 @@ export async function traiterPdf(abs: string, destination: string): Promise<{ ra
   try {
     if (!(await qpdfPresent()) && !(await gsPresent())) return { rapport: rapport({ statut: 'ignore', avertissements: ['Outils de traitement absents du serveur (ghostscript, qpdf).'] }), chemin: null };
 
-    // 1. Lisible ? Sinon réparation.
+    // 1. Lisible ? Sinon réparation. Un original très lourd n'est pas chargé en mémoire pour ce contrôle :
+    //    Ghostscript (processus à part) l'allège directement, c'est ce qui permet ensuite de l'imposer.
     let source = abs;
     let repare = false;
-    const l = await lisible(abs);
+    const gros = tailleAvant > LISIBLE_MAX;
+    const l: { ok: boolean; pages: number | null; erreur?: string } = gros ? { ok: true, pages: null } : await lisible(abs);
     if (!l.ok) {
       const r = await reparer(abs, path.join(temp, 'repare.pdf'));
       if (!r) return { rapport: rapport({ statut: 'illisible', avertissements: [`PDF illisible et irréparable (${(l.erreur ?? '').slice(0, 120)}) : demandez au client un nouvel export.`] }), chemin: null };
@@ -173,7 +183,14 @@ export async function traiterPdf(abs: string, destination: string): Promise<{ ra
           { timeout: 900000, maxBuffer: 8 * 1024 * 1024 },
         );
         outils.push('ghostscript');
-        if ((await lisible(sortie)).ok) candidat = sortie;
+        // Une sortie plus lourde que l'original serait rejetée à l'étape 5 : inutile de la charger pour la contrôler.
+        const tailleGs = (await fs.promises.stat(sortie)).size;
+        if (tailleGs < tailleAvant * 0.95 || repare) {
+          // Sortie encore très lourde : acceptée sur la foi de Ghostscript, sans la charger en mémoire.
+          if (tailleGs > LISIBLE_MAX || (await lisible(sortie)).ok) candidat = sortie;
+        } else {
+          await fs.promises.rm(sortie, { force: true }).catch(() => {});
+        }
       } catch (e) {
         avertissements.push(`Optimisation Ghostscript impossible : ${(e instanceof Error ? e.message : String(e)).split('\n')[0]!.slice(0, 120)}`);
       }
@@ -185,7 +202,8 @@ export async function traiterPdf(abs: string, destination: string): Promise<{ ra
         await exec('qpdf', ['--object-streams=generate', '--compress-streams=y', '--recompress-flate', candidat, compact], { timeout: 180000 }).catch((e: { code?: number }) => {
           if (e.code !== 3) throw e;
         });
-        if ((await fs.promises.stat(compact)).size < (await fs.promises.stat(candidat)).size && (await lisible(compact)).ok) {
+        const tailleCompact = (await fs.promises.stat(compact)).size;
+        if (tailleCompact < (await fs.promises.stat(candidat)).size && (tailleCompact > LISIBLE_MAX || (await lisible(compact)).ok)) {
           candidat = compact;
           if (!outils.includes('qpdf')) outils.push('qpdf');
         }
@@ -195,7 +213,7 @@ export async function traiterPdf(abs: string, destination: string): Promise<{ ra
     }
 
     // 5. On garde la version traitée si elle est réparée, ou au moins 5 % plus légère.
-    const lu = await lisible(candidat ?? abs);
+    const lu = candidat ? ((await fs.promises.stat(candidat)).size > LISIBLE_MAX ? { ok: true, pages: null } : await lisible(candidat)) : l;
     if (candidat) {
       const tailleApres = (await fs.promises.stat(candidat)).size;
       if (repare || tailleApres < tailleAvant * 0.95) {
